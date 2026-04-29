@@ -6,18 +6,28 @@ import { fmtEuros } from '../lib/contratos.js';
 export default function Clientes() {
   const navigate = useNavigate();
   const [clientes, setClientes] = useState([]);
+  const [pagosTodos, setPagosTodos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
+  const [filtroPago, setFiltroPago] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     cargar();
   }, []);
 
-  function cargar() {
+  async function cargar() {
     setCargando(true);
-    api.clientesList().then(setClientes).catch(console.error).finally(() => setCargando(false));
+    try {
+      const [cs, ps] = await Promise.all([api.clientesList(), api.pagosList()]);
+      setClientes(cs);
+      setPagosTodos(ps);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCargando(false);
+    }
   }
 
   async function handleNuevo(datos) {
@@ -30,8 +40,26 @@ export default function Clientes() {
     }
   }
 
+  // Calcula el estado de pago de un cliente
+  function estadoPagoCliente(clienteId) {
+    const pagosCli = pagosTodos.filter(p => p.cliente_id === clienteId);
+    if (pagosCli.length === 0) return { color: 'blanco', etiqueta: 'Sin pagos', pendiente: 0 };
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const vencidos = pagosCli.filter(p => p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy);
+    const pendientes = pagosCli.filter(p => p.estado === 'Pendiente');
+    const importeVencido = vencidos.reduce((s, p) => s + Number(p.importe), 0);
+    const importePendiente = pendientes.reduce((s, p) => s + Number(p.importe), 0);
+    if (vencidos.length > 0) return { color: 'rojo', etiqueta: `Vencido: ${fmtEuros(importeVencido)}`, pendiente: importeVencido };
+    if (pendientes.length > 0) return { color: 'amarillo', etiqueta: `Pendiente: ${fmtEuros(importePendiente)}`, pendiente: importePendiente };
+    return { color: 'verde', etiqueta: 'Al dia', pendiente: 0 };
+  }
+
   const filtrados = clientes.filter((c) => {
     if (filtroEstado !== 'Todos' && c.estado !== filtroEstado) return false;
+    if (filtroPago !== 'Todos') {
+      const ep = estadoPagoCliente(c.id);
+      if (ep.color !== filtroPago) return false;
+    }
     if (busqueda) {
       const q = busqueda.toLowerCase();
       return (
@@ -61,14 +89,28 @@ export default function Clientes() {
             onChange={(e) => setBusqueda(e.target.value)}
             style={{ flex: 1, minWidth: 200 }}
           />
-          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} style={{ width: 200 }}>
-            <option>Todos</option>
+          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} style={{ width: 180 }}>
+            <option value="Todos">Estado: Todos</option>
             <option>Pendiente firma</option>
             <option>Firmado</option>
             <option>En curso</option>
             <option>Entregado</option>
             <option>Cancelado</option>
           </select>
+          <select value={filtroPago} onChange={(e) => setFiltroPago(e.target.value)} style={{ width: 180 }}>
+            <option value="Todos">Pagos: Todos</option>
+            <option value="rojo">Solo morosos</option>
+            <option value="amarillo">Pendientes (al corriente)</option>
+            <option value="verde">Al dia</option>
+            <option value="blanco">Sin pagos</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', gap: 15, marginBottom: 15, flexWrap: 'wrap', fontSize: 11, color: '#6b7280' }}>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#fee2e2', borderRadius: 3, marginRight: 4, verticalAlign: 'middle', border: '1px solid #fca5a5' }}></span> Pago vencido (moroso)</span>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#fef3c7', borderRadius: 3, marginRight: 4, verticalAlign: 'middle', border: '1px solid #fde68a' }}></span> Pago pendiente (en plazo)</span>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#d1fae5', borderRadius: 3, marginRight: 4, verticalAlign: 'middle', border: '1px solid #a7f3d0' }}></span> Al dia</span>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#fff', borderRadius: 3, marginRight: 4, verticalAlign: 'middle', border: '1px solid #e5e7eb' }}></span> Sin pagos</span>
         </div>
 
         {filtrados.length === 0 ? (
@@ -83,21 +125,42 @@ export default function Clientes() {
                 <th>Cliente</th>
                 <th>NIF</th>
                 <th>Estado</th>
+                <th>Pagos</th>
                 <th style={{ textAlign: 'right' }}>Total</th>
                 <th>Fecha</th>
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((c) => (
-                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/clientes/${c.id}`)}>
-                  <td><code style={{ background: 'var(--gris-2)', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{c.numero_cliente}</code></td>
-                  <td><strong>{c.nombre}</strong>{c.email && <div style={{ color: 'var(--gris-5)', fontSize: 11 }}>{c.email}</div>}</td>
-                  <td>{c.nif}</td>
-                  <td><span className={`estado ${claseEstado(c.estado)}`}>{c.estado}</span></td>
-                  <td style={{ textAlign: 'right', color: 'var(--verde)', fontWeight: 600 }}>{fmtEuros(c.total)}</td>
-                  <td style={{ fontSize: 12, color: 'var(--gris-5)' }}>{new Date(c.creado_en).toLocaleDateString('es-ES')}</td>
-                </tr>
-              ))}
+              {filtrados.map((c) => {
+                const ep = estadoPagoCliente(c.id);
+                const fondo = {
+                  rojo: '#fef2f2',
+                  amarillo: '#fffbeb',
+                  verde: '#f0fdf4',
+                  blanco: '#fff',
+                }[ep.color];
+                const borde = {
+                  rojo: '4px solid #dc2626',
+                  amarillo: '4px solid #f59e0b',
+                  verde: '4px solid #047857',
+                  blanco: '4px solid transparent',
+                }[ep.color];
+                return (
+                  <tr
+                    key={c.id}
+                    style={{ cursor: 'pointer', background: fondo, borderLeft: borde }}
+                    onClick={() => navigate(`/clientes/${c.id}`)}
+                  >
+                    <td><code style={{ background: '#f3f4f6', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{c.numero_cliente}</code></td>
+                    <td><strong>{c.nombre}</strong>{c.email && <div style={{ color: '#6b7280', fontSize: 11 }}>{c.email}</div>}</td>
+                    <td>{c.nif}</td>
+                    <td><span className={`estado ${claseEstado(c.estado)}`}>{c.estado}</span></td>
+                    <td style={{ fontSize: 12, fontWeight: 500, color: ep.color === 'rojo' ? '#991b1b' : ep.color === 'amarillo' ? '#92400e' : ep.color === 'verde' ? '#166534' : '#6b7280' }}>{ep.etiqueta}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtEuros(c.total)}</td>
+                    <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(c.creado_en).toLocaleDateString('es-ES')}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -142,8 +205,8 @@ function ModalNuevoCliente({ onClose, onSave }) {
           <button onClick={onClose}>&times;</button>
         </div>
         <div className="modal-body">
-          <p style={{ fontSize: 13, color: 'var(--gris-5)', marginBottom: 15 }}>
-            Datos basicos para crear el cliente. Despues podras anadir servicios, descripcion del proyecto, generar contratos, etc.
+          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 15 }}>
+            Datos basicos para crear el cliente. Despues podras anadir servicios, generar contratos, etc.
           </p>
           <div className="grid">
             <div>

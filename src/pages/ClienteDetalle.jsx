@@ -15,8 +15,6 @@ const FORMAS_PAGO = [
   '100% a la entrega',
   'Cuota mensual recurrente',
 ];
-const METODOS_PAGO = ['Transferencia', 'Bizum', 'Efectivo', 'Stripe', 'PayPal', 'Otro'];
-const ESTADOS_PAGO = ['Pendiente', 'Cobrado', 'Cancelado'];
 
 export default function ClienteDetalle() {
   const { id } = useParams();
@@ -136,6 +134,14 @@ export default function ClienteDetalle() {
     } finally { div.remove(); }
   }
 
+  function imprimirDocumento(html) {
+    const w = window.open('', '_blank');
+    if (!w) { alert('El navegador bloqueo la ventana de impresion. Permite popups.'); return; }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => { w.print(); }, 500);
+  }
+
   async function descargarTodosZip() {
     if (!cliente.servicios_json || cliente.servicios_json.length === 0) {
       alert('Anade servicios al cliente antes de generar los documentos.');
@@ -243,6 +249,9 @@ export default function ClienteDetalle() {
   const totales = calcularTotales(c);
   const totalCobrado = pagos.filter(p => p.estado === 'Cobrado').reduce((s, p) => s + Number(p.importe), 0);
   const totalPendiente = pagos.filter(p => p.estado === 'Pendiente').reduce((s, p) => s + Number(p.importe), 0);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const pagosVencidos = pagos.filter(p => p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy);
+  const importeVencido = pagosVencidos.reduce((s, p) => s + Number(p.importe), 0);
 
   return (
     <div>
@@ -251,10 +260,10 @@ export default function ClienteDetalle() {
           <button className="btn-outline btn-sm" onClick={() => navigate('/clientes')} style={{ marginBottom: 8 }}>← Clientes</button>
           <h1>{cliente.nombre}</h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
-            <code style={{ background: 'var(--gris-2)', padding: '3px 8px', borderRadius: 4, fontSize: 12 }}>{cliente.numero_cliente}</code>
-            {cliente.numero_contrato && <code style={{ background: 'var(--verde-claro)', color: 'var(--verde-oscuro)', padding: '3px 8px', borderRadius: 4, fontSize: 12 }}>{cliente.numero_contrato}</code>}
+            <code style={{ background: '#f3f4f6', padding: '3px 8px', borderRadius: 4, fontSize: 12, color: '#374151' }}>{cliente.numero_cliente}</code>
+            {cliente.numero_contrato && <code style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: 4, fontSize: 12 }}>{cliente.numero_contrato}</code>}
             <span className={`estado ${claseEstado(cliente.estado)}`}>{cliente.estado}</span>
-            {cliente.estado_proyecto && <span className="estado" style={{ background: 'var(--azul-claro)', color: '#1e40af' }}>{cliente.estado_proyecto}{cliente.porcentaje_avance > 0 ? ` ${cliente.porcentaje_avance}%` : ''}</span>}
+            {cliente.estado_proyecto && <span className="estado" style={{ background: '#e0e7ff', color: '#3730a3' }}>{cliente.estado_proyecto}{cliente.porcentaje_avance > 0 ? ` ${cliente.porcentaje_avance}%` : ''}</span>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -271,6 +280,12 @@ export default function ClienteDetalle() {
           )}
         </div>
       </div>
+
+      {pagosVencidos.length > 0 && (
+        <div className="alerta alerta-error" style={{ marginBottom: 15 }}>
+          <strong>Atencion:</strong> este cliente tiene {pagosVencidos.length} pago(s) vencido(s) por un total de {fmtEuros(importeVencido)}. Revisa la pestana Pagos.
+        </div>
+      )}
 
       <div className="cliente-detalle-tabs">
         <button className={pestana === 'datos' ? 'active' : ''} onClick={() => setPestana('datos')}>Datos</button>
@@ -351,8 +366,8 @@ export default function ClienteDetalle() {
             <div>
               <label>Avance ({c.porcentaje_avance || 0}%)</label>
               {editando ? <input type="range" min="0" max="100" step="5" value={c.porcentaje_avance || 0} onChange={(e) => set('porcentaje_avance', parseInt(e.target.value, 10))} /> : (
-                <div style={{ background: 'var(--gris-2)', borderRadius: 4, overflow: 'hidden', height: 24 }}>
-                  <div style={{ background: 'var(--verde)', width: (c.porcentaje_avance || 0) + '%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 600 }}>{c.porcentaje_avance || 0}%</div>
+                <div style={{ background: '#f3f4f6', borderRadius: 4, overflow: 'hidden', height: 24 }}>
+                  <div style={{ background: '#047857', width: (c.porcentaje_avance || 0) + '%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 600 }}>{c.porcentaje_avance || 0}%</div>
                 </div>
               )}
             </div>
@@ -383,8 +398,8 @@ export default function ClienteDetalle() {
             <div className="totales">
               <div className="totales-grid">
                 <div><div className="label">Total contratado</div><div className="valor">{fmtEuros(cliente.total)}</div></div>
-                <div><div className="label">Cobrado</div><div className="valor" style={{ color: 'var(--verde)' }}>{fmtEuros(totalCobrado)}</div></div>
-                <div><div className="label">Pendiente</div><div className="valor" style={{ color: 'var(--amarillo)' }}>{fmtEuros(totalPendiente)}</div></div>
+                <div><div className="label">Cobrado</div><div className="valor" style={{ color: '#047857' }}>{fmtEuros(totalCobrado)}</div></div>
+                <div><div className="label">Pendiente</div><div className="valor" style={{ color: importeVencido > 0 ? '#dc2626' : '#92400e' }}>{fmtEuros(totalPendiente)}</div></div>
               </div>
             </div>
           </div>
@@ -404,10 +419,10 @@ export default function ClienteDetalle() {
                 <thead><tr><th>Concepto</th><th>Importe</th><th>Fecha esperada</th><th>Fecha pago</th><th>Estado</th><th>Metodo</th><th></th></tr></thead>
                 <tbody>
                   {pagos.map((p) => {
-                    const vencido = p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < new Date();
+                    const vencido = p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy;
                     return (
                       <tr key={p.id} style={vencido ? { background: '#fef2f2' } : {}}>
-                        <td>{p.concepto}{p.es_recurrente && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--azul-claro)', color: '#1e40af', padding: '1px 6px', borderRadius: 8 }}>Recurrente</span>}</td>
+                        <td>{p.concepto}{p.es_recurrente && <span style={{ marginLeft: 6, fontSize: 10, background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: 8 }}>Recurrente</span>}</td>
                         <td style={{ fontWeight: 600 }}>{fmtEuros(p.importe)}</td>
                         <td style={{ fontSize: 12 }}>{p.fecha_esperada ? new Date(p.fecha_esperada).toLocaleDateString('es-ES') : '-'}</td>
                         <td style={{ fontSize: 12 }}>{p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString('es-ES') : '-'}</td>
@@ -432,8 +447,8 @@ export default function ClienteDetalle() {
         <div>
           <div className="card">
             <h2>Generar documentos</h2>
-            <p style={{ fontSize: 13, color: 'var(--gris-5)', marginBottom: 15 }}>
-              Pulsa cualquier boton para previsualizar el documento ya rellenado. Despues podras descargarlo en PDF.
+            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 15 }}>
+              Pulsa cualquier boton para previsualizar el documento ya rellenado. Despues podras imprimirlo o descargarlo en PDF.
             </p>
             {!cliente.numero_contrato && (
               <div className="alerta alerta-aviso">
@@ -450,8 +465,8 @@ export default function ClienteDetalle() {
           {cliente.firma_cliente && (
             <div className="card">
               <h2>Firma del cliente</h2>
-              <p style={{ fontSize: 12, color: 'var(--gris-5)' }}>Firmado el {new Date(cliente.fecha_firma).toLocaleString('es-ES')}</p>
-              <img src={cliente.firma_cliente} alt="Firma" style={{ maxWidth: 300, border: '1px solid var(--gris-3)', borderRadius: 6, marginTop: 10 }} />
+              <p style={{ fontSize: 12, color: '#6b7280' }}>Firmado el {new Date(cliente.fecha_firma).toLocaleString('es-ES')}</p>
+              <img src={cliente.firma_cliente} alt="Firma" style={{ maxWidth: 300, border: '1px solid #e5e7eb', borderRadius: 6, marginTop: 10 }} />
             </div>
           )}
 
@@ -467,7 +482,7 @@ export default function ClienteDetalle() {
                     <tr key={d.id}>
                       <td>{d.nombre}</td>
                       <td>{TIPOS_DOC.find((t) => t.id === d.tipo)?.nombre || d.tipo}</td>
-                      <td style={{ fontSize: 12, color: 'var(--gris-5)' }}>{new Date(d.creado_en).toLocaleString('es-ES')}</td>
+                      <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(d.creado_en).toLocaleString('es-ES')}</td>
                       <td>
                         <button className="btn-outline btn-sm" onClick={() => descargarPDF(d.tipo)}>Re-descargar</button>{' '}
                         <button className="btn-danger btn-sm" onClick={() => borrarDocumento(d.id)}>Borrar</button>
@@ -484,7 +499,7 @@ export default function ClienteDetalle() {
       {pestana === 'archivos' && (
         <div className="card">
           <h2>Archivos del cliente</h2>
-          <p style={{ fontSize: 13, color: 'var(--gris-5)', marginBottom: 15 }}>Sube logos, briefings, documentacion (max 8 MB por archivo).</p>
+          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 15 }}>Sube aqui contratos firmados escaneados, DNI, briefings, materiales del cliente. Maximo 8 MB por archivo.</p>
           <input type="file" onChange={subirArchivo} style={{ marginBottom: 20 }} />
           {archivos.length === 0 ? (
             <div className="empty"><p>Sin archivos subidos todavia.</p></div>
@@ -495,9 +510,9 @@ export default function ClienteDetalle() {
                 {archivos.map((a) => (
                   <tr key={a.id}>
                     <td>{a.nombre}</td>
-                    <td style={{ fontSize: 12, color: 'var(--gris-5)' }}>{a.tipo}</td>
+                    <td style={{ fontSize: 12, color: '#6b7280' }}>{a.tipo}</td>
                     <td style={{ fontSize: 12 }}>{(a.tamano / 1024).toFixed(1)} KB</td>
-                    <td style={{ fontSize: 12, color: 'var(--gris-5)' }}>{new Date(a.creado_en).toLocaleDateString('es-ES')}</td>
+                    <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(a.creado_en).toLocaleDateString('es-ES')}</td>
                     <td>
                       <a href={api.archivoDownloadUrl(a.id)} className="btn-outline btn-sm" style={{ display: 'inline-block', textDecoration: 'none' }}>Descargar</a>{' '}
                       <button className="btn-danger btn-sm" onClick={() => borrarArchivo(a.id)}>Borrar</button>
@@ -526,6 +541,7 @@ export default function ClienteDetalle() {
             <div className="modal-body"><div dangerouslySetInnerHTML={{ __html: previewDoc.html }} /></div>
             <div className="modal-footer">
               <button className="btn-outline" onClick={() => setPreviewDoc(null)}>Cerrar</button>
+              <button className="btn-outline" onClick={() => imprimirDocumento(previewDoc.html)}>Imprimir</button>
               <button className="btn-primary" onClick={async () => { await descargarPDF(previewDoc.tipo, previewDoc.html); setPreviewDoc(null); }}>Descargar PDF</button>
             </div>
           </div>

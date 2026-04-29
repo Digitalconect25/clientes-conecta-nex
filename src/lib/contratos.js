@@ -1,6 +1,3 @@
-// Generador de HTML para los 3 documentos legales
-// Devuelve un string HTML que se renderiza en pantalla y se exporta a PDF
-
 const FORMAS_PAGO_TXT = {
   '50% al inicio, 50% a la entrega': '50% en el momento de la firma del presente documento, 50% restante a la entrega del trabajo.',
   '30% al inicio, 70% a la entrega': '30% en el momento de la firma del presente documento, 70% restante a la entrega del trabajo.',
@@ -26,6 +23,11 @@ function tablaServicios(servicios) {
     html += `<tr><td style="padding:8px;border:1px solid #ddd">${s.nombre}</td><td style="padding:8px;text-align:center;border:1px solid #ddd">${s.cantidad}</td><td style="padding:8px;text-align:right;border:1px solid #ddd">${fmtEuros(s.precio)}</td><td style="padding:8px;text-align:right;border:1px solid #ddd">${fmtEuros(sub)}</td></tr>`;
   });
   return html + '</tbody></table>';
+}
+
+function cabeceraLogo(e) {
+  if (!e.logo_url) return '';
+  return `<div style="text-align:center;margin-bottom:20px"><img src="${e.logo_url}" alt="Logo" style="max-height:80px;max-width:300px"/></div>`;
 }
 
 function bloqueComun(c, e) {
@@ -86,7 +88,7 @@ const CSS_BASE = `
 export function generarHojaEncargo(c, e, firmaURL) {
   const b = bloqueComun(c, e);
   const t = { base: c.base_imponible, iva: c.iva_importe, total: c.total };
-  return CSS_BASE + `
+  return CSS_BASE + cabeceraLogo(e) + `
 <h1>HOJA DE ENCARGO</h1>
 <p class="sub">N de expediente: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
@@ -109,34 +111,29 @@ ${b.descBl}
 
 <h2>5. Precio</h2>
 <div class="tot"><p>Base imponible: <strong>${fmtEuros(t.base)}</strong></p><p>IVA (${c.iva}%): <strong>${fmtEuros(t.iva)}</strong></p><p class="tot-final">TOTAL: ${fmtEuros(t.total)}</p></div>
-<p>Los precios se expresan en euros. El Prestador, en su condicion de autonomo, emitira la correspondiente factura conforme a la normativa fiscal vigente.</p>
 
 <h2>6. Forma de pago</h2>
 <p>${b.fpTxt}</p>
 ${b.ibanBl}
-<p>La falta de pago en los plazos pactados podra conllevar la suspension inmediata del trabajo y devengara el interes legal del dinero hasta su completo abono.</p>
+<p>La falta de pago en los plazos pactados podra conllevar la suspension inmediata del trabajo.</p>
 
 <h2>7. Alcance del trabajo y modificaciones</h2>
-<p>El alcance del trabajo se cine a lo descrito en la clausula 3. Cualquier ampliacion, modificacion sustancial o trabajo adicional solicitado por el Cliente fuera del alcance inicial debera presupuestarse de forma separada y aceptarse por escrito antes de su ejecucion.</p>
-<p>Se incluyen hasta dos rondas de revisiones razonables sobre el trabajo entregado. Las revisiones adicionales se facturaran a 30 EUR/hora.</p>
+<p>El alcance del trabajo se cine a lo descrito en la clausula 3. Cualquier ampliacion o trabajo adicional debera presupuestarse de forma separada y aceptarse por escrito antes de su ejecucion. Se incluyen hasta dos rondas de revisiones razonables. Las revisiones adicionales se facturaran a 30 EUR/hora.</p>
 
 <h2>8. Entrega y conformidad</h2>
-<p>El Prestador entregara el trabajo por los medios acordados. El Cliente dispondra de un plazo de 7 dias naturales desde la entrega para revisar el trabajo y comunicar por escrito cualquier reclamacion. Transcurrido dicho plazo sin manifestacion expresa, se entendera aceptado de forma tacita.</p>
+<p>El Cliente dispondra de un plazo de 7 dias naturales (14 si es consumidor) desde la entrega para revisar el trabajo y comunicar por escrito cualquier reclamacion. Transcurrido dicho plazo sin manifestacion expresa, se entendera aceptado de forma tacita.</p>
 
 <h2>9. Politica de Privacidad y Proteccion de Datos</h2>
 <p>En cumplimiento del Reglamento (UE) 2016/679 (RGPD) y de la Ley Organica 3/2018 (LOPDGDD), se informa al Cliente:</p>
 <p><strong>Responsable del tratamiento:</strong> ${e.nombre}, NIF ${e.nif}, con domicilio en ${b.dirEm}.</p>
 <p><strong>Datos de contacto:</strong> ${e.email} - ${e.telefono}.</p>
 <p><strong>Finalidad:</strong> gestionar la relacion contractual derivada del presente encargo, prestar el servicio contratado, emitir la facturacion correspondiente y cumplir con las obligaciones legales aplicables al Prestador.</p>
-<p><strong>Categorias de datos:</strong> identificativos (nombre, NIF, direccion, correo, telefono) y economicos derivados de la facturacion.</p>
 <p><strong>Base juridica:</strong> ejecucion de un contrato (art. 6.1.b RGPD) y cumplimiento de obligaciones legales del responsable (art. 6.1.c RGPD).</p>
-<p><strong>Destinatarios:</strong> los datos no se cederan a terceros salvo obligacion legal o cuando resulte necesario para encargados de tratamiento estrictamente vinculados a la prestacion del servicio (gestoria, hosting), siempre con las garantias exigidas por la normativa.</p>
-<p><strong>Plazo de conservacion:</strong> durante la vigencia de la relacion contractual y, posteriormente, durante los plazos legalmente exigibles (minimo 6 anos para obligaciones fiscales y contables).</p>
-<p><strong>Derechos del interesado:</strong> el Cliente podra ejercer los derechos de acceso, rectificacion, supresion, oposicion, limitacion del tratamiento y portabilidad escribiendo a ${e.email}, acompanando copia de su DNI. Asimismo, podra presentar reclamacion ante la Agencia Espanola de Proteccion de Datos (www.aepd.es).</p>
-<p>El Cliente declara haber sido informado de los anteriores extremos y consiente expresamente el tratamiento de sus datos personales para las finalidades descritas.</p>
+<p><strong>Conservacion:</strong> durante la vigencia de la relacion contractual y los plazos legalmente exigibles (minimo 6 anos para obligaciones fiscales y contables).</p>
+<p><strong>Derechos del interesado:</strong> el Cliente podra ejercer los derechos de acceso, rectificacion, supresion, oposicion, limitacion del tratamiento y portabilidad escribiendo a ${e.email}, acompanando copia de su DNI. Podra presentar reclamacion ante la AEPD (www.aepd.es).</p>
 
 <h2>10. Aceptacion</h2>
-<p>Ambas partes, tras leer el presente documento, manifiestan su conformidad con todas y cada una de las clausulas y lo firman en senal de aceptacion.</p>
+<p>Ambas partes, tras leer el presente documento, manifiestan su conformidad y lo firman en senal de aceptacion.</p>
 
 ${bloqueFirmas(c, e, firmaURL)}
 `;
@@ -144,7 +141,7 @@ ${bloqueFirmas(c, e, firmaURL)}
 
 export function generarCesion(c, e, firmaURL) {
   const b = bloqueComun(c, e);
-  return CSS_BASE + `
+  return CSS_BASE + cabeceraLogo(e) + `
 <h1>CESION DE DERECHOS Y PROTECCION DE DATOS</h1>
 <p class="sub">Anexo a la Hoja de Encargo n: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
@@ -152,35 +149,31 @@ export function generarCesion(c, e, firmaURL) {
 <p><strong>Prestador:</strong> ${e.nombre}, NIF ${e.nif}.<br>
 <strong>Cliente:</strong> ${c.nombre}, ${b.tipoDoc} ${c.nif}.</p>
 
-<h2>1. Objeto del presente documento</h2>
-<p>El presente documento desarrolla y complementa la Hoja de Encargo firmada entre las partes, regulando de forma especifica los materiales aportados por el Cliente, la cesion de derechos sobre el trabajo entregado, las garantias y limitaciones de responsabilidad, los servicios de terceros, la confidencialidad y el tratamiento detallado de datos personales.</p>
+<h2>1. Materiales aportados por el Cliente</h2>
+<p>El Cliente declara y garantiza que todos los materiales (textos, imagenes, videos, logotipos, marcas, bases de datos y cualquier otro contenido) que entregue al Prestador son de su titularidad o cuenta con licencia o autorizacion expresa para su utilizacion.</p>
+<p>El Cliente exime al Prestador de cualquier responsabilidad derivada del uso de dichos materiales.</p>
 
-<h2>2. Materiales aportados por el Cliente</h2>
-<p>El Cliente declara y garantiza que todos los materiales (textos, imagenes, videos, logotipos, marcas, bases de datos y cualquier otro contenido) que entregue al Prestador para su uso en el proyecto son de su titularidad o cuenta con licencia o autorizacion expresa para su utilizacion.</p>
-<p>El Cliente exime al Prestador de cualquier responsabilidad derivada del uso de dichos materiales, asumiendo personalmente las consecuencias legales, economicas o de cualquier otra naturaleza que pudieran derivarse de un eventual uso indebido o sin autorizacion.</p>
-
-<h2>3. Cesion de derechos sobre el trabajo entregado</h2>
-<p>Una vez abonado integramente el precio acordado en la Hoja de Encargo, el Prestador cede al Cliente, en regimen de exclusividad y para todo el mundo, los derechos de explotacion (reproduccion, distribucion, comunicacion publica y transformacion) sobre el trabajo final entregado, durante el plazo maximo permitido por la legislacion vigente.</p>
+<h2>2. Cesion de derechos sobre el trabajo entregado</h2>
+<p>Una vez abonado integramente el precio acordado, el Prestador cede al Cliente, en regimen de exclusividad y para Espana, los derechos de explotacion (reproduccion, distribucion, comunicacion publica y transformacion) sobre el trabajo final entregado, durante un plazo de DIEZ (10) anos renovables.</p>
 <p>La cesion NO incluye los archivos editables intermedios, librerias de terceros, plantillas premium o licencias de software, ni elementos predisenados (iconos, fuentes, recursos graficos) sujetos a licencias especificas, salvo que se acuerde lo contrario por escrito.</p>
-<p>El Prestador conserva en todo caso el derecho moral sobre su obra y se reserva el derecho a incluir el trabajo realizado en su porfolio profesional con fines de promocion, salvo manifestacion expresa en contrario por parte del Cliente.</p>
+<p>El Prestador conserva en todo caso el derecho moral sobre su obra.</p>
 
-<h2>4. Garantias y limitacion de responsabilidad</h2>
-<p>El Prestador entrega el trabajo en estado de funcionamiento conforme al alcance descrito en la Hoja de Encargo. Se ofrece un periodo de garantia de 30 dias naturales desde la entrega para corregir, sin coste adicional, defectos directamente atribuibles al Prestador.</p>
-<p>Quedan EXCLUIDAS de la garantia: (a) modificaciones realizadas por el Cliente o por terceros tras la entrega; (b) caidas, errores o fallos derivados de servicios contratados con terceros (hosting, dominios, pasarelas de pago, herramientas externas, APIs); (c) cambios o actualizaciones de plataformas externas posteriores a la entrega; (d) ataques informaticos o usos indebidos del sistema entregado.</p>
-<p>La responsabilidad maxima del Prestador queda limitada al importe efectivamente abonado por el Cliente.</p>
+<h2>3. Garantias y limitacion de responsabilidad</h2>
+<p>Se ofrece un periodo de garantia de 30 dias naturales desde la entrega para corregir, sin coste adicional, defectos directamente atribuibles al Prestador.</p>
+<p>Quedan EXCLUIDAS de la garantia: modificaciones realizadas por el Cliente o terceros tras la entrega; fallos derivados de servicios contratados con terceros; cambios o actualizaciones de plataformas externas; ataques informaticos o usos indebidos.</p>
+<p>La responsabilidad maxima del Prestador queda limitada al importe abonado, salvo dolo o negligencia grave conforme al art. 1102 CC.</p>
 
-<h2>5. Servicios de terceros, cookies y analitica</h2>
-<p>El Cliente entiende y acepta que el trabajo entregado puede integrar servicios de terceros (Google Analytics, Meta Pixel, herramientas de email marketing, pasarelas de pago, plugins, etc.). El Cliente es el unico responsable de cumplir con la normativa aplicable a dichos servicios, especialmente en materia de cookies, informacion al usuario y obtencion de consentimiento cuando sea exigible.</p>
+<h2>4. Servicios de terceros, cookies y analitica</h2>
+<p>El Cliente es el unico responsable de cumplir con la normativa aplicable a servicios de terceros integrados (Google Analytics, Meta Pixel, plugins, etc.), especialmente en materia de cookies (Directiva 2002/58/CE) e informacion al usuario.</p>
 
-<h2>6. Confidencialidad</h2>
-<p>Ambas partes se obligan a guardar la mas estricta confidencialidad sobre la informacion, datos y documentacion a la que tengan acceso con motivo del presente encargo, durante un periodo de dos (2) anos desde la finalizacion del encargo.</p>
+<h2>5. Confidencialidad</h2>
+<p>Ambas partes se obligan a guardar confidencialidad sobre la informacion intercambiada durante un periodo de dos (2) anos desde la finalizacion del encargo.</p>
 
-<h2>7. Proteccion de datos personales</h2>
-<p>Si el desarrollo del servicio implica el acceso del Prestador a datos personales de los que el Cliente sea responsable, las partes suscribiran el correspondiente Contrato de Encargado de Tratamiento conforme al articulo 28 RGPD.</p>
-<p>Finalizado el proyecto, el Prestador devolvera o suprimira, a eleccion del Cliente, todos los datos personales del Cliente o de terceros a los que haya tenido acceso, salvo aquellos que deba conservar por imperativo legal.</p>
-<p>El Cliente CEDE expresamente al Prestador los datos personales necesarios para la ejecucion del encargo: identificacion y comunicacion durante el proyecto, emision de facturas, y inclusion del Cliente como referencia en el porfolio del Prestador (salvo oposicion expresa).</p>
+<h2>6. Tratamiento de datos personales</h2>
+<p>Si el desarrollo del servicio implica acceso del Prestador a datos personales de los que el Cliente sea responsable, las partes suscribiran el Contrato de Encargado de Tratamiento conforme al articulo 28 RGPD.</p>
+<p>Finalizado el proyecto, el Prestador devolvera o suprimira los datos personales, salvo aquellos que deba conservar por imperativo legal.</p>
 
-<h2>8. Aceptacion</h2>
+<h2>7. Aceptacion</h2>
 <p>Las partes manifiestan haber leido y comprendido el presente documento, aceptando todas y cada una de sus clausulas.</p>
 
 ${bloqueFirmas(c, e, firmaURL)}
@@ -190,71 +183,74 @@ ${bloqueFirmas(c, e, firmaURL)}
 export function generarContrato(c, e, firmaURL) {
   const b = bloqueComun(c, e);
   const t = { base: c.base_imponible, iva: c.iva_importe, total: c.total };
-  return CSS_BASE + `
+  const esConsumidor = c.tipo_persona === 'Fisica';
+  return CSS_BASE + cabeceraLogo(e) + `
 <h1>CONTRATO DE PRESTACION DE SERVICIOS PROFESIONALES</h1>
 <p class="sub">N de contrato: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
 <h2>REUNIDOS</h2>
-<p>De una parte, <strong>${e.nombre}</strong>, mayor de edad, con NIF ${e.nif} y domicilio profesional en ${b.dirEm}, profesional autonomo dado de alta en el RETA y en el censo del IAE en el correspondiente epigrafe${b.epi}, en adelante "el Profesional".</p>
+<p>De una parte, <strong>${e.nombre}</strong>, mayor de edad, con NIF ${e.nif} y domicilio profesional en ${b.dirEm}, profesional autonomo dado de alta en el RETA y en el censo del IAE${b.epi}, en adelante "el Profesional".</p>
 <p>De otra parte, <strong>${c.nombre}</strong>, ${b.tipoFrase} ${c.nif}, con domicilio en ${b.dirCl}${b.contBl}, en adelante "el Cliente".</p>
-<p>Ambas partes intervienen en su propio nombre y derecho y se reconocen mutuamente capacidad legal suficiente para suscribir el presente contrato, a cuyo efecto,</p>
 
 <h2>EXPONEN</h2>
 <p>I. Que el Profesional desarrolla actividad economica en el ambito del diseno web, marketing digital y servicios afines.</p>
-<p>II. Que el Cliente desea contratar los servicios profesionales del Profesional para la ejecucion del trabajo descrito en la clausula primera.</p>
+<p>II. Que el Cliente desea contratar los servicios profesionales del Profesional.</p>
 <p>III. Que ambas partes han alcanzado un acuerdo sobre el alcance, plazo, precio y condiciones de la prestacion.</p>
 
 <h2>CLAUSULAS</h2>
 
 <h3>Primera. Objeto</h3>
-<p>El Profesional prestara al Cliente, en regimen de arrendamiento de servicios profesionales, los siguientes servicios:</p>
+<p>El Profesional prestara al Cliente, en regimen de arrendamiento de servicios profesionales (art. 1544 CC), los siguientes servicios:</p>
 ${b.tabla}
 ${b.descBl}
-<p>La relacion entre las partes es estrictamente mercantil y profesional, no existiendo ningun tipo de vinculo laboral, de exclusividad ni de subordinacion entre ellas.</p>
+<p>La relacion entre las partes es estrictamente mercantil y profesional, no existiendo vinculo laboral, de exclusividad ni subordinacion.</p>
 
 <h3>Segunda. Duracion</h3>
-<p>El presente contrato entrara en vigor en la fecha de su firma y finalizara con la entrega integra del trabajo, prevista en un plazo de ${c.plazo || 'a determinar'}.</p>
+<p>Vigor en la fecha de firma. Plazo previsto de ejecucion: ${c.plazo || 'a determinar'}. Cualquier prorroga debera acordarse por escrito.</p>
 
 <h3>Tercera. Precio y forma de pago</h3>
 <div class="tot"><p>Base imponible: <strong>${fmtEuros(t.base)}</strong></p><p>IVA (${c.iva}%): <strong>${fmtEuros(t.iva)}</strong></p><p class="tot-final">TOTAL: ${fmtEuros(t.total)}</p></div>
 <p>Forma de pago: ${b.fpTxt}</p>
 ${b.ibanBl}
 
-<h3>Cuarta. Gastos de publicidad y servicios contratados a terceros</h3>
-<p>Cuando el servicio incluya gestion de campanas publicitarias en plataformas de terceros (Meta Ads, Google Ads, etc.), el coste de la inversion publicitaria es independiente del precio acordado y sera directamente abonado por el Cliente al proveedor correspondiente. Lo mismo aplica a hosting, dominios, plugins premium y licencias de software.</p>
+<h3>Cuarta. Gastos a terceros</h3>
+<p>Cuando el servicio incluya campanas publicitarias en plataformas de terceros, el coste de la inversion publicitaria es independiente del precio acordado y sera abonado directamente por el Cliente al proveedor. Igual aplica a hosting, dominios, plugins premium y licencias de software.</p>
 
 <h3>Quinta. Obligaciones del Cliente</h3>
-<p>El Cliente se obliga a: (a) facilitar al Profesional, en tiempo y forma, todos los materiales, accesos, contrasenas e informacion necesarios; (b) revisar las entregas dentro de los plazos pactados; (c) abonar puntualmente las cantidades pactadas; (d) garantizar la titularidad sobre los materiales aportados.</p>
+<p>Facilitar materiales, accesos y contrasenas en tiempo y forma; revisar entregas en plazos pactados; abonar puntualmente; garantizar la titularidad sobre los materiales aportados.</p>
 
 <h3>Sexta. Obligaciones del Profesional</h3>
-<p>El Profesional se obliga a: (a) prestar el servicio con la diligencia profesional exigible; (b) cumplir el plazo de entrega salvo causas justificadas; (c) mantener informado al Cliente del estado del trabajo; (d) guardar confidencialidad sobre la informacion a la que tenga acceso.</p>
+<p>Prestar el servicio con la diligencia profesional exigible (art. 1104 CC); cumplir el plazo de entrega salvo causas justificadas; mantener informado al Cliente; guardar confidencialidad.</p>
 
 <h3>Septima. Entrega y aceptacion</h3>
-<p>El Cliente dispondra de SIETE (7) dias naturales desde la entrega para revisar el trabajo y notificar por escrito cualquier observacion. Transcurrido dicho plazo sin manifestacion expresa, el trabajo se entendera tacitamente aceptado.</p>
+<p>El Cliente dispondra de SIETE (7) dias naturales desde la entrega para revisar y notificar por escrito cualquier observacion. Para clientes consumidores, el plazo se amplia a CATORCE (14) dias naturales conforme al art. 102 RDL 1/2007.</p>
 
 <h3>Octava. Propiedad intelectual y cesion de derechos</h3>
-<p>Los terminos de cesion de derechos sobre el trabajo realizado se rigen por el documento "Cesion de Derechos y Proteccion de Datos" anexo al presente, que las partes firman en unidad de acto.</p>
+<p>Los terminos de cesion se rigen por el documento "Cesion de Derechos y Proteccion de Datos" anexo, que forma parte integrante e inseparable del presente.</p>
 
-<h3>Novena. Confidencialidad</h3>
-<p>Las partes se obligan reciprocamente a guardar absoluta confidencialidad sobre cualquier informacion al que tengan acceso con motivo del presente contrato, durante su vigencia y por un plazo de DOS (2) anos desde su finalizacion.</p>
+<h3>Novena. Confidencialidad y no captacion</h3>
+<p>Confidencialidad reciproca durante la vigencia y por DOS (2) anos tras su finalizacion. Las partes se obligan a no captar empleados, colaboradores o subcontratistas de la otra parte durante la vigencia del contrato y un (1) ano posterior.</p>
 
-<h3>Decima. Proteccion de datos personales</h3>
-<p>El tratamiento de datos personales se rige por el RGPD y la LOPDGDD. Responsable: ${e.nombre}, NIF ${e.nif}. Contacto: ${e.email}. Finalidad: gestion contractual, prestacion del servicio, facturacion y atencion al Cliente. Conservacion: durante la vigencia y los plazos legales aplicables (minimo 6 anos). Derechos del interesado: acceso, rectificacion, supresion, oposicion, limitacion y portabilidad, ejercitables ante el responsable, asi como reclamacion ante la AEPD (www.aepd.es).</p>
+<h3>Decima. Proteccion de datos</h3>
+<p>Conforme al RGPD y LOPDGDD. Responsable del tratamiento: ${e.nombre}, NIF ${e.nif}. Contacto: ${e.email}. Si el servicio implica acceso a datos personales del Cliente, las partes suscribiran el correspondiente Contrato de Encargado de Tratamiento (art. 28 RGPD).</p>
 
-<h3>Undecima. Resolucion del contrato</h3>
-<p>El presente contrato podra resolverse por mutuo acuerdo, por incumplimiento grave de cualquiera de las partes (previa notificacion con un plazo razonable para subsanar) o por las demas causas legalmente previstas. En caso de resolucion imputable al Cliente, el Profesional tendra derecho al cobro del trabajo efectivamente realizado.</p>
+<h3>Undecima. Inteligencia Artificial</h3>
+<p>El Profesional informa que en la prestacion de algunos servicios podra utilizar herramientas de Inteligencia Artificial conforme al Reglamento (UE) 2024/1689. El uso de IA se hara siempre bajo supervision humana. El Cliente podra solicitar la no utilizacion de IA en su proyecto.</p>
 
-<h3>Duodecima. Limitacion de responsabilidad</h3>
-<p>La responsabilidad del Profesional queda limitada al importe efectivamente abonado por el Cliente. En ningun caso respondera por danos indirectos, lucro cesante, perdida de datos, perdida de oportunidades de negocio ni por fallos atribuibles a servicios de terceros.</p>
+<h3>Duodecima. Resolucion</h3>
+<p>Resoluble por mutuo acuerdo, por incumplimiento grave (art. 1124 CC, previa notificacion para subsanar) o por las causas legalmente previstas. En caso de resolucion imputable al Cliente, el Profesional tendra derecho al cobro del trabajo efectivamente realizado.</p>
 
-<h3>Decimotercera. Notificaciones</h3>
-<p>Las notificaciones entre las partes se realizaran por correo electronico: Profesional: ${e.email}. Cliente: ${c.email || '________________'}.</p>
+<h3>Decimotercera. Limitacion de responsabilidad</h3>
+<p>La responsabilidad del Profesional queda limitada al importe efectivamente abonado por el Cliente, salvo en caso de dolo o negligencia grave (art. 1102 CC). No respondera por danos indirectos, lucro cesante, perdida de datos ni fallos atribuibles a servicios de terceros.</p>
 
-<h3>Decimocuarta. Clausula de subsistencia</h3>
-<p>Si alguna de las clausulas fuera declarada nula, dicha declaracion no afectara a la validez del resto del contrato.</p>
+<h3>Decimocuarta. Notificaciones</h3>
+<p>Las notificaciones se realizaran por correo electronico: Profesional: ${e.email}. Cliente: ${c.email || '________________'}.</p>
 
-<h3>Decimoquinta. Legislacion aplicable y jurisdiccion</h3>
-<p>El presente contrato se rige por la legislacion espanola. Para la resolucion de cualquier controversia, las partes se someten a los Juzgados y Tribunales de ${e.ciudad}, sin perjuicio de los fueros imperativamente aplicables cuando el Cliente tenga la consideracion de consumidor conforme al Real Decreto Legislativo 1/2007.</p>
+<h3>Decimoquinta. Subsistencia</h3>
+<p>Si alguna clausula fuera declarada nula, ello no afectara a la validez del resto del contrato.</p>
+
+<h3>Decimosexta. Legislacion y jurisdiccion</h3>
+<p>El presente contrato se rige por la legislacion espanola. Para cualquier controversia, las partes se someten a los Juzgados y Tribunales de ${e.ciudad}, con renuncia expresa a su propio fuero. ${esConsumidor ? 'No obstante, cuando el Cliente tenga la consideracion de consumidor conforme al RDL 1/2007, sera competente el Juzgado del domicilio del consumidor.' : ''}</p>
 
 <p>Y en prueba de conformidad, ambas partes firman el presente contrato por duplicado y a un solo efecto.</p>
 

@@ -6,12 +6,13 @@ import { fmtEuros } from '../lib/contratos.js';
 export default function Dashboard() {
   const navigate = useNavigate();
   const [clientes, setClientes] = useState([]);
+  const [pagos, setPagos] = useState([]);
   const [emisor, setEmisor] = useState(null);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.clientesList(), api.emisorGet()])
-      .then(([cs, em]) => { setClientes(cs); setEmisor(em); })
+    Promise.all([api.clientesList(), api.pagosList(), api.emisorGet()])
+      .then(([cs, ps, em]) => { setClientes(cs); setPagos(ps); setEmisor(em); })
       .catch(console.error)
       .finally(() => setCargando(false));
   }, []);
@@ -19,11 +20,23 @@ export default function Dashboard() {
   if (cargando) return <div className="empty">Cargando...</div>;
 
   const totalClientes = clientes.length;
-  const totalFacturado = clientes.reduce((s, c) => s + Number(c.total || 0), 0);
-  const pendientes = clientes.filter((c) => c.estado === 'Pendiente firma').length;
-  const firmados = clientes.filter((c) => c.estado === 'Firmado').length;
-  const recientes = clientes.slice(0, 5);
+  const enProceso = clientes.filter(c => c.estado_proyecto === 'En proceso').length;
+  const finalizados = clientes.filter(c => c.estado_proyecto === 'Finalizado' || c.estado_proyecto === 'Entregado').length;
 
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const finMes = new Date(hoy.getFullYear(), hoy.getMonth()+1, 0);
+
+  const cobradoMes = pagos.filter(p => p.estado === 'Cobrado' && p.fecha_pago && new Date(p.fecha_pago) >= inicioMes && new Date(p.fecha_pago) <= finMes).reduce((s, p) => s + Number(p.importe), 0);
+  const pendiente = pagos.filter(p => p.estado === 'Pendiente').reduce((s, p) => s + Number(p.importe), 0);
+  const vencidos = pagos.filter(p => p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy);
+  const importeVencido = vencidos.reduce((s, p) => s + Number(p.importe), 0);
+
+  // MRR (ingresos recurrentes mensuales)
+  const recurrentesActivos = pagos.filter(p => p.es_recurrente && p.fecha_esperada && new Date(p.fecha_esperada) >= inicioMes && new Date(p.fecha_esperada) <= finMes);
+  const mrr = recurrentesActivos.reduce((s, p) => s + Number(p.importe), 0);
+
+  const recientes = clientes.slice(0, 5);
   const sinDatos = !emisor?.nif || emisor.nif.length < 5;
 
   return (
@@ -39,11 +52,25 @@ export default function Dashboard() {
         </div>
       )}
 
+      {vencidos.length > 0 && (
+        <div className="alerta alerta-error">
+          <strong>Atencion:</strong> tienes {vencidos.length} cobro(s) vencido(s) por {fmtEuros(importeVencido)}. Revisa la pestana Pagos en cada cliente.
+        </div>
+      )}
+
+      <h2 style={{ marginTop: 20 }}>Resumen del negocio</h2>
       <div className="dashboard-stats">
-        <div className="stat-card"><div className="label">Total clientes</div><div className="valor">{totalClientes}</div></div>
-        <div className="stat-card"><div className="label">Facturado total</div><div className="valor">{fmtEuros(totalFacturado)}</div></div>
-        <div className="stat-card"><div className="label">Pendientes firma</div><div className="valor">{pendientes}</div></div>
-        <div className="stat-card"><div className="label">Firmados</div><div className="valor">{firmados}</div></div>
+        <div className="stat-card"><div className="label">Clientes totales</div><div className="valor">{totalClientes}</div></div>
+        <div className="stat-card"><div className="label">En proceso</div><div className="valor">{enProceso}</div></div>
+        <div className="stat-card"><div className="label">Finalizados</div><div className="valor">{finalizados}</div></div>
+      </div>
+
+      <h2 style={{ marginTop: 25 }}>Pagos</h2>
+      <div className="dashboard-stats">
+        <div className="stat-card"><div className="label">Cobrado este mes</div><div className="valor">{fmtEuros(cobradoMes)}</div></div>
+        <div className="stat-card"><div className="label">Pendiente de cobrar</div><div className="valor">{fmtEuros(pendiente)}</div></div>
+        <div className="stat-card"><div className="label">Vencido</div><div className="valor" style={{ color: importeVencido > 0 ? 'var(--rojo)' : 'var(--verde)' }}>{fmtEuros(importeVencido)}</div></div>
+        <div className="stat-card"><div className="label">MRR (recurrente mensual)</div><div className="valor">{fmtEuros(mrr)}</div></div>
       </div>
 
       <div className="card">
@@ -55,13 +82,14 @@ export default function Dashboard() {
           </div>
         ) : (
           <table>
-            <thead><tr><th>Numero</th><th>Cliente</th><th>Estado</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
+            <thead><tr><th>Numero</th><th>Cliente</th><th>Estado</th><th>Proyecto</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
             <tbody>
               {recientes.map((c) => (
                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/clientes/${c.id}`)}>
                   <td><code style={{ background: 'var(--gris-2)', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{c.numero_cliente}</code></td>
                   <td><strong>{c.nombre}</strong></td>
                   <td><span className={`estado ${claseEstado(c.estado)}`}>{c.estado}</span></td>
+                  <td style={{ fontSize: 12, color: 'var(--gris-5)' }}>{c.estado_proyecto || 'Sin iniciar'}{c.porcentaje_avance > 0 ? ` (${c.porcentaje_avance}%)` : ''}</td>
                   <td style={{ textAlign: 'right', color: 'var(--verde)', fontWeight: 600 }}>{fmtEuros(c.total)}</td>
                 </tr>
               ))}

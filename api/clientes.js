@@ -1,6 +1,8 @@
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
+const SERVICIOS_RECURRENTES = ['Plan Mantenimiento', 'Plan Crecimiento', 'Plan Cliente Activo', 'Bot WhatsApp con IA'];
+
 async function siguienteNumero(clave, prefijo) {
   const anio = new Date().getFullYear();
   const claveAnual = `${clave}_${anio}`;
@@ -22,6 +24,44 @@ function calcularTotales(serviciosArray, ivaPct) {
   });
   const iva = base * (parseFloat(ivaPct) || 0) / 100;
   return { base, iva, total: base + iva };
+}
+
+async function generarPagosIniciales(clienteId, totales, formaPago, servicios) {
+  // Cuotas no recurrentes
+  const total = totales.total;
+  const hoy = new Date();
+  const en7Dias = new Date(); en7Dias.setDate(hoy.getDate() + 7);
+  const en30Dias = new Date(); en30Dias.setDate(hoy.getDate() + 30);
+
+  const fmtFecha = (d) => d.toISOString().split('T')[0];
+
+  if (formaPago === '50% al inicio, 50% a la entrega') {
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, '50% inicial', ${total * 0.5}, ${fmtFecha(en7Dias)}, 'Pendiente')`;
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, '50% a la entrega', ${total * 0.5}, ${fmtFecha(en30Dias)}, 'Pendiente')`;
+  } else if (formaPago === '30% al inicio, 70% a la entrega') {
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, '30% inicial', ${total * 0.3}, ${fmtFecha(en7Dias)}, 'Pendiente')`;
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, '70% a la entrega', ${total * 0.7}, ${fmtFecha(en30Dias)}, 'Pendiente')`;
+  } else if (formaPago === '100% al inicio') {
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, 'Pago unico inicial', ${total}, ${fmtFecha(en7Dias)}, 'Pendiente')`;
+  } else if (formaPago === '100% a la entrega') {
+    await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, 'Pago unico a la entrega', ${total}, ${fmtFecha(en30Dias)}, 'Pendiente')`;
+  }
+
+  // Cuotas mensuales recurrentes para servicios mensuales (los proximos 12 meses)
+  const recurrentes = (servicios || []).filter(s => SERVICIOS_RECURRENTES.includes(s.nombre));
+  if (recurrentes.length > 0) {
+    for (let mes = 1; mes <= 12; mes++) {
+      const fecha = new Date(hoy);
+      fecha.setMonth(fecha.getMonth() + mes);
+      fecha.setDate(1);
+      const mesEtq = fecha.toISOString().slice(0, 7);
+      for (const s of recurrentes) {
+        const importe = (parseFloat(s.cantidad) || 1) * (parseFloat(s.precio) || 0);
+        await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado, es_recurrente, mes_recurrencia)
+          VALUES (${clienteId}, ${s.nombre + ' - cuota mensual'}, ${importe}, ${fmtFecha(fecha)}, 'Pendiente', TRUE, ${mesEtq})`;
+      }
+    }
+  }
 }
 
 export default async function handler(req, res) {
@@ -51,7 +91,8 @@ export default async function handler(req, res) {
           numero_cliente, estado, tipo_persona, nombre, nif, contacto,
           direccion, cp, ciudad, provincia, pais, email, telefono,
           servicios_json, descripcion, plazo, forma_pago, iva,
-          base_imponible, iva_importe, total, notas
+          base_imponible, iva_importe, total, notas,
+          estado_proyecto, porcentaje_avance
         ) VALUES (
           ${numeroCliente}, ${c.estado || 'Pendiente firma'}, ${c.tipo_persona || 'Fisica'},
           ${c.nombre}, ${c.nif.toUpperCase()}, ${c.contacto || ''},
@@ -59,7 +100,8 @@ export default async function handler(req, res) {
           ${c.pais || 'Espana'}, ${c.email || ''}, ${c.telefono || ''},
           ${JSON.stringify(c.servicios_json || [])}::jsonb, ${c.descripcion || ''},
           ${c.plazo || ''}, ${c.forma_pago || '50% al inicio, 50% a la entrega'},
-          ${c.iva || 21}, ${totales.base}, ${totales.iva}, ${totales.total}, ${c.notas || ''}
+          ${c.iva || 21}, ${totales.base}, ${totales.iva}, ${totales.total}, ${c.notas || ''},
+          'Sin iniciar', 0
         ) RETURNING *
       `;
       return jsonResponse(res, 200, row);
@@ -102,10 +144,25 @@ export default async function handler(req, res) {
           notas = ${c.notas || ''},
           firma_cliente = ${c.firma_cliente || ''},
           fecha_firma = ${c.fecha_firma || null},
+          estado_proyecto = ${c.estado_proyecto || 'Sin iniciar'},
+          porcentaje_avance = ${c.porcentaje_avance != null ? c.porcentaje_avance : 0},
+          fecha_inicio = ${c.fecha_inicio || null},
+          fecha_fin_prevista = ${c.fecha_fin_prevista || null},
+          fecha_fin_real = ${c.fecha_fin_real || null},
+          notas_proyecto = ${c.notas_proyecto || ''},
           actualizado_en = NOW()
         WHERE id = ${c.id}
         RETURNING *
       `;
+
+      // Si se acaba de generar el numero de contrato, generamos los pagos automaticamente
+      if (c.generar_contrato && numeroContrato) {
+        const existentes = await sql`SELECT COUNT(*) AS n FROM pagos WHERE cliente_id = ${c.id}`;
+        if (parseInt(existentes[0].n, 10) === 0) {
+          await generarPagosIniciales(c.id, totales, row.forma_pago, row.servicios_json);
+        }
+      }
+
       return jsonResponse(res, 200, row);
     }
 

@@ -36,7 +36,7 @@ export default function Emisor() {
 
       <div className="card">
         <p style={{ fontSize: 13, color: 'var(--gris-5)', marginBottom: 20 }}>
-          Estos datos aparecen en TODOS los contratos generados. Rellenalos una vez y se aplican automaticamente.
+          Estos datos aparecen en TODOS los contratos generados.
         </p>
         <div className="grid">
           <div><label>Nombre completo *</label><input value={datos.nombre || ''} onChange={(e) => set('nombre', e.target.value)} /></div>
@@ -51,6 +51,16 @@ export default function Emisor() {
           <div><label>Email</label><input type="email" value={datos.email || ''} onChange={(e) => set('email', e.target.value)} /></div>
           <div><label>Web</label><input value={datos.web || ''} onChange={(e) => set('web', e.target.value)} /></div>
           <div style={{ gridColumn: 'span 2' }}><label>IBAN para transferencias</label><input value={datos.iban || ''} onChange={(e) => set('iban', e.target.value.toUpperCase())} placeholder="ES00 0000 0000 0000 0000 0000" /></div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <label>URL del logo (aparecera en los contratos)</label>
+            <input value={datos.logo_url || ''} onChange={(e) => set('logo_url', e.target.value)} placeholder="/logo-conecta-nex.png o https://..." />
+            <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 4 }}>Si subiste el logo a la carpeta public del proyecto, pon /logo-conecta-nex.png. Si esta en otra URL publica, pegala completa.</p>
+            {datos.logo_url && (
+              <div style={{ marginTop: 10, padding: 15, background: 'var(--gris-1)', borderRadius: 6, textAlign: 'center' }}>
+                <img src={datos.logo_url} alt="Logo" style={{ maxHeight: 80, maxWidth: 300 }} onError={(e) => { e.target.style.display = 'none'; }} />
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, paddingTop: 15, borderTop: '1px solid var(--gris-3)' }}>
           <button className="btn-primary" onClick={guardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar mis datos'}</button>

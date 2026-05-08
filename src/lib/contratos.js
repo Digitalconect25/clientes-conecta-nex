@@ -82,6 +82,7 @@ const CSS_BASE = `
   .tot p { margin: 4px 0; }
   .tot-final { font-size: 13pt; font-weight: bold; color: #047857; }
   p { margin: 6px 0; }
+  .aviso { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; margin: 12px 0; }
 </style>
 `;
 
@@ -118,22 +119,10 @@ ${b.ibanBl}
 <p>La falta de pago en los plazos pactados podra conllevar la suspension inmediata del trabajo.</p>
 
 <h2>7. Alcance del trabajo y modificaciones</h2>
-<p>El alcance del trabajo se cine a lo descrito en la clausula 3. Cualquier ampliacion o trabajo adicional debera presupuestarse de forma separada y aceptarse por escrito antes de su ejecucion. Se incluyen hasta dos rondas de revisiones razonables. Las revisiones adicionales se facturaran a 30 EUR/hora.</p>
+<p>El alcance se limita a lo descrito en el objeto. Cualquier modificacion sustancial sera presupuestada y aceptada por escrito antes de su ejecucion.</p>
 
-<h2>8. Entrega y conformidad</h2>
-<p>El Cliente dispondra de un plazo de 7 dias naturales (14 si es consumidor) desde la entrega para revisar el trabajo y comunicar por escrito cualquier reclamacion. Transcurrido dicho plazo sin manifestacion expresa, se entendera aceptado de forma tacita.</p>
-
-<h2>9. Politica de Privacidad y Proteccion de Datos</h2>
-<p>En cumplimiento del Reglamento (UE) 2016/679 (RGPD) y de la Ley Organica 3/2018 (LOPDGDD), se informa al Cliente:</p>
-<p><strong>Responsable del tratamiento:</strong> ${e.nombre}, NIF ${e.nif}, con domicilio en ${b.dirEm}.</p>
-<p><strong>Datos de contacto:</strong> ${e.email} - ${e.telefono}.</p>
-<p><strong>Finalidad:</strong> gestionar la relacion contractual derivada del presente encargo, prestar el servicio contratado, emitir la facturacion correspondiente y cumplir con las obligaciones legales aplicables al Prestador.</p>
-<p><strong>Base juridica:</strong> ejecucion de un contrato (art. 6.1.b RGPD) y cumplimiento de obligaciones legales del responsable (art. 6.1.c RGPD).</p>
-<p><strong>Conservacion:</strong> durante la vigencia de la relacion contractual y los plazos legalmente exigibles (minimo 6 anos para obligaciones fiscales y contables).</p>
-<p><strong>Derechos del interesado:</strong> el Cliente podra ejercer los derechos de acceso, rectificacion, supresion, oposicion, limitacion del tratamiento y portabilidad escribiendo a ${e.email}, acompanando copia de su DNI. Podra presentar reclamacion ante la AEPD (www.aepd.es).</p>
-
-<h2>10. Aceptacion</h2>
-<p>Ambas partes, tras leer el presente documento, manifiestan su conformidad y lo firman en senal de aceptacion.</p>
+<h2>8. Politica de privacidad</h2>
+<p>Los datos personales se trataran conforme al RGPD. Responsable: ${e.nombre}, NIF ${e.nif}, ${e.email}. Finalidad: gestion contractual del encargo. Base legal: ejecucion contractual. Conservacion: durante la relacion comercial y los plazos legales.</p>
 
 ${bloqueFirmas(c, e, firmaURL)}
 `;
@@ -143,14 +132,10 @@ export function generarCesion(c, e, firmaURL) {
   const b = bloqueComun(c, e);
   return CSS_BASE + cabeceraLogo(e) + `
 <h1>CESION DE DERECHOS Y PROTECCION DE DATOS</h1>
-<p class="sub">Anexo a la Hoja de Encargo n: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
-
-<h2>Partes</h2>
-<p><strong>Prestador:</strong> ${e.nombre}, NIF ${e.nif}.<br>
-<strong>Cliente:</strong> ${c.nombre}, ${b.tipoDoc} ${c.nif}.</p>
+<p class="sub">N de expediente: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
 <h2>1. Materiales aportados por el Cliente</h2>
-<p>El Cliente declara y garantiza que todos los materiales (textos, imagenes, videos, logotipos, marcas, bases de datos y cualquier otro contenido) que entregue al Prestador son de su titularidad o cuenta con licencia o autorizacion expresa para su utilizacion.</p>
+<p>El Cliente declara y garantiza que dispone de los derechos necesarios sobre todos los materiales (textos, imagenes, videos, marcas, contenidos) que entrega al Prestador para su uso en el proyecto.</p>
 <p>El Cliente exime al Prestador de cualquier responsabilidad derivada del uso de dichos materiales.</p>
 
 <h2>2. Cesion de derechos sobre el trabajo entregado</h2>
@@ -258,10 +243,89 @@ ${bloqueFirmas(c, e, firmaURL)}
 `;
 }
 
-export function generarPorTipo(tipo, cliente, emisor, firmaURL) {
+// NUEVO: Acta de Entrega y Acceso a Recursos
+// Genera el documento que se entrega al cliente al finalizar el proyecto.
+// Incluye resumen, accesos, archivos entregados y firmas.
+export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
+  const b = bloqueComun(c, e);
+  const lista = (Array.isArray(accesos) ? accesos : []).filter(a => a && a.etiqueta);
+  const archs = Array.isArray(archivos) ? archivos : [];
+
+  // Agrupacion por categoria
+  const grupos = lista.reduce((acc, a) => {
+    const k = a.categoria || 'Otros';
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(a);
+    return acc;
+  }, {});
+
+  const seccionesAccesos = Object.keys(grupos).sort().map((cat) => {
+    const filas = grupos[cat].map((a) => {
+      const url = a.url ? `<a href="${a.url}" style="color:#047857">${a.url}</a>` : '-';
+      const usu = a.usuario || '-';
+      const pwd = a.password ? a.password : (a.tiene_password ? '(ver al cliente en mano)' : '-');
+      const notas = a.notas ? `<div style="font-size:9pt;color:#666;margin-top:3px">${a.notas}</div>` : '';
+      return `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:600">${a.etiqueta}${notas}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt">${url}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt">${usu}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt;font-family:monospace">${pwd}</td></tr>`;
+    }).join('');
+    return `
+      <h3>${cat}</h3>
+      <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:10pt">
+        <thead><tr style="background:#047857;color:#fff">
+          <th style="padding:8px;text-align:left;border:1px solid #ddd">Plataforma</th>
+          <th style="padding:8px;text-align:left;border:1px solid #ddd">URL</th>
+          <th style="padding:8px;text-align:left;border:1px solid #ddd">Usuario</th>
+          <th style="padding:8px;text-align:left;border:1px solid #ddd">Contrasena</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    `;
+  }).join('');
+
+  const seccionArchivos = archs.length > 0 ? `
+    <h2>Archivos entregados</h2>
+    <ul>${archs.map(a => `<li>${a.nombre} (${(a.tamano / 1024).toFixed(1)} KB)</li>`).join('')}</ul>
+  ` : '';
+
+  const totalServ = (c.servicios_json || []).filter(s => s.nombre).map(s => s.nombre).join(', ') || c.descripcion || 'Servicios contratados';
+
+  return CSS_BASE + cabeceraLogo(e) + `
+<h1>ACTA DE ENTREGA Y ACCESO A RECURSOS</h1>
+<p class="sub">N de contrato: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
+
+<h2>1. Reunidos</h2>
+<p>De una parte, <strong>${e.nombre}</strong>, con NIF ${e.nif}, profesional autonomo, en adelante "el Prestador".</p>
+<p>De otra parte, <strong>${c.nombre}</strong>, con ${b.tipoDoc} ${c.nif}, en adelante "el Cliente".</p>
+
+<h2>2. Objeto de la entrega</h2>
+<p>Mediante el presente documento se formaliza la entrega al Cliente del trabajo realizado en el marco del contrato de prestacion de servicios firmado entre las partes.</p>
+<p><strong>Servicios entregados:</strong> ${totalServ}.</p>
+${b.descBl}
+
+<h2>3. Accesos y credenciales entregados</h2>
+${lista.length === 0 ? '<p>No se entregan credenciales en este proyecto.</p>' : seccionesAccesos}
+
+<div class="aviso">
+  <strong>IMPORTANTE - Cambio de contrasenas:</strong> Una vez recibidos estos accesos, el Cliente debe cambiar inmediatamente todas las contrasenas que le hayan sido suministradas, asumiendo desde ese momento la unica responsabilidad sobre la seguridad y custodia de las mismas. El Prestador queda eximido de cualquier responsabilidad por accesos posteriores realizados con dichas credenciales.
+</div>
+
+${seccionArchivos}
+
+<h2>4. Conformidad y aceptacion</h2>
+<p>Con la firma del presente documento, el Cliente reconoce haber recibido el trabajo descrito y los accesos relacionados, considerandose entregado el proyecto a todos los efectos.</p>
+<p>Conforme a la clausula septima del contrato, el Cliente dispondra de un plazo de SIETE (7) dias naturales desde la presente fecha para notificar por escrito cualquier observacion. Para clientes consumidores el plazo se amplia a CATORCE (14) dias.</p>
+
+<h2>5. Periodo de garantia</h2>
+<p>Se mantiene el periodo de garantia de 30 dias naturales para la correccion de defectos directamente atribuibles al Prestador, segun lo establecido en el contrato firmado.</p>
+
+${bloqueFirmas(c, e, firmaURL)}
+`;
+}
+
+export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
   if (tipo === 'hoja') return generarHojaEncargo(cliente, emisor, firmaURL);
   if (tipo === 'cesion') return generarCesion(cliente, emisor, firmaURL);
   if (tipo === 'contrato') return generarContrato(cliente, emisor, firmaURL);
+  if (tipo === 'acta') return generarActaEntrega(cliente, emisor, firmaURL, extras?.accesos, extras?.archivos);
   return '';
 }
 
@@ -269,4 +333,5 @@ export const TIPOS_DOC = [
   { id: 'hoja', nombre: 'Hoja de Encargo' },
   { id: 'cesion', nombre: 'Cesion de Derechos y Proteccion de Datos' },
   { id: 'contrato', nombre: 'Contrato de Prestacion de Servicios' },
+  { id: 'acta', nombre: 'Acta de Entrega', soloEntregado: true },
 ];

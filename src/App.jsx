@@ -8,6 +8,7 @@ import Clientes from './pages/Clientes.jsx';
 import ClienteDetalle from './pages/ClienteDetalle.jsx';
 import Catalogo from './pages/Catalogo.jsx';
 import Emisor from './pages/Emisor.jsx';
+import Proyectos from './pages/Proyectos.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
+        <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/catalogo" element={<Catalogo />} />
         <Route path="/emisor" element={<Emisor />} />
         <Route path="*" element={<Navigate to="/" replace />} />

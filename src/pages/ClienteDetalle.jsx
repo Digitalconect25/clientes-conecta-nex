@@ -1,624 +1,1191 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { fmtEuros, generarPorTipo, TIPOS_DOC } from '../lib/contratos.js';
 import FirmaCanvas from '../components/FirmaCanvas.jsx';
-import html2pdf from 'html2pdf.js';
-import JSZip from 'jszip';
 
-const ESTADOS = ['Pendiente firma', 'Firmado', 'En curso', 'Entregado', 'Cancelado'];
-const ESTADOS_PROYECTO = ['Sin iniciar', 'En proceso', 'Pausado', 'Finalizado', 'Entregado y aceptado'];
-const FORMAS_PAGO = [
-  '50% al inicio, 50% a la entrega',
-  '30% al inicio, 70% a la entrega',
-  '100% al inicio',
-  '100% a la entrega',
-  'Cuota mensual recurrente',
+const CATEGORIAS_ACCESO = [
+  'Email', 'Hosting', 'Dominio', 'Web / WordPress', 'Google',
+  'Redes sociales', 'Canva', 'Pasarela de pago', 'Calendly',
+  'Mailchimp / Email marketing', 'IA / ChatGPT', 'ERP / CRM',
+  'Telefonia / Whatsapp Business', 'Otros',
+];
+
+const ESTADOS_PROYECTO = [
+  'Sin iniciar', 'En curso', 'En revision por cliente',
+  'Pausado', 'Entregado y aceptado', 'Cancelado',
 ];
 
 export default function ClienteDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+
   const [cliente, setCliente] = useState(null);
   const [emisor, setEmisor] = useState(null);
   const [servicios, setServicios] = useState([]);
-  const [archivos, setArchivos] = useState([]);
-  const [documentos, setDocumentos] = useState([]);
   const [pagos, setPagos] = useState([]);
+  const [fases, setFases] = useState([]);
+  const [accesos, setAccesos] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
+  const [archivos, setArchivos] = useState([]);
   const [pestana, setPestana] = useState('datos');
-  const [editando, setEditando] = useState(false);
-  const [borrador, setBorrador] = useState(null);
   const [cargando, setCargando] = useState(true);
-  const [showFirma, setShowFirma] = useState(false);
-  const [previewDoc, setPreviewDoc] = useState(null);
-  const [pagoEditando, setPagoEditando] = useState(null);
 
-  useEffect(() => { cargarTodo(); }, [id]);
+  useEffect(() => { cargar(); }, [id]);
 
-  async function cargarTodo() {
+  async function cargar() {
     setCargando(true);
     try {
-      const [c, e, s, ar, doc, pgs] = await Promise.all([
-        api.clienteGet(id), api.emisorGet(), api.serviciosList(),
-        api.archivosList(id), api.documentosList(id), api.pagosList(id),
+      const [c, e, s, p, f, ac, d, ar] = await Promise.all([
+        api.clienteGet(id),
+        api.emisorGet(),
+        api.serviciosList(),
+        api.pagosList(id),
+        api.fasesList(id),
+        api.accesosList(id),
+        api.documentosList(id),
+        api.archivosList(id),
       ]);
-      setCliente(c); setBorrador(c); setEmisor(e); setServicios(s);
-      setArchivos(ar); setDocumentos(doc); setPagos(pgs);
+      setCliente(c);
+      setEmisor(e);
+      setServicios(s);
+      setPagos(p);
+      setFases(f);
+      setAccesos(ac);
+      setDocumentos(d);
+      setArchivos(ar);
     } catch (err) {
-      alert('Error al cargar: ' + err.message);
-      navigate('/clientes');
-    } finally { setCargando(false); }
-  }
-
-  function set(k, v) { setBorrador((d) => ({ ...d, [k]: v })); }
-
-  function setServicio(idx, campo, valor) {
-    const sx = [...(borrador.servicios_json || [])];
-    sx[idx] = { ...sx[idx], [campo]: valor };
-    if (campo === 'nombre') {
-      const cat = servicios.find((s) => s.nombre === valor);
-      if (cat) sx[idx].precio = parseFloat(cat.precio);
+      alert('Error cargando: ' + err.message);
+    } finally {
+      setCargando(false);
     }
-    set('servicios_json', sx);
   }
 
-  function anadirServicio() {
-    const sx = [...(borrador.servicios_json || []), { nombre: '', cantidad: 1, precio: 0 }];
-    if (sx.length > 5) return;
-    set('servicios_json', sx);
-  }
-
-  function quitarServicio(idx) {
-    const sx = (borrador.servicios_json || []).filter((_, i) => i !== idx);
-    set('servicios_json', sx);
-  }
-
-  async function guardar() {
+  async function guardarCliente(parcial) {
+    const next = { ...cliente, ...parcial };
     try {
-      const actualizado = await api.clienteUpdate(borrador);
-      setCliente(actualizado); setBorrador(actualizado); setEditando(false);
-    } catch (err) { alert('Error al guardar: ' + err.message); }
-  }
-
-  async function borrar() {
-    if (!confirm(`Borrar el cliente "${cliente.nombre}"? No se puede deshacer.`)) return;
-    try { await api.clienteDelete(cliente.id); navigate('/clientes'); }
-    catch (err) { alert('Error: ' + err.message); }
-  }
-
-  async function generarNumeroContrato() {
-    try {
-      const actualizado = await api.clienteUpdate({ ...borrador, generar_contrato: true });
-      setCliente(actualizado); setBorrador(actualizado);
-      const pgs = await api.pagosList(cliente.id);
-      setPagos(pgs);
-      alert('Numero de contrato asignado: ' + actualizado.numero_contrato + '\n\nSe han generado automaticamente las cuotas de pago en la pestana Pagos.');
-    } catch (err) { alert('Error: ' + err.message); }
-  }
-
-  function abrirPreview(tipo) {
-    if (!cliente.servicios_json || cliente.servicios_json.length === 0) {
-      alert('Anade servicios al cliente antes de generar el documento.');
-      return;
+      const saved = await api.clienteUpdate(next);
+      setCliente(saved);
+      // Si cambia el total, recargar pagos para reflejar la propagacion
+      if (parcial.servicios_json || parcial.iva || parcial.forma_pago) {
+        const ps = await api.pagosList(id);
+        setPagos(ps);
+      }
+      return saved;
+    } catch (err) {
+      alert('Error guardando: ' + err.message);
+      throw err;
     }
-    if (!emisor.nif || emisor.nif.length < 5) {
-      alert('Antes rellena tu NIF en Mis datos.');
-      return;
-    }
-    const html = generarPorTipo(tipo, cliente, emisor, cliente.firma_cliente);
-    setPreviewDoc({ tipo, html });
   }
 
-  async function descargarPDF(tipo, htmlOverride) {
-    const html = htmlOverride || generarPorTipo(tipo, cliente, emisor, cliente.firma_cliente);
-    const tipoNombre = TIPOS_DOC.find((t) => t.id === tipo)?.nombre || tipo;
-    const numero = cliente.numero_contrato || cliente.numero_cliente;
-    const filename = `${numero} - ${tipoNombre} - ${cliente.nombre}.pdf`;
-
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    document.body.appendChild(div);
-    try {
-      await html2pdf().set({
-        margin: [10, 10, 10, 10], filename,
-        image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      }).from(div).save();
-
-      await api.documentoCreate({
-        cliente_id: cliente.id, tipo, nombre: filename, contenido_html: html,
-      });
-      const docs = await api.documentosList(cliente.id);
-      setDocumentos(docs);
-    } finally { div.remove(); }
+  if (cargando || !cliente || !emisor) {
+    return <div style={{ padding: 40 }}>Cargando...</div>;
   }
 
-  function imprimirDocumento(html) {
-    const w = window.open('', '_blank');
-    if (!w) { alert('El navegador bloqueo la ventana de impresion. Permite popups.'); return; }
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => { w.print(); }, 500);
+  return (
+    <div className="cliente-detalle">
+      <div className="header-cliente">
+        <button onClick={() => navigate('/clientes')}>&larr; Volver</button>
+        <div style={{ flex: 1, marginLeft: 16 }}>
+          <h1 style={{ margin: 0 }}>{cliente.nombre}</h1>
+          <div className="meta-cliente">
+            <span>{cliente.numero_cliente}</span>
+            {cliente.numero_contrato && <span>{cliente.numero_contrato}</span>}
+            <span className={`pill estado-${(cliente.estado || '').toLowerCase().replace(/ /g, '-')}`}>{cliente.estado}</span>
+            <span className="pill estado-proyecto">{cliente.estado_proyecto}</span>
+          </div>
+        </div>
+        <div style={{ minWidth: 200 }}>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>Avance del proyecto</div>
+          <div className="progreso">
+            <div className="progreso-barra" style={{ width: `${cliente.porcentaje_avance || 0}%` }}></div>
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{cliente.porcentaje_avance || 0}%</div>
+        </div>
+      </div>
+
+      <div className="pestanas">
+        {[
+          ['datos', 'Datos'],
+          ['servicios', 'Servicios'],
+          ['pipeline', 'Pipeline'],
+          ['pagos', 'Pagos'],
+          ['accesos', 'Accesos'],
+          ['documentos', 'Documentos'],
+          ['archivos', 'Archivos'],
+        ].map(([k, l]) => (
+          <button key={k} className={`pestana ${pestana === k ? 'activa' : ''}`} onClick={() => setPestana(k)}>{l}</button>
+        ))}
+      </div>
+
+      <div className="contenido-pestana">
+        {pestana === 'datos' && <PanelDatos cliente={cliente} guardar={guardarCliente} />}
+        {pestana === 'servicios' && <PanelServicios cliente={cliente} servicios={servicios} guardar={guardarCliente} />}
+        {pestana === 'pipeline' && <PanelPipeline cliente={cliente} fases={fases} setFases={setFases} guardar={guardarCliente} recargar={cargar} />}
+        {pestana === 'pagos' && <PanelPagos cliente={cliente} pagos={pagos} setPagos={setPagos} />}
+        {pestana === 'accesos' && <PanelAccesos cliente={cliente} accesos={accesos} setAccesos={setAccesos} />}
+        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} setDocumentos={setDocumentos} setCliente={setCliente} guardar={guardarCliente} />}
+        {pestana === 'archivos' && <PanelArchivos cliente={cliente} archivos={archivos} setArchivos={setArchivos} />}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: DATOS DEL CLIENTE
+// =============================================================
+function PanelDatos({ cliente, guardar }) {
+  const [f, setF] = useState({ ...cliente });
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => { setF({ ...cliente }); }, [cliente.id]);
+
+  function up(k, v) { setF({ ...f, [k]: v }); }
+
+  async function onGuardar() {
+    setGuardando(true);
+    try { await guardar(f); alert('Guardado'); }
+    finally { setGuardando(false); }
   }
-
-  async function descargarTodosZip() {
-    if (!cliente.servicios_json || cliente.servicios_json.length === 0) {
-      alert('Anade servicios al cliente antes de generar los documentos.');
-      return;
-    }
-    if (!emisor.nif || emisor.nif.length < 5) {
-      alert('Antes rellena tu NIF en Mis datos.');
-      return;
-    }
-    const zip = new JSZip();
-    for (const t of TIPOS_DOC) {
-      const html = generarPorTipo(t.id, cliente, emisor, cliente.firma_cliente);
-      const tmp = document.createElement('div');
-      tmp.innerHTML = html;
-      document.body.appendChild(tmp);
-      try {
-        const pdf = await html2pdf().set({
-          margin: [10, 10, 10, 10],
-          image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        }).from(tmp).output('blob');
-        const numero = cliente.numero_contrato || cliente.numero_cliente;
-        zip.file(`${numero} - ${t.nombre} - ${cliente.nombre}.pdf`, pdf);
-      } finally { tmp.remove(); }
-    }
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${cliente.numero_contrato || cliente.numero_cliente} - ${cliente.nombre} - Documentos.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleFirmar(dataURL) {
-    try {
-      const actualizado = await api.clienteUpdate({
-        ...cliente, firma_cliente: dataURL,
-        fecha_firma: new Date().toISOString(), estado: 'Firmado',
-      });
-      setCliente(actualizado); setBorrador(actualizado); setShowFirma(false);
-    } catch (err) { alert('Error: ' + err.message); }
-  }
-
-  async function subirArchivo(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { alert('Archivo demasiado grande (max 8 MB)'); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
-      try {
-        await api.archivoUpload({
-          cliente_id: cliente.id, nombre: file.name,
-          tipo: file.type || 'application/octet-stream', contenido_base64: base64,
-        });
-        const ar = await api.archivosList(cliente.id);
-        setArchivos(ar);
-      } catch (err) { alert('Error: ' + err.message); }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  }
-
-  async function borrarArchivo(idArchivo) {
-    if (!confirm('Borrar este archivo?')) return;
-    await api.archivoDelete(idArchivo);
-    setArchivos(archivos.filter((a) => a.id !== idArchivo));
-  }
-
-  async function borrarDocumento(idDoc) {
-    if (!confirm('Borrar este documento?')) return;
-    await api.documentoDelete(idDoc);
-    setDocumentos(documentos.filter((d) => d.id !== idDoc));
-  }
-
-  async function guardarPago(p) {
-    try {
-      if (p.id) await api.pagoUpdate(p);
-      else await api.pagoCreate({ ...p, cliente_id: cliente.id });
-      const pgs = await api.pagosList(cliente.id);
-      setPagos(pgs);
-      setPagoEditando(null);
-    } catch (err) { alert('Error: ' + err.message); }
-  }
-
-  async function borrarPago(idPago) {
-    if (!confirm('Borrar este pago?')) return;
-    await api.pagoDelete(idPago);
-    setPagos(pagos.filter(p => p.id !== idPago));
-  }
-
-  async function marcarCobrado(p) {
-    const hoy = new Date().toISOString().split('T')[0];
-    await api.pagoUpdate({ ...p, estado: 'Cobrado', fecha_pago: hoy });
-    const pgs = await api.pagosList(cliente.id);
-    setPagos(pgs);
-  }
-
-  if (cargando) return <div className="empty">Cargando...</div>;
-  if (!cliente) return <div className="empty">No encontrado</div>;
-
-  const c = editando ? borrador : cliente;
-  const totales = calcularTotales(c);
-  const totalCobrado = pagos.filter(p => p.estado === 'Cobrado').reduce((s, p) => s + Number(p.importe), 0);
-  const totalPendiente = pagos.filter(p => p.estado === 'Pendiente').reduce((s, p) => s + Number(p.importe), 0);
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const pagosVencidos = pagos.filter(p => p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy);
-  const importeVencido = pagosVencidos.reduce((s, p) => s + Number(p.importe), 0);
 
   return (
     <div>
-      <div className="main-header">
-        <div>
-          <button className="btn-outline btn-sm" onClick={() => navigate('/clientes')} style={{ marginBottom: 8 }}>← Clientes</button>
-          <h1>{cliente.nombre}</h1>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
-            <code style={{ background: '#f3f4f6', padding: '3px 8px', borderRadius: 4, fontSize: 12, color: '#374151' }}>{cliente.numero_cliente}</code>
-            {cliente.numero_contrato && <code style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: 4, fontSize: 12 }}>{cliente.numero_contrato}</code>}
-            <span className={`estado ${claseEstado(cliente.estado)}`}>{cliente.estado}</span>
-            {cliente.estado_proyecto && <span className="estado" style={{ background: '#e0e7ff', color: '#3730a3' }}>{cliente.estado_proyecto}{cliente.porcentaje_avance > 0 ? ` ${cliente.porcentaje_avance}%` : ''}</span>}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!editando ? (
-            <>
-              <button className="btn-outline" onClick={() => setEditando(true)}>Editar</button>
-              <button className="btn-danger" onClick={borrar}>Borrar</button>
-            </>
-          ) : (
-            <>
-              <button className="btn-outline" onClick={() => { setEditando(false); setBorrador(cliente); }}>Cancelar</button>
-              <button className="btn-primary" onClick={guardar}>Guardar cambios</button>
-            </>
-          )}
-        </div>
+      <h3>Datos del cliente</h3>
+      <div className="grid2">
+        <label>Nombre / Razon social
+          <input value={f.nombre || ''} onChange={(e) => up('nombre', e.target.value)} />
+        </label>
+        <label>Tipo
+          <select value={f.tipo_persona || 'Fisica'} onChange={(e) => up('tipo_persona', e.target.value)}>
+            <option value="Fisica">Fisica</option>
+            <option value="Juridica">Juridica</option>
+          </select>
+        </label>
+        <label>NIF / CIF
+          <input value={f.nif || ''} onChange={(e) => up('nif', e.target.value.toUpperCase())} />
+        </label>
+        <label>Persona de contacto
+          <input value={f.contacto || ''} onChange={(e) => up('contacto', e.target.value)} />
+        </label>
+        <label>Email
+          <input type="email" value={f.email || ''} onChange={(e) => up('email', e.target.value)} />
+        </label>
+        <label>Telefono
+          <input value={f.telefono || ''} onChange={(e) => up('telefono', e.target.value)} />
+        </label>
+        <label style={{ gridColumn: '1 / -1' }}>Direccion
+          <input value={f.direccion || ''} onChange={(e) => up('direccion', e.target.value)} />
+        </label>
+        <label>CP
+          <input value={f.cp || ''} onChange={(e) => up('cp', e.target.value)} />
+        </label>
+        <label>Ciudad
+          <input value={f.ciudad || ''} onChange={(e) => up('ciudad', e.target.value)} />
+        </label>
+        <label>Provincia
+          <input value={f.provincia || ''} onChange={(e) => up('provincia', e.target.value)} />
+        </label>
+        <label>Pais
+          <input value={f.pais || ''} onChange={(e) => up('pais', e.target.value)} />
+        </label>
+        <label>Estado del cliente
+          <select value={f.estado || 'Pendiente firma'} onChange={(e) => up('estado', e.target.value)}>
+            <option>Pendiente firma</option>
+            <option>Firmado</option>
+            <option>Activo</option>
+            <option>Pausado</option>
+            <option>Finalizado</option>
+            <option>Cancelado</option>
+          </select>
+        </label>
+        <label>Estado del proyecto
+          <select value={f.estado_proyecto || 'Sin iniciar'} onChange={(e) => up('estado_proyecto', e.target.value)}>
+            {ESTADOS_PROYECTO.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label>Fecha inicio prevista
+          <input type="date" value={f.fecha_inicio || ''} onChange={(e) => up('fecha_inicio', e.target.value)} />
+        </label>
+        <label>Fecha fin prevista
+          <input type="date" value={f.fecha_fin_prevista || ''} onChange={(e) => up('fecha_fin_prevista', e.target.value)} />
+        </label>
+        <label style={{ gridColumn: '1 / -1' }}>Notas internas
+          <textarea rows="3" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} />
+        </label>
       </div>
-
-      {pagosVencidos.length > 0 && (
-        <div className="alerta alerta-error" style={{ marginBottom: 15 }}>
-          <strong>Atencion:</strong> este cliente tiene {pagosVencidos.length} pago(s) vencido(s) por un total de {fmtEuros(importeVencido)}. Revisa la pestana Pagos.
-        </div>
-      )}
-
-      <div className="cliente-detalle-tabs">
-        <button className={pestana === 'datos' ? 'active' : ''} onClick={() => setPestana('datos')}>Datos</button>
-        <button className={pestana === 'servicios' ? 'active' : ''} onClick={() => setPestana('servicios')}>Servicios</button>
-        <button className={pestana === 'proyecto' ? 'active' : ''} onClick={() => setPestana('proyecto')}>Proyecto</button>
-        <button className={pestana === 'pagos' ? 'active' : ''} onClick={() => setPestana('pagos')}>Pagos ({pagos.length})</button>
-        <button className={pestana === 'documentos' ? 'active' : ''} onClick={() => setPestana('documentos')}>Documentos ({documentos.length})</button>
-        <button className={pestana === 'archivos' ? 'active' : ''} onClick={() => setPestana('archivos')}>Archivos ({archivos.length})</button>
+      <div style={{ marginTop: 16 }}>
+        <button onClick={onGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar cambios'}</button>
       </div>
-
-      {pestana === 'datos' && (
-        <div className="card">
-          <h2>Datos del cliente</h2>
-          <div className="grid">
-            <div><label>Tipo de persona</label>{editando ? <select value={c.tipo_persona} onChange={(e) => set('tipo_persona', e.target.value)}><option>Fisica</option><option>Juridica</option></select> : <div>{c.tipo_persona}</div>}</div>
-            <div><label>Estado contrato</label>{editando ? <select value={c.estado} onChange={(e) => set('estado', e.target.value)}>{ESTADOS.map((e) => <option key={e}>{e}</option>)}</select> : <div><span className={`estado ${claseEstado(c.estado)}`}>{c.estado}</span></div>}</div>
-            <div style={{ gridColumn: 'span 2' }}><label>Nombre / Razon social</label>{editando ? <input value={c.nombre} onChange={(e) => set('nombre', e.target.value)} /> : <div>{c.nombre}</div>}</div>
-            <div><label>{c.tipo_persona === 'Juridica' ? 'CIF' : 'NIF'}</label>{editando ? <input value={c.nif} onChange={(e) => set('nif', e.target.value.toUpperCase())} /> : <div>{c.nif}</div>}</div>
-            <div><label>Persona contacto</label>{editando ? <input value={c.contacto || ''} onChange={(e) => set('contacto', e.target.value)} /> : <div>{c.contacto || '-'}</div>}</div>
-            <div style={{ gridColumn: 'span 2' }}><label>Direccion</label>{editando ? <input value={c.direccion || ''} onChange={(e) => set('direccion', e.target.value)} /> : <div>{c.direccion || '-'}</div>}</div>
-            <div><label>CP</label>{editando ? <input value={c.cp || ''} onChange={(e) => set('cp', e.target.value)} /> : <div>{c.cp || '-'}</div>}</div>
-            <div><label>Ciudad</label>{editando ? <input value={c.ciudad || ''} onChange={(e) => set('ciudad', e.target.value)} /> : <div>{c.ciudad || '-'}</div>}</div>
-            <div><label>Provincia</label>{editando ? <input value={c.provincia || ''} onChange={(e) => set('provincia', e.target.value)} /> : <div>{c.provincia || '-'}</div>}</div>
-            <div><label>Pais</label>{editando ? <input value={c.pais || ''} onChange={(e) => set('pais', e.target.value)} /> : <div>{c.pais || '-'}</div>}</div>
-            <div><label>Email</label>{editando ? <input type="email" value={c.email || ''} onChange={(e) => set('email', e.target.value)} /> : <div>{c.email || '-'}</div>}</div>
-            <div><label>Telefono</label>{editando ? <input value={c.telefono || ''} onChange={(e) => set('telefono', e.target.value)} /> : <div>{c.telefono || '-'}</div>}</div>
-          </div>
-        </div>
-      )}
-
-      {pestana === 'servicios' && (
-        <div className="card">
-          <h2>Servicios contratados</h2>
-          {editando && <button className="btn-primary btn-sm" onClick={anadirServicio} style={{ marginBottom: 15 }}>+ Anadir servicio</button>}
-          {(c.servicios_json || []).length === 0 ? (
-            <div className="empty"><p>Sin servicios. {editando && 'Pulsa "Anadir servicio" para empezar.'}</p></div>
-          ) : (c.servicios_json || []).map((s, idx) => (
-            <div key={idx} className="servicio-row">
-              <div><label>Servicio</label>{editando ? (
-                <select value={s.nombre || ''} onChange={(e) => setServicio(idx, 'nombre', e.target.value)}>
-                  <option value="">Selecciona</option>
-                  {servicios.map((sv) => <option key={sv.id} value={sv.nombre}>{sv.nombre} ({fmtEuros(sv.precio)})</option>)}
-                </select>
-              ) : <div>{s.nombre || '-'}</div>}</div>
-              <div><label>Cantidad</label>{editando ? <input type="number" min="1" value={s.cantidad} onChange={(e) => setServicio(idx, 'cantidad', parseFloat(e.target.value) || 0)} /> : <div>{s.cantidad}</div>}</div>
-              <div><label>Precio</label>{editando ? <input type="number" step="0.01" value={s.precio} onChange={(e) => setServicio(idx, 'precio', parseFloat(e.target.value) || 0)} /> : <div>{fmtEuros(s.precio)}</div>}</div>
-              <div>{editando && <button className="btn-danger btn-sm" onClick={() => quitarServicio(idx)}>X</button>}</div>
-            </div>
-          ))}
-
-          <h2 style={{ marginTop: 25 }}>Detalles del proyecto</h2>
-          <div className="grid">
-            <div style={{ gridColumn: 'span 2' }}><label>Descripcion del proyecto</label>{editando ? <textarea rows="3" value={c.descripcion || ''} onChange={(e) => set('descripcion', e.target.value)} /> : <div>{c.descripcion || '-'}</div>}</div>
-            <div><label>Plazo de entrega</label>{editando ? <input value={c.plazo || ''} onChange={(e) => set('plazo', e.target.value)} placeholder="Ej: 15 dias laborables" /> : <div>{c.plazo || '-'}</div>}</div>
-            <div><label>IVA %</label>{editando ? <input type="number" value={c.iva} onChange={(e) => set('iva', parseFloat(e.target.value) || 0)} /> : <div>{c.iva}%</div>}</div>
-            <div style={{ gridColumn: 'span 2' }}><label>Forma de pago</label>{editando ? <select value={c.forma_pago} onChange={(e) => set('forma_pago', e.target.value)}>{FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}</select> : <div>{c.forma_pago}</div>}</div>
-            <div style={{ gridColumn: 'span 2' }}><label>Notas internas</label>{editando ? <textarea rows="2" value={c.notas || ''} onChange={(e) => set('notas', e.target.value)} /> : <div>{c.notas || '-'}</div>}</div>
-          </div>
-
-          <div className="totales">
-            <div className="totales-grid">
-              <div><div className="label">Base imponible</div><div className="valor">{fmtEuros(totales.base)}</div></div>
-              <div><div className="label">IVA ({c.iva}%)</div><div className="valor">{fmtEuros(totales.iva)}</div></div>
-              <div><div className="label">TOTAL</div><div className="valor total">{fmtEuros(totales.total)}</div></div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pestana === 'proyecto' && (
-        <div className="card">
-          <h2>Estado del proyecto</h2>
-          <div className="grid">
-            <div>
-              <label>Estado</label>
-              {editando ? <select value={c.estado_proyecto || 'Sin iniciar'} onChange={(e) => set('estado_proyecto', e.target.value)}>{ESTADOS_PROYECTO.map(e => <option key={e}>{e}</option>)}</select> : <div>{c.estado_proyecto || 'Sin iniciar'}</div>}
-            </div>
-            <div>
-              <label>Avance ({c.porcentaje_avance || 0}%)</label>
-              {editando ? <input type="range" min="0" max="100" step="5" value={c.porcentaje_avance || 0} onChange={(e) => set('porcentaje_avance', parseInt(e.target.value, 10))} /> : (
-                <div style={{ background: '#f3f4f6', borderRadius: 4, overflow: 'hidden', height: 24 }}>
-                  <div style={{ background: '#047857', width: (c.porcentaje_avance || 0) + '%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 600 }}>{c.porcentaje_avance || 0}%</div>
-                </div>
-              )}
-            </div>
-            <div>
-              <label>Fecha de inicio</label>
-              {editando ? <input type="date" value={c.fecha_inicio ? c.fecha_inicio.split('T')[0] : ''} onChange={(e) => set('fecha_inicio', e.target.value || null)} /> : <div>{c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString('es-ES') : '-'}</div>}
-            </div>
-            <div>
-              <label>Fecha fin prevista</label>
-              {editando ? <input type="date" value={c.fecha_fin_prevista ? c.fecha_fin_prevista.split('T')[0] : ''} onChange={(e) => set('fecha_fin_prevista', e.target.value || null)} /> : <div>{c.fecha_fin_prevista ? new Date(c.fecha_fin_prevista).toLocaleDateString('es-ES') : '-'}</div>}
-            </div>
-            <div>
-              <label>Fecha fin real</label>
-              {editando ? <input type="date" value={c.fecha_fin_real ? c.fecha_fin_real.split('T')[0] : ''} onChange={(e) => set('fecha_fin_real', e.target.value || null)} /> : <div>{c.fecha_fin_real ? new Date(c.fecha_fin_real).toLocaleDateString('es-ES') : '-'}</div>}
-            </div>
-            <div style={{ gridColumn: 'span 2' }}>
-              <label>Notas del proyecto (uso interno)</label>
-              {editando ? <textarea rows="4" value={c.notas_proyecto || ''} onChange={(e) => set('notas_proyecto', e.target.value)} placeholder="Apuntes, recordatorios, lo que necesites" /> : <div style={{ whiteSpace: 'pre-wrap' }}>{c.notas_proyecto || '-'}</div>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pestana === 'pagos' && (
-        <div>
-          <div className="card">
-            <h2>Resumen economico</h2>
-            <div className="totales">
-              <div className="totales-grid">
-                <div><div className="label">Total contratado</div><div className="valor">{fmtEuros(cliente.total)}</div></div>
-                <div><div className="label">Cobrado</div><div className="valor" style={{ color: '#047857' }}>{fmtEuros(totalCobrado)}</div></div>
-                <div><div className="label">Pendiente</div><div className="valor" style={{ color: importeVencido > 0 ? '#dc2626' : '#92400e' }}>{fmtEuros(totalPendiente)}</div></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-              <h2 style={{ border: 'none', margin: 0 }}>Pagos del cliente</h2>
-              <button className="btn-primary btn-sm" onClick={() => setPagoEditando({ concepto: '', importe: 0, fecha_esperada: '', estado: 'Pendiente', metodo: 'Transferencia' })}>+ Nuevo pago</button>
-            </div>
-            {pagos.length === 0 ? (
-              <div className="empty">
-                <p>No hay pagos todavia.</p>
-                <p style={{ fontSize: 12, marginTop: 10 }}>Cuando generes el numero de contrato (en pestana Documentos), se generaran automaticamente los pagos segun la forma de pago elegida.</p>
-              </div>
-            ) : (
-              <table>
-                <thead><tr><th>Concepto</th><th>Importe</th><th>Fecha esperada</th><th>Fecha pago</th><th>Estado</th><th>Metodo</th><th></th></tr></thead>
-                <tbody>
-                  {pagos.map((p) => {
-                    const vencido = p.estado === 'Pendiente' && p.fecha_esperada && new Date(p.fecha_esperada) < hoy;
-                    return (
-                      <tr key={p.id} style={vencido ? { background: '#fef2f2' } : {}}>
-                        <td>{p.concepto}{p.es_recurrente && <span style={{ marginLeft: 6, fontSize: 10, background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: 8 }}>Recurrente</span>}</td>
-                        <td style={{ fontWeight: 600 }}>{fmtEuros(p.importe)}</td>
-                        <td style={{ fontSize: 12 }}>{p.fecha_esperada ? new Date(p.fecha_esperada).toLocaleDateString('es-ES') : '-'}</td>
-                        <td style={{ fontSize: 12 }}>{p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString('es-ES') : '-'}</td>
-                        <td><span className={`estado ${p.estado === 'Cobrado' ? 'estado-firmado' : p.estado === 'Cancelado' ? 'estado-cancelado' : vencido ? 'estado-cancelado' : 'estado-pendiente'}`}>{vencido ? 'Vencido' : p.estado}</span></td>
-                        <td style={{ fontSize: 12 }}>{p.metodo}</td>
-                        <td>
-                          {p.estado === 'Pendiente' && <button className="btn-primary btn-sm" onClick={() => marcarCobrado(p)}>Cobrado</button>}{' '}
-                          <button className="btn-outline btn-sm" onClick={() => setPagoEditando(p)}>Editar</button>{' '}
-                          <button className="btn-danger btn-sm" onClick={() => borrarPago(p.id)}>X</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
-
-      {pestana === 'documentos' && (
-        <div>
-          <div className="card">
-            <h2>Generar documentos</h2>
-            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 15 }}>
-              Pulsa cualquier boton para previsualizar el documento ya rellenado. Despues podras imprimirlo o descargarlo en PDF.
-            </p>
-            {!cliente.numero_contrato && (
-              <div className="alerta alerta-aviso">
-                Aun no tienes numero de contrato. <button onClick={generarNumeroContrato} className="btn-sm btn-primary" style={{ marginLeft: 10 }}>Generar numero ahora</button>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {TIPOS_DOC.map((t) => <button key={t.id} className="btn-primary" onClick={() => abrirPreview(t.id)}>{t.nombre}</button>)}
-              <button className="btn-outline" onClick={descargarTodosZip}>Descargar TODOS en ZIP</button>
-              <button className="btn-outline" onClick={() => setShowFirma(true)}>{cliente.firma_cliente ? 'Cambiar firma' : 'Anadir firma del cliente'}</button>
-            </div>
-          </div>
-
-          {cliente.firma_cliente && (
-            <div className="card">
-              <h2>Firma del cliente</h2>
-              <p style={{ fontSize: 12, color: '#6b7280' }}>Firmado el {new Date(cliente.fecha_firma).toLocaleString('es-ES')}</p>
-              <img src={cliente.firma_cliente} alt="Firma" style={{ maxWidth: 300, border: '1px solid #e5e7eb', borderRadius: 6, marginTop: 10 }} />
-            </div>
-          )}
-
-          <div className="card">
-            <h2>Documentos generados ({documentos.length})</h2>
-            {documentos.length === 0 ? (
-              <div className="empty"><p>Aun no has generado ningun documento.</p></div>
-            ) : (
-              <table>
-                <thead><tr><th>Documento</th><th>Tipo</th><th>Fecha</th><th></th></tr></thead>
-                <tbody>
-                  {documentos.map((d) => (
-                    <tr key={d.id}>
-                      <td>{d.nombre}</td>
-                      <td>{TIPOS_DOC.find((t) => t.id === d.tipo)?.nombre || d.tipo}</td>
-                      <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(d.creado_en).toLocaleString('es-ES')}</td>
-                      <td>
-                        <button className="btn-outline btn-sm" onClick={() => descargarPDF(d.tipo)}>Re-descargar</button>{' '}
-                        <button className="btn-danger btn-sm" onClick={() => borrarDocumento(d.id)}>Borrar</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
-
-      {pestana === 'archivos' && (
-        <div className="card">
-          <h2>Archivos del cliente</h2>
-          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 15 }}>Sube aqui contratos firmados escaneados, DNI, briefings, materiales del cliente. Maximo 8 MB por archivo.</p>
-          <input type="file" onChange={subirArchivo} style={{ marginBottom: 20 }} />
-          {archivos.length === 0 ? (
-            <div className="empty"><p>Sin archivos subidos todavia.</p></div>
-          ) : (
-            <table>
-              <thead><tr><th>Nombre</th><th>Tipo</th><th>Tamano</th><th>Fecha</th><th></th></tr></thead>
-              <tbody>
-                {archivos.map((a) => (
-                  <tr key={a.id}>
-                    <td>{a.nombre}</td>
-                    <td style={{ fontSize: 12, color: '#6b7280' }}>{a.tipo}</td>
-                    <td style={{ fontSize: 12 }}>{(a.tamano / 1024).toFixed(1)} KB</td>
-                    <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(a.creado_en).toLocaleDateString('es-ES')}</td>
-                    <td>
-                      <a href={api.archivoDownloadUrl(a.id)} className="btn-outline btn-sm" style={{ display: 'inline-block', textDecoration: 'none' }}>Descargar</a>{' '}
-                      <button className="btn-danger btn-sm" onClick={() => borrarArchivo(a.id)}>Borrar</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {showFirma && (
-        <div className="modal-overlay" onClick={() => setShowFirma(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h2>Firma del cliente</h2><button onClick={() => setShowFirma(false)}>&times;</button></div>
-            <div className="modal-body"><FirmaCanvas onFirmar={handleFirmar} onCancelar={() => setShowFirma(false)} /></div>
-          </div>
-        </div>
-      )}
-
-      {previewDoc && (
-        <div className="modal-overlay" onClick={() => setPreviewDoc(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 950 }}>
-            <div className="modal-header"><h2>{TIPOS_DOC.find((t) => t.id === previewDoc.tipo)?.nombre}</h2><button onClick={() => setPreviewDoc(null)}>&times;</button></div>
-            <div className="modal-body"><div dangerouslySetInnerHTML={{ __html: previewDoc.html }} /></div>
-            <div className="modal-footer">
-              <button className="btn-outline" onClick={() => setPreviewDoc(null)}>Cerrar</button>
-              <button className="btn-outline" onClick={() => imprimirDocumento(previewDoc.html)}>Imprimir</button>
-              <button className="btn-primary" onClick={async () => { await descargarPDF(previewDoc.tipo, previewDoc.html); setPreviewDoc(null); }}>Descargar PDF</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pagoEditando && (
-        <ModalPago pago={pagoEditando} onSave={guardarPago} onClose={() => setPagoEditando(null)} />
-      )}
     </div>
   );
 }
 
-function ModalPago({ pago, onSave, onClose }) {
-  const [d, setD] = useState({
-    ...pago,
-    fecha_esperada: pago.fecha_esperada ? (pago.fecha_esperada.split ? pago.fecha_esperada.split('T')[0] : pago.fecha_esperada) : '',
-    fecha_pago: pago.fecha_pago ? (pago.fecha_pago.split ? pago.fecha_pago.split('T')[0] : pago.fecha_pago) : '',
-  });
-  function set(k, v) { setD((x) => ({ ...x, [k]: v })); }
+// =============================================================
+// PANEL: SERVICIOS
+// =============================================================
+function PanelServicios({ cliente, servicios, guardar }) {
+  const [lineas, setLineas] = useState(cliente.servicios_json || []);
+  const [iva, setIva] = useState(cliente.iva || 21);
+  const [formaPago, setFormaPago] = useState(cliente.forma_pago || '50% al inicio, 50% a la entrega');
+  const [plazo, setPlazo] = useState(cliente.plazo || '');
+  const [descripcion, setDescripcion] = useState(cliente.descripcion || '');
+  const [generarContrato, setGenerarContrato] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    setLineas(cliente.servicios_json || []);
+    setIva(cliente.iva || 21);
+    setFormaPago(cliente.forma_pago || '50% al inicio, 50% a la entrega');
+    setPlazo(cliente.plazo || '');
+    setDescripcion(cliente.descripcion || '');
+  }, [cliente.id]);
+
+  const totales = useMemo(() => {
+    let base = 0;
+    lineas.forEach(s => { base += (parseFloat(s.cantidad) || 0) * (parseFloat(s.precio) || 0); });
+    const ivaImp = base * (parseFloat(iva) || 0) / 100;
+    return { base, iva: ivaImp, total: base + ivaImp };
+  }, [lineas, iva]);
+
+  function addLinea(serv) {
+    setLineas([...lineas, { nombre: serv ? serv.nombre : '', cantidad: 1, precio: serv ? Number(serv.precio) : 0, categoria: serv ? serv.categoria : '' }]);
+  }
+  function delLinea(i) { setLineas(lineas.filter((_, j) => j !== i)); }
+  function upLinea(i, k, v) {
+    const nuevas = [...lineas]; nuevas[i] = { ...nuevas[i], [k]: v }; setLineas(nuevas);
+  }
+
+  async function onGuardar() {
+    if (cliente.numero_contrato && !confirm('Este cliente ya tiene contrato generado. Si cambias servicios o precios, los pagos pendientes se recalcularan proporcionalmente. Continuar?')) return;
+    setGuardando(true);
+    try {
+      await guardar({
+        servicios_json: lineas,
+        iva, forma_pago: formaPago, plazo, descripcion,
+        generar_contrato: generarContrato && !cliente.numero_contrato,
+      });
+      alert('Servicios guardados' + (generarContrato && !cliente.numero_contrato ? '. Contrato y pagos generados.' : ''));
+    } finally {
+      setGuardando(false);
+    }
+  }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
-        <div className="modal-header"><h2>{pago.id ? 'Editar pago' : 'Nuevo pago'}</h2><button onClick={onClose}>&times;</button></div>
-        <div className="modal-body">
-          <div className="grid">
-            <div style={{ gridColumn: 'span 2' }}><label>Concepto *</label><input value={d.concepto || ''} onChange={(e) => set('concepto', e.target.value)} placeholder="Ej: Primer pago, cuota mensual abril..." /></div>
-            <div><label>Importe (EUR) *</label><input type="number" step="0.01" value={d.importe || 0} onChange={(e) => set('importe', parseFloat(e.target.value) || 0)} /></div>
-            <div><label>Estado</label>
-              <select value={d.estado || 'Pendiente'} onChange={(e) => set('estado', e.target.value)}>
-                {['Pendiente', 'Cobrado', 'Cancelado'].map(x => <option key={x}>{x}</option>)}
-              </select>
-            </div>
-            <div><label>Fecha esperada</label><input type="date" value={d.fecha_esperada || ''} onChange={(e) => set('fecha_esperada', e.target.value)} /></div>
-            <div><label>Fecha pago real</label><input type="date" value={d.fecha_pago || ''} onChange={(e) => set('fecha_pago', e.target.value)} /></div>
-            <div><label>Metodo de pago</label>
-              <select value={d.metodo || 'Transferencia'} onChange={(e) => set('metodo', e.target.value)}>
-                {['Transferencia', 'Bizum', 'Efectivo', 'Stripe', 'PayPal', 'Otro'].map(x => <option key={x}>{x}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Recurrente?</label>
-              <select value={d.es_recurrente ? 'si' : 'no'} onChange={(e) => set('es_recurrente', e.target.value === 'si')}>
-                <option value="no">No</option><option value="si">Si</option>
-              </select>
-            </div>
-            <div style={{ gridColumn: 'span 2' }}><label>Notas</label><textarea rows="2" value={d.notas || ''} onChange={(e) => set('notas', e.target.value)} /></div>
-          </div>
+    <div>
+      <h3>Servicios contratados</h3>
+      {lineas.map((l, i) => (
+        <div key={i} className="linea-servicio">
+          <select value={l.nombre || ''} onChange={(e) => {
+            const sv = servicios.find(s => s.nombre === e.target.value);
+            upLinea(i, 'nombre', e.target.value);
+            if (sv) {
+              upLinea(i, 'precio', Number(sv.precio));
+              upLinea(i, 'categoria', sv.categoria);
+            }
+          }}>
+            <option value="">-- Selecciona servicio --</option>
+            {servicios.map(s => <option key={s.id} value={s.nombre}>{s.nombre} ({fmtEuros(s.precio)})</option>)}
+          </select>
+          <input type="number" min="1" value={l.cantidad || 1} onChange={(e) => upLinea(i, 'cantidad', e.target.value)} placeholder="Cant" />
+          <input type="number" step="0.01" value={l.precio || 0} onChange={(e) => upLinea(i, 'precio', e.target.value)} placeholder="Precio" />
+          <span>{fmtEuros((parseFloat(l.cantidad) || 0) * (parseFloat(l.precio) || 0))}</span>
+          <button onClick={() => delLinea(i)}>Quitar</button>
         </div>
-        <div className="modal-footer">
-          <button className="btn-outline" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={() => {
-            if (!d.concepto || !d.importe) { alert('Concepto e importe obligatorios'); return; }
-            onSave(d);
-          }}>Guardar</button>
+      ))}
+      <button onClick={() => addLinea(null)}>+ Anadir linea</button>
+
+      <div className="grid2" style={{ marginTop: 20 }}>
+        <label>IVA (%)
+          <input type="number" value={iva} onChange={(e) => setIva(e.target.value)} />
+        </label>
+        <label>Forma de pago
+          <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)}>
+            <option>50% al inicio, 50% a la entrega</option>
+            <option>30% al inicio, 70% a la entrega</option>
+            <option>100% al inicio</option>
+            <option>100% a la entrega</option>
+            <option>Cuota mensual recurrente</option>
+          </select>
+        </label>
+        <label>Plazo de entrega
+          <input value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="Ej: 30 dias naturales" />
+        </label>
+        <label style={{ gridColumn: '1 / -1' }}>Descripcion del proyecto
+          <textarea rows="3" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+        </label>
+      </div>
+
+      <div className="resumen-totales">
+        <p>Base imponible: <strong>{fmtEuros(totales.base)}</strong></p>
+        <p>IVA ({iva}%): <strong>{fmtEuros(totales.iva)}</strong></p>
+        <p className="total-final">TOTAL: {fmtEuros(totales.total)}</p>
+      </div>
+
+      {!cliente.numero_contrato && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          <input type="checkbox" checked={generarContrato} onChange={(e) => setGenerarContrato(e.target.checked)} />
+          Al guardar, generar numero de contrato y crear los pagos automaticamente
+        </label>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        <button onClick={onGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar servicios'}</button>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: PIPELINE - Fases reales del proyecto
+// =============================================================
+function PanelPipeline({ cliente, fases, setFases, guardar, recargar }) {
+  const [editando, setEditando] = useState(null);
+
+  async function aplicarPlantilla(sustituir) {
+    const msg = sustituir
+      ? 'Esto borrara las fases actuales y creara las plantilla. Continuar?'
+      : 'Esto anadira las fases de plantilla a las que ya tienes. Continuar?';
+    if (!confirm(msg)) return;
+    try {
+      await api.aplicarPlantilla(cliente.id, sustituir);
+      await recargar();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function cambiarEstado(fase, nuevoEstado) {
+    try {
+      const actualizada = await api.faseUpdate({ ...fase, estado: nuevoEstado });
+      setFases(fases.map(f => f.id === fase.id ? actualizada : f));
+      // Recargar cliente para ver el nuevo porcentaje
+      const c = await api.clienteGet(cliente.id);
+      // Hack: forzar reload del cliente padre
+      window.dispatchEvent(new Event('storage'));
+      Object.assign(cliente, c);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function eliminar(fase) {
+    if (!confirm('Eliminar la fase "' + fase.nombre + '"?')) return;
+    try {
+      await api.faseDelete(fase.id);
+      setFases(fases.filter(f => f.id !== fase.id));
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function guardarFase(datos) {
+    try {
+      let saved;
+      if (datos.id) {
+        saved = await api.faseUpdate(datos);
+        setFases(fases.map(f => f.id === datos.id ? saved : f));
+      } else {
+        saved = await api.faseCreate({ ...datos, cliente_id: cliente.id, orden: fases.length + 1 });
+        setFases([...fases, saved]);
+      }
+      setEditando(null);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  const totalPesos = fases.reduce((s, f) => s + Number(f.peso), 0);
+  const completadasPeso = fases.filter(f => f.estado === 'Completada').reduce((s, f) => s + Number(f.peso), 0);
+
+  return (
+    <div>
+      <h3>Pipeline del proyecto</h3>
+
+      {fases.length === 0 ? (
+        <div className="estado-vacio">
+          <p>Este proyecto todavia no tiene fases. Puedes generarlas automaticamente desde una plantilla segun los servicios contratados.</p>
+          <button onClick={() => aplicarPlantilla(false)}>Generar pipeline desde plantilla</button>
+          <button onClick={() => setEditando({ nombre: '', peso: 10, estado: 'Pendiente' })}>O anadir fase manual</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+            <button onClick={() => setEditando({ nombre: '', peso: 10, estado: 'Pendiente' })}>+ Anadir fase</button>
+            <button onClick={() => aplicarPlantilla(false)}>Anadir fases de plantilla</button>
+            <button onClick={() => aplicarPlantilla(true)} style={{ background: '#ef4444' }}>Sustituir por plantilla</button>
+          </div>
+
+          <div style={{ marginBottom: 12, fontSize: 13, color: '#666' }}>
+            {fases.length} fases, suma de pesos: {totalPesos}, completadas: {completadasPeso}/{totalPesos}
+          </div>
+
+          <div className="lista-fases">
+            {fases.sort((a, b) => a.orden - b.orden).map(f => (
+              <FaseFila
+                key={f.id}
+                fase={f}
+                onCambiarEstado={cambiarEstado}
+                onEditar={() => setEditando(f)}
+                onEliminar={() => eliminar(f)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {editando && (
+        <ModalFase
+          inicial={editando}
+          onGuardar={guardarFase}
+          onCancelar={() => setEditando(null)}
+        />
+      )}
+
+      <div style={{ marginTop: 30, padding: 16, background: '#f9fafb', borderRadius: 8 }}>
+        <h4 style={{ marginTop: 0 }}>Notas del proyecto</h4>
+        <textarea
+          rows="4"
+          style={{ width: '100%' }}
+          defaultValue={cliente.notas_proyecto || ''}
+          onBlur={(e) => guardar({ notas_proyecto: e.target.value })}
+          placeholder="Notas internas del seguimiento del proyecto..."
+        />
+      </div>
+    </div>
+  );
+}
+
+function FaseFila({ fase, onCambiarEstado, onEditar, onEliminar }) {
+  const colores = {
+    'Pendiente': '#9ca3af',
+    'En curso': '#3b82f6',
+    'Bloqueada': '#ef4444',
+    'Completada': '#10b981',
+  };
+  return (
+    <div className={`fase-fila estado-${fase.estado.toLowerCase().replace(' ', '-')}`}>
+      <div className="fase-orden">{fase.orden}</div>
+      <div className="fase-info">
+        <div className="fase-nombre">{fase.nombre}</div>
+        <div className="fase-meta">
+          Peso: {fase.peso}%
+          {fase.fecha_real_inicio && ` | Iniciada ${new Date(fase.fecha_real_inicio).toLocaleDateString('es-ES')}`}
+          {fase.fecha_real_fin && ` | Completada ${new Date(fase.fecha_real_fin).toLocaleDateString('es-ES')}`}
+        </div>
+        {fase.notas && <div className="fase-notas">{fase.notas}</div>}
+      </div>
+      <div className="fase-estado-actual" style={{ background: colores[fase.estado] }}>{fase.estado}</div>
+      <select value={fase.estado} onChange={(e) => onCambiarEstado(fase, e.target.value)}>
+        <option>Pendiente</option>
+        <option>En curso</option>
+        <option>Bloqueada</option>
+        <option>Completada</option>
+      </select>
+      <button onClick={onEditar}>Editar</button>
+      <button onClick={onEliminar} className="btn-peligro">X</button>
+    </div>
+  );
+}
+
+function ModalFase({ inicial, onGuardar, onCancelar }) {
+  const [f, setF] = useState({ ...inicial });
+  function up(k, v) { setF({ ...f, [k]: v }); }
+  return (
+    <div className="modal-overlay" onClick={onCancelar}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{f.id ? 'Editar fase' : 'Nueva fase'}</h3>
+        <label>Nombre
+          <input value={f.nombre || ''} onChange={(e) => up('nombre', e.target.value)} autoFocus />
+        </label>
+        <div className="grid2">
+          <label>Peso (%)
+            <input type="number" min="1" max="100" value={f.peso || 10} onChange={(e) => up('peso', parseInt(e.target.value, 10) || 10)} />
+          </label>
+          <label>Estado
+            <select value={f.estado || 'Pendiente'} onChange={(e) => up('estado', e.target.value)}>
+              <option>Pendiente</option>
+              <option>En curso</option>
+              <option>Bloqueada</option>
+              <option>Completada</option>
+            </select>
+          </label>
+          <label>Fecha prevista inicio
+            <input type="date" value={f.fecha_prevista_inicio || ''} onChange={(e) => up('fecha_prevista_inicio', e.target.value)} />
+          </label>
+          <label>Fecha prevista fin
+            <input type="date" value={f.fecha_prevista_fin || ''} onChange={(e) => up('fecha_prevista_fin', e.target.value)} />
+          </label>
+        </div>
+        <label>Notas
+          <textarea rows="3" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} />
+        </label>
+        <div className="modal-acciones">
+          <button onClick={onCancelar}>Cancelar</button>
+          <button onClick={() => onGuardar(f)} disabled={!f.nombre}>Guardar</button>
         </div>
       </div>
     </div>
   );
 }
 
-function calcularTotales(c) {
-  let base = 0;
-  (c.servicios_json || []).forEach((s) => {
-    base += (parseFloat(s.cantidad) || 0) * (parseFloat(s.precio) || 0);
-  });
-  const iva = base * (parseFloat(c.iva) || 0) / 100;
-  return { base, iva, total: base + iva };
+// =============================================================
+// PANEL: PAGOS
+// =============================================================
+function PanelPagos({ cliente, pagos, setPagos }) {
+  const [editando, setEditando] = useState(null);
+
+  async function eliminar(p) {
+    if (!confirm('Eliminar este pago?')) return;
+    try {
+      await api.pagoDelete(p.id);
+      setPagos(pagos.filter(x => x.id !== p.id));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function guardar(datos) {
+    try {
+      let saved;
+      if (datos.id) {
+        saved = await api.pagoUpdate(datos);
+        setPagos(pagos.map(p => p.id === datos.id ? saved : p));
+      } else {
+        saved = await api.pagoCreate({ ...datos, cliente_id: cliente.id });
+        setPagos([...pagos, saved]);
+      }
+      setEditando(null);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  const totales = pagos.reduce((acc, p) => {
+    if (p.estado === 'Cobrado') acc.cobrado += Number(p.importe);
+    else if (p.estado === 'Pendiente') acc.pendiente += Number(p.importe);
+    else if (p.estado === 'Cancelado') acc.cancelado += Number(p.importe);
+    return acc;
+  }, { cobrado: 0, pendiente: 0, cancelado: 0 });
+
+  return (
+    <div>
+      <h3>Pagos del cliente</h3>
+      <div className="resumen-pagos">
+        <div className="card-pago"><span>Cobrado</span><strong>{fmtEuros(totales.cobrado)}</strong></div>
+        <div className="card-pago"><span>Pendiente</span><strong style={{ color: '#f59e0b' }}>{fmtEuros(totales.pendiente)}</strong></div>
+        <div className="card-pago"><span>Cancelado</span><strong style={{ color: '#9ca3af' }}>{fmtEuros(totales.cancelado)}</strong></div>
+      </div>
+      <button onClick={() => setEditando({ concepto: '', importe: 0, estado: 'Pendiente' })}>+ Nuevo pago</button>
+
+      <table className="tabla-pagos">
+        <thead><tr><th>Concepto</th><th>Importe</th><th>Esperada</th><th>Pago</th><th>Estado</th><th>Metodo</th><th></th></tr></thead>
+        <tbody>
+          {pagos.map(p => (
+            <tr key={p.id}>
+              <td>{p.concepto}{p.es_recurrente && <span className="pill mensual">{p.mes_recurrencia}</span>}</td>
+              <td>{fmtEuros(p.importe)}</td>
+              <td>{p.fecha_esperada ? new Date(p.fecha_esperada).toLocaleDateString('es-ES') : '-'}</td>
+              <td>{p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString('es-ES') : '-'}</td>
+              <td><span className={`pill estado-pago-${(p.estado || '').toLowerCase()}`}>{p.estado}</span></td>
+              <td>{p.metodo}</td>
+              <td>
+                <button onClick={() => setEditando(p)}>Editar</button>
+                <button onClick={() => eliminar(p)} className="btn-peligro">X</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {editando && <ModalPago inicial={editando} onGuardar={guardar} onCancelar={() => setEditando(null)} />}
+    </div>
+  );
 }
 
-function claseEstado(e) {
-  return {
-    'Pendiente firma': 'estado-pendiente',
-    'Firmado': 'estado-firmado',
-    'Cancelado': 'estado-cancelado',
-    'En curso': 'estado-curso',
-    'Entregado': 'estado-entregado',
-  }[e] || 'estado-pendiente';
+function ModalPago({ inicial, onGuardar, onCancelar }) {
+  const [f, setF] = useState({ ...inicial });
+  function up(k, v) { setF({ ...f, [k]: v }); }
+  return (
+    <div className="modal-overlay" onClick={onCancelar}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{f.id ? 'Editar pago' : 'Nuevo pago'}</h3>
+        <label>Concepto<input value={f.concepto || ''} onChange={(e) => up('concepto', e.target.value)} /></label>
+        <div className="grid2">
+          <label>Importe<input type="number" step="0.01" value={f.importe || 0} onChange={(e) => up('importe', e.target.value)} /></label>
+          <label>Estado
+            <select value={f.estado || 'Pendiente'} onChange={(e) => up('estado', e.target.value)}>
+              <option>Pendiente</option><option>Cobrado</option><option>Cancelado</option>
+            </select>
+          </label>
+          <label>Fecha esperada<input type="date" value={f.fecha_esperada || ''} onChange={(e) => up('fecha_esperada', e.target.value)} /></label>
+          <label>Fecha de pago<input type="date" value={f.fecha_pago || ''} onChange={(e) => up('fecha_pago', e.target.value)} /></label>
+          <label>Metodo
+            <select value={f.metodo || 'Transferencia'} onChange={(e) => up('metodo', e.target.value)}>
+              <option>Transferencia</option><option>Bizum</option><option>Stripe</option><option>Efectivo</option><option>Otros</option>
+            </select>
+          </label>
+        </div>
+        <label>Notas<textarea rows="2" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} /></label>
+        <div className="modal-acciones">
+          <button onClick={onCancelar}>Cancelar</button>
+          <button onClick={() => onGuardar(f)} disabled={!f.concepto}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: ACCESOS - Credenciales del cliente cifradas
+// =============================================================
+function PanelAccesos({ cliente, accesos, setAccesos }) {
+  const [editando, setEditando] = useState(null);
+  const [verPasswords, setVerPasswords] = useState(false);
+  const [accesosConPwd, setAccesosConPwd] = useState({});
+
+  async function recargarConPasswords() {
+    if (!confirm('Vas a mostrar todas las contrasenas guardadas en pantalla. Asegurate de que nadie mas ve la pantalla. Continuar?')) return;
+    try {
+      const lista = await api.accesosList(cliente.id, true);
+      const mapa = {};
+      lista.forEach(a => { mapa[a.id] = a.password || ''; });
+      setAccesosConPwd(mapa);
+      setVerPasswords(true);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  function ocultarPasswords() {
+    setAccesosConPwd({});
+    setVerPasswords(false);
+  }
+
+  async function copiarPassword(accesoId) {
+    try {
+      // Si ya las tenemos cargadas, copiar de memoria
+      let pwd = accesosConPwd[accesoId];
+      if (pwd === undefined) {
+        const lista = await api.accesosList(cliente.id, true);
+        const a = lista.find(x => x.id === accesoId);
+        pwd = a ? a.password : '';
+      }
+      if (!pwd) { alert('Sin contrasena guardada'); return; }
+      await navigator.clipboard.writeText(pwd);
+      alert('Contrasena copiada al portapapeles');
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function eliminar(a) {
+    if (!confirm('Eliminar el acceso "' + a.etiqueta + '"?')) return;
+    try {
+      await api.accesoDelete(a.id);
+      setAccesos(accesos.filter(x => x.id !== a.id));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function guardar(datos) {
+    try {
+      let saved;
+      if (datos.id) {
+        saved = await api.accesoUpdate(datos);
+        setAccesos(accesos.map(x => x.id === datos.id ? saved : x));
+      } else {
+        saved = await api.accesoCreate({ ...datos, cliente_id: cliente.id });
+        setAccesos([...accesos, saved]);
+      }
+      setEditando(null);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  const grupos = useMemo(() => {
+    const g = {};
+    accesos.forEach(a => {
+      const k = a.categoria || 'Otros';
+      if (!g[k]) g[k] = [];
+      g[k].push(a);
+    });
+    return g;
+  }, [accesos]);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>Accesos y credenciales</h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {verPasswords ? (
+            <button onClick={ocultarPasswords}>Ocultar contrasenas</button>
+          ) : (
+            <button onClick={recargarConPasswords} disabled={accesos.length === 0}>Ver todas las contrasenas</button>
+          )}
+          <button onClick={() => setEditando({ categoria: 'Email', etiqueta: '', importante: false })}>+ Nuevo acceso</button>
+        </div>
+      </div>
+
+      <div className="aviso-cifrado">
+        Las contrasenas se guardan cifradas con AES-256. Solo se descifran cuando tu las pides explicitamente.
+      </div>
+
+      {accesos.length === 0 ? (
+        <div className="estado-vacio">
+          <p>Aun no hay accesos guardados para este cliente.</p>
+        </div>
+      ) : (
+        Object.keys(grupos).sort().map(cat => (
+          <div key={cat} className="grupo-accesos">
+            <h4>{cat}</h4>
+            <div className="lista-accesos">
+              {grupos[cat].map(a => (
+                <AccesoCard
+                  key={a.id}
+                  acceso={a}
+                  passwordVisible={verPasswords ? accesosConPwd[a.id] : null}
+                  onCopiar={() => copiarPassword(a.id)}
+                  onEditar={() => setEditando(a)}
+                  onEliminar={() => eliminar(a)}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+
+      {editando && <ModalAcceso inicial={editando} onGuardar={guardar} onCancelar={() => setEditando(null)} />}
+    </div>
+  );
+}
+
+function AccesoCard({ acceso, passwordVisible, onCopiar, onEditar, onEliminar }) {
+  const [pwdAbierta, setPwdAbierta] = useState(false);
+  return (
+    <div className={`card-acceso ${acceso.importante ? 'importante' : ''}`}>
+      <div className="card-acceso-cabecera">
+        <strong>{acceso.etiqueta}</strong>
+        {acceso.importante && <span className="pill importante">Importante</span>}
+      </div>
+      {acceso.url && (
+        <div className="card-acceso-fila">
+          <span className="ca-label">URL</span>
+          <a href={acceso.url} target="_blank" rel="noopener noreferrer">{acceso.url}</a>
+        </div>
+      )}
+      {acceso.usuario && (
+        <div className="card-acceso-fila">
+          <span className="ca-label">Usuario</span>
+          <span className="ca-valor">{acceso.usuario}</span>
+          <button className="ca-btn-mini" onClick={() => navigator.clipboard.writeText(acceso.usuario)}>Copiar</button>
+        </div>
+      )}
+      {acceso.tiene_password && (
+        <div className="card-acceso-fila">
+          <span className="ca-label">Contrasena</span>
+          {pwdAbierta && passwordVisible ? (
+            <span className="ca-valor mono">{passwordVisible}</span>
+          ) : (
+            <span className="ca-valor">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span>
+          )}
+          {passwordVisible && (
+            <button className="ca-btn-mini" onClick={() => setPwdAbierta(!pwdAbierta)}>{pwdAbierta ? 'Ocultar' : 'Mostrar'}</button>
+          )}
+          <button className="ca-btn-mini" onClick={onCopiar}>Copiar</button>
+        </div>
+      )}
+      {acceso.notas && <div className="card-acceso-notas">{acceso.notas}</div>}
+      <div className="card-acceso-acciones">
+        <button onClick={onEditar}>Editar</button>
+        <button onClick={onEliminar} className="btn-peligro">Eliminar</button>
+      </div>
+    </div>
+  );
+}
+
+function ModalAcceso({ inicial, onGuardar, onCancelar }) {
+  const [f, setF] = useState({ ...inicial, password: inicial.password || '' });
+  const [verPwd, setVerPwd] = useState(false);
+  function up(k, v) { setF({ ...f, [k]: v }); }
+  return (
+    <div className="modal-overlay" onClick={onCancelar}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{f.id ? 'Editar acceso' : 'Nuevo acceso'}</h3>
+        <div className="grid2">
+          <label>Categoria
+            <select value={f.categoria || 'Otros'} onChange={(e) => up('categoria', e.target.value)}>
+              {CATEGORIAS_ACCESO.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 24 }}>
+            <input type="checkbox" checked={!!f.importante} onChange={(e) => up('importante', e.target.checked)} />
+            Marcar como importante
+          </label>
+        </div>
+        <label>Etiqueta
+          <input value={f.etiqueta || ''} onChange={(e) => up('etiqueta', e.target.value)} placeholder="Ej: Email principal del cliente" autoFocus />
+        </label>
+        <label>URL
+          <input value={f.url || ''} onChange={(e) => up('url', e.target.value)} placeholder="https://..." />
+        </label>
+        <div className="grid2">
+          <label>Usuario / Email
+            <input value={f.usuario || ''} onChange={(e) => up('usuario', e.target.value)} />
+          </label>
+          <label>Contrasena
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input type={verPwd ? 'text' : 'password'} style={{ flex: 1 }} value={f.password || ''} onChange={(e) => up('password', e.target.value)} placeholder={f.id && !f.password ? '(sin cambios)' : ''} />
+              <button type="button" onClick={() => setVerPwd(!verPwd)}>{verPwd ? 'Ocultar' : 'Ver'}</button>
+            </div>
+          </label>
+        </div>
+        <label>Notas
+          <textarea rows="2" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} placeholder="Renovacion anual, observaciones, etc." />
+        </label>
+        <div className="modal-acciones">
+          <button onClick={onCancelar}>Cancelar</button>
+          <button onClick={() => onGuardar(f)} disabled={!f.etiqueta}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: DOCUMENTOS - Hoja, Cesion, Contrato y Acta
+// =============================================================
+function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDocumentos, setCliente, guardar }) {
+  const [previsualizando, setPrevisualizando] = useState(null);
+  const [tipoNuevo, setTipoNuevo] = useState(null);
+  const [emailHab, setEmailHab] = useState(false);
+
+  useEffect(() => {
+    api.emailEstado().then(r => setEmailHab(r.habilitado)).catch(() => setEmailHab(false));
+  }, []);
+
+  async function abrirNuevo(tipo) {
+    if (tipo === 'acta') {
+      // Para el acta, cargamos accesos con passwords descifradas para incluirlas
+      try {
+        const accDescifrados = await api.accesosList(cliente.id, true);
+        setTipoNuevo({ tipo, accesosDescifrados: accDescifrados });
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    } else {
+      setTipoNuevo({ tipo });
+    }
+  }
+
+  async function abrirGuardado(doc) {
+    try {
+      const completo = await api.documentoGet(doc.id);
+      setPrevisualizando(completo);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function eliminar(doc) {
+    if (!confirm('Eliminar el documento "' + doc.nombre + '"?')) return;
+    try {
+      await api.documentoDelete(doc.id);
+      setDocumentos(documentos.filter(d => d.id !== doc.id));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  return (
+    <div>
+      <h3>Documentos</h3>
+      <div className="botones-doc">
+        {TIPOS_DOC.map(t => {
+          const habilitado = !t.soloEntregado || cliente.estado_proyecto === 'Entregado y aceptado';
+          const titulo = !habilitado ? 'Disponible cuando el proyecto este en estado "Entregado y aceptado"' : '';
+          return (
+            <button
+              key={t.id}
+              onClick={() => abrirNuevo(t.id)}
+              disabled={!habilitado}
+              title={titulo}
+            >
+              + {t.nombre}
+            </button>
+          );
+        })}
+      </div>
+
+      {documentos.length === 0 ? (
+        <p style={{ color: '#666', marginTop: 16 }}>No hay documentos generados todavia.</p>
+      ) : (
+        <table className="tabla-docs">
+          <thead><tr><th>Tipo</th><th>Nombre</th><th>Firmado</th><th>Generado</th><th></th></tr></thead>
+          <tbody>
+            {documentos.map(d => (
+              <tr key={d.id}>
+                <td>{TIPOS_DOC.find(t => t.id === d.tipo)?.nombre || d.tipo}</td>
+                <td>{d.nombre}</td>
+                <td>{d.firmado ? `Si - ${new Date(d.fecha_firma).toLocaleDateString('es-ES')}` : 'No'}</td>
+                <td>{new Date(d.creado_en).toLocaleDateString('es-ES')}</td>
+                <td>
+                  <button onClick={() => abrirGuardado(d)}>Ver</button>
+                  <button onClick={() => eliminar(d)} className="btn-peligro">X</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {tipoNuevo && (
+        <ModalGenerarDoc
+          tipo={tipoNuevo.tipo}
+          cliente={cliente}
+          emisor={emisor}
+          accesos={tipoNuevo.accesosDescifrados || accesos}
+          archivos={archivos}
+          emailHab={emailHab}
+          onGuardado={async (doc) => {
+            setDocumentos([doc, ...documentos]);
+            setTipoNuevo(null);
+            // Si se firmo, recargar cliente para reflejar firma
+            if (doc.firmado && (doc.tipo === 'contrato' || doc.tipo === 'hoja')) {
+              const c = await api.clienteGet(cliente.id);
+              setCliente(c);
+            }
+          }}
+          onActualizarCliente={(data) => guardar(data)}
+          onCerrar={() => setTipoNuevo(null)}
+        />
+      )}
+
+      {previsualizando && (
+        <ModalVerDoc
+          documento={previsualizando}
+          cliente={cliente}
+          emailHab={emailHab}
+          onCerrar={() => setPrevisualizando(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, onGuardado, onActualizarCliente, onCerrar }) {
+  const [paso, setPaso] = useState('preview'); // preview | firma
+  const [firmaURL, setFirmaURL] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const ref = useRef(null);
+
+  const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
+  const html = useMemo(
+    () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, { accesos, archivos }),
+    [tipo, cliente, emisor, firmaURL, accesos, archivos]
+  );
+
+  async function descargarPDF(firmado) {
+    if (!ref.current) return;
+    const html2pdf = (await import('html2pdf.js')).default;
+    const opt = {
+      margin: 0,
+      filename: `${tipoInfo.nombre.toLowerCase().replace(/ /g, '-')}-${cliente.numero_contrato || cliente.numero_cliente}.pdf`,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    };
+    await html2pdf().set(opt).from(ref.current).save();
+  }
+
+  async function guardarDocumento(firmado) {
+    setGuardando(true);
+    try {
+      const doc = await api.documentoCreate({
+        cliente_id: cliente.id,
+        tipo,
+        nombre: `${tipoInfo.nombre} - ${cliente.nombre}`,
+        contenido_html: html,
+        firmado,
+      });
+      // Si es contrato firmado, marcar el cliente como firmado
+      if (firmado && tipo === 'contrato') {
+        await onActualizarCliente({
+          firma_cliente: firmaURL,
+          fecha_firma: new Date().toISOString(),
+          estado: 'Firmado',
+        });
+      }
+      onGuardado(doc);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onCerrar}>
+      <div className="modal modal-grande" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>{tipoInfo.nombre}</h3>
+          <button onClick={onCerrar}>X</button>
+        </div>
+
+        {paso === 'preview' && (
+          <>
+            <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
+            <div className="modal-acciones">
+              <button onClick={() => descargarPDF(false)}>Descargar PDF (sin firma)</button>
+              <button onClick={() => guardarDocumento(false)} disabled={guardando}>Guardar sin firmar</button>
+              <button onClick={() => setPaso('firma')} className="btn-principal">Pasar a firma</button>
+            </div>
+          </>
+        )}
+
+        {paso === 'firma' && (
+          <>
+            <h4>Firma del cliente</h4>
+            <FirmaCanvas onChange={setFirmaURL} />
+            <div className="preview-doc" dangerouslySetInnerHTML={{ __html: html }}></div>
+            <div className="modal-acciones">
+              <button onClick={() => setPaso('preview')}>Volver</button>
+              <button onClick={() => descargarPDF(true)} disabled={!firmaURL}>Descargar PDF firmado</button>
+              <button onClick={() => guardarDocumento(true)} disabled={!firmaURL || guardando} className="btn-principal">Guardar firmado</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModalVerDoc({ documento, cliente, emailHab, onCerrar }) {
+  const [enviando, setEnviando] = useState(false);
+  const ref = useRef(null);
+
+  async function descargar() {
+    if (!ref.current) return;
+    const html2pdf = (await import('html2pdf.js')).default;
+    await html2pdf().set({
+      margin: 0,
+      filename: `${documento.nombre}.pdf`,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    }).from(ref.current).save();
+  }
+
+  async function enviarPorEmail() {
+    if (!cliente.email) { alert('El cliente no tiene email guardado.'); return; }
+    if (!confirm(`Enviar el documento al email del cliente (${cliente.email})?`)) return;
+    setEnviando(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const blob = await html2pdf().set({
+        margin: 0, filename: `${documento.nombre}.pdf`,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(ref.current).outputPdf('blob');
+      const base64 = await new Promise((res) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+      await api.enviarActa({
+        destinatario: cliente.email,
+        asunto: `${documento.nombre}`,
+        mensaje_html: `<p>Hola ${cliente.nombre},</p><p>Adjunto encontraras el documento "${documento.nombre}".</p><p>Cualquier duda, respondeme a este email.</p><p>Un saludo.</p>`,
+        pdf_base64: base64,
+        pdf_nombre: `${documento.nombre}.pdf`,
+      });
+      alert('Email enviado correctamente.');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onCerrar}>
+      <div className="modal modal-grande" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ margin: 0 }}>{documento.nombre}</h3>
+          <button onClick={onCerrar}>X</button>
+        </div>
+        <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: documento.contenido_html }}></div>
+        <div className="modal-acciones">
+          <button onClick={descargar}>Descargar PDF</button>
+          <button onClick={enviarPorEmail} disabled={!emailHab || !cliente.email || enviando} title={!emailHab ? 'Email no configurado en Vercel' : (!cliente.email ? 'El cliente no tiene email' : '')}>
+            {enviando ? 'Enviando...' : 'Enviar por email al cliente'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: ARCHIVOS
+// =============================================================
+function PanelArchivos({ cliente, archivos, setArchivos }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const inputRef = useRef(null);
+
+  async function subir(file) {
+    if (!file) return;
+    if (file.size > 9 * 1024 * 1024) { alert('El archivo es muy grande (max 9 MB).'); return; }
+    setSubiendo(true);
+    try {
+      const base64 = await new Promise((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.readAsDataURL(file);
+      });
+      const nuevo = await api.archivoUpload({
+        cliente_id: cliente.id,
+        nombre: file.name,
+        tipo: file.type || 'application/octet-stream',
+        contenido_base64: base64,
+      });
+      setArchivos([nuevo, ...archivos]);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setSubiendo(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function descargar(a) {
+    try { await api.archivoDescargar(a.id, a.nombre); }
+    catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function eliminar(a) {
+    if (!confirm('Eliminar el archivo "' + a.nombre + '"?')) return;
+    try {
+      await api.archivoDelete(a.id);
+      setArchivos(archivos.filter(x => x.id !== a.id));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  return (
+    <div>
+      <h3>Archivos del cliente</h3>
+      <p style={{ color: '#666' }}>Briefings, logos, materiales, documentos firmados externamente, etc.</p>
+      <div>
+        <input ref={inputRef} type="file" onChange={(e) => subir(e.target.files[0])} disabled={subiendo} />
+        {subiendo && <span style={{ marginLeft: 12 }}>Subiendo...</span>}
+      </div>
+
+      {archivos.length === 0 ? (
+        <p style={{ color: '#666', marginTop: 16 }}>No hay archivos subidos.</p>
+      ) : (
+        <table className="tabla-archivos">
+          <thead><tr><th>Nombre</th><th>Tipo</th><th>Tamano</th><th>Subido</th><th></th></tr></thead>
+          <tbody>
+            {archivos.map(a => (
+              <tr key={a.id}>
+                <td>{a.nombre}</td>
+                <td>{a.tipo}</td>
+                <td>{(a.tamano / 1024).toFixed(1)} KB</td>
+                <td>{new Date(a.creado_en).toLocaleDateString('es-ES')}</td>
+                <td>
+                  <button onClick={() => descargar(a)}>Descargar</button>
+                  <button onClick={() => eliminar(a)} className="btn-peligro">X</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }

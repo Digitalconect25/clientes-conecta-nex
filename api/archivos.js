@@ -2,11 +2,7 @@ import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
 export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
+  api: { bodyParser: { sizeLimit: '10mb' } },
 };
 
 export default async function handler(req, res) {
@@ -19,11 +15,14 @@ export default async function handler(req, res) {
       const id = req.query.id ? parseInt(req.query.id, 10) : null;
 
       if (id) {
+        // Descarga binaria. La auth ya esta validada con la cabecera X-App-Password.
         const [row] = await sql`SELECT id, cliente_id, nombre, tipo, tamano, contenido, creado_en FROM archivos WHERE id = ${id}`;
         if (!row) return jsonResponse(res, 404, { error: 'No encontrado' });
         const buf = Buffer.from(row.contenido);
         res.setHeader('Content-Type', row.tipo);
-        res.setHeader('Content-Disposition', `attachment; filename="${row.nombre}"`);
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(row.nombre)}`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'private, no-store');
         return res.send(buf);
       }
 

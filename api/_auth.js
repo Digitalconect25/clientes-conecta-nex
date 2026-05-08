@@ -1,7 +1,6 @@
-// Verificacion simple de password de la app
-// La password se establece en Vercel como APP_PASSWORD
-// El frontend la guarda en localStorage tras hacer login
-// Cada llamada API la envia en header X-App-Password
+// Verificacion de password de la app.
+// Cada llamada a la API valida la cabecera X-App-Password contra
+// process.env.APP_PASSWORD.
 
 export function checkAuth(req) {
   const expected = process.env.APP_PASSWORD;
@@ -16,6 +15,9 @@ export function checkAuth(req) {
 }
 
 export function jsonResponse(res, status, data) {
-  res.status(status).setHeader('Content-Type', 'application/json');
+  res.status(status);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
   res.send(JSON.stringify(data));
 }

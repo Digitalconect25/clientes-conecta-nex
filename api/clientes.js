@@ -27,12 +27,10 @@ function calcularTotales(serviciosArray, ivaPct) {
 }
 
 async function generarPagosIniciales(clienteId, totales, formaPago, servicios) {
-  // Cuotas no recurrentes
   const total = totales.total;
   const hoy = new Date();
   const en7Dias = new Date(); en7Dias.setDate(hoy.getDate() + 7);
   const en30Dias = new Date(); en30Dias.setDate(hoy.getDate() + 30);
-
   const fmtFecha = (d) => d.toISOString().split('T')[0];
 
   if (formaPago === '50% al inicio, 50% a la entrega') {
@@ -47,7 +45,6 @@ async function generarPagosIniciales(clienteId, totales, formaPago, servicios) {
     await sql`INSERT INTO pagos (cliente_id, concepto, importe, fecha_esperada, estado) VALUES (${clienteId}, 'Pago unico a la entrega', ${total}, ${fmtFecha(en30Dias)}, 'Pendiente')`;
   }
 
-  // Cuotas mensuales recurrentes para servicios mensuales (los proximos 12 meses)
   const recurrentes = (servicios || []).filter(s => SERVICIOS_RECURRENTES.includes(s.nombre));
   if (recurrentes.length > 0) {
     for (let mes = 1; mes <= 12; mes++) {
@@ -61,6 +58,47 @@ async function generarPagosIniciales(clienteId, totales, formaPago, servicios) {
           VALUES (${clienteId}, ${s.nombre + ' - cuota mensual'}, ${importe}, ${fmtFecha(fecha)}, 'Pendiente', TRUE, ${mesEtq})`;
       }
     }
+  }
+}
+
+// Recalcula los importes de los pagos PENDIENTES cuando cambia el total del cliente.
+// Mantiene la proporcion entre los pagos pendientes existentes.
+// No toca pagos cobrados ni cancelados.
+async function recalcularPagosPendientes(clienteId, nuevoTotal) {
+  const pendientes = await sql`
+    SELECT id, importe FROM pagos
+    WHERE cliente_id = ${clienteId} AND estado = 'Pendiente'
+    ORDER BY fecha_esperada ASC NULLS LAST, id ASC
+  `;
+  if (pendientes.length === 0) return;
+
+  // Suma total cobrado + cancelado para saber cuanto queda por cobrar
+  const [resumen] = await sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN estado = 'Cobrado' THEN importe ELSE 0 END), 0) AS cobrado,
+      COALESCE(SUM(CASE WHEN estado = 'Cancelado' THEN importe ELSE 0 END), 0) AS cancelado
+    FROM pagos WHERE cliente_id = ${clienteId}
+  `;
+  const cobrado = parseFloat(resumen.cobrado) || 0;
+  const sumaPendientes = pendientes.reduce((s, p) => s + Number(p.importe), 0);
+  const objetivoPendiente = Math.max(0, parseFloat(nuevoTotal) - cobrado);
+
+  if (sumaPendientes === 0 || objetivoPendiente === 0) return;
+  const factor = objetivoPendiente / sumaPendientes;
+
+  // Actualizamos cada pago pendiente proporcionalmente
+  let acumulado = 0;
+  for (let i = 0; i < pendientes.length; i++) {
+    const p = pendientes[i];
+    let nuevo;
+    if (i === pendientes.length - 1) {
+      // Ultimo absorbe redondeo para que sume exactamente el objetivo
+      nuevo = Math.round((objetivoPendiente - acumulado) * 100) / 100;
+    } else {
+      nuevo = Math.round(Number(p.importe) * factor * 100) / 100;
+      acumulado += nuevo;
+    }
+    await sql`UPDATE pagos SET importe = ${nuevo}, actualizado_en = NOW() WHERE id = ${p.id}`;
   }
 }
 
@@ -111,6 +149,10 @@ export default async function handler(req, res) {
       const c = req.body || {};
       if (!c.id) return jsonResponse(res, 400, { error: 'Falta id' });
 
+      // Total anterior para detectar si cambio
+      const [previo] = await sql`SELECT total FROM clientes WHERE id = ${c.id}`;
+      const totalPrevio = previo ? parseFloat(previo.total) : 0;
+
       let numeroContrato = c.numero_contrato;
       if (c.generar_contrato && !numeroContrato) {
         numeroContrato = await siguienteNumero('contrato', 'CN');
@@ -155,10 +197,15 @@ export default async function handler(req, res) {
         RETURNING *
       `;
 
-      // Si se acaba de generar el numero de contrato, generamos los pagos automaticamente
+      // Si cambio el total y ya hay pagos, recalcular pendientes proporcionalmente
+      if (Math.abs(totalPrevio - parseFloat(row.total)) > 0.01) {
+        await recalcularPagosPendientes(c.id, parseFloat(row.total));
+      }
+
+      // Si se acaba de generar el numero de contrato y no hay pagos, generarlos
       if (c.generar_contrato && numeroContrato) {
-        const existentes = await sql`SELECT COUNT(*) AS n FROM pagos WHERE cliente_id = ${c.id}`;
-        if (parseInt(existentes[0].n, 10) === 0) {
+        const [{ n }] = await sql`SELECT COUNT(*)::int AS n FROM pagos WHERE cliente_id = ${c.id}`;
+        if (n === 0) {
           await generarPagosIniciales(c.id, totales, row.forma_pago, row.servicios_json);
         }
       }

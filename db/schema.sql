@@ -1,12 +1,11 @@
 -- ==================================================================
--- CLIENTES CONECTA NEX - Esquema de base de datos
+-- CLIENTES CONECTA NEX - Esquema completo de base de datos
 -- ==================================================================
--- Para ejecutar: copia y pega TODO en el SQL Editor de Neon (en tu
--- proyecto "Clientes Conecta Nex" -> SQL Editor) y pulsa "Run".
--- Crea todas las tablas. Si ya existen, las ignora.
+-- Para empezar de cero: copia y pega TODO en el SQL Editor de Neon.
+-- Si ya tienes datos, NO uses este archivo, usa db/migration_v2.sql
+-- que solo anade lo nuevo sin tocar lo existente.
 -- ==================================================================
 
--- Datos del emisor (tu, una unica fila)
 CREATE TABLE IF NOT EXISTS emisor (
   id INTEGER PRIMARY KEY DEFAULT 1,
   nombre TEXT NOT NULL DEFAULT 'Lazaro Carrazana Fandino',
@@ -24,10 +23,8 @@ CREATE TABLE IF NOT EXISTS emisor (
   logo_url TEXT DEFAULT '',
   CONSTRAINT emisor_singleton CHECK (id = 1)
 );
-
 INSERT INTO emisor (id) VALUES (1) ON CONFLICT DO NOTHING;
 
--- Catalogo de servicios
 CREATE TABLE IF NOT EXISTS servicios (
   id SERIAL PRIMARY KEY,
   nombre TEXT NOT NULL,
@@ -38,7 +35,6 @@ CREATE TABLE IF NOT EXISTS servicios (
   creado_en TIMESTAMP DEFAULT NOW()
 );
 
--- Clientes
 CREATE TABLE IF NOT EXISTS clientes (
   id SERIAL PRIMARY KEY,
   numero_cliente TEXT UNIQUE NOT NULL,
@@ -66,14 +62,19 @@ CREATE TABLE IF NOT EXISTS clientes (
   notas TEXT DEFAULT '',
   firma_cliente TEXT DEFAULT '',
   fecha_firma TIMESTAMP,
+  estado_proyecto TEXT DEFAULT 'Sin iniciar',
+  porcentaje_avance INTEGER DEFAULT 0,
+  fecha_inicio DATE,
+  fecha_fin_prevista DATE,
+  fecha_fin_real DATE,
+  notas_proyecto TEXT DEFAULT '',
   creado_en TIMESTAMP DEFAULT NOW(),
   actualizado_en TIMESTAMP DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_clientes_estado ON clientes(estado);
 CREATE INDEX IF NOT EXISTS idx_clientes_creado ON clientes(creado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_clientes_estado_proyecto ON clientes(estado_proyecto);
 
--- Documentos generados (PDFs guardados por cliente)
 CREATE TABLE IF NOT EXISTS documentos (
   id SERIAL PRIMARY KEY,
   cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
@@ -84,10 +85,8 @@ CREATE TABLE IF NOT EXISTS documentos (
   fecha_firma TIMESTAMP,
   creado_en TIMESTAMP DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_documentos_cliente ON documentos(cliente_id);
 
--- Archivos subidos por cliente (logos, briefings, etc.)
 CREATE TABLE IF NOT EXISTS archivos (
   id SERIAL PRIMARY KEY,
   cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
@@ -97,47 +96,68 @@ CREATE TABLE IF NOT EXISTS archivos (
   contenido BYTEA,
   creado_en TIMESTAMP DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_archivos_cliente ON archivos(cliente_id);
 
--- Contadores anuales para numeracion automatica
+CREATE TABLE IF NOT EXISTS pagos (
+  id SERIAL PRIMARY KEY,
+  cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+  concepto TEXT NOT NULL,
+  importe NUMERIC(10,2) NOT NULL DEFAULT 0,
+  fecha_esperada DATE,
+  fecha_pago DATE,
+  metodo TEXT DEFAULT 'Transferencia',
+  estado TEXT DEFAULT 'Pendiente',
+  es_recurrente BOOLEAN DEFAULT FALSE,
+  mes_recurrencia TEXT,
+  notas TEXT DEFAULT '',
+  creado_en TIMESTAMP DEFAULT NOW(),
+  actualizado_en TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pagos_cliente ON pagos(cliente_id);
+
+CREATE TABLE IF NOT EXISTS fases (
+  id SERIAL PRIMARY KEY,
+  cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+  orden INTEGER NOT NULL DEFAULT 0,
+  nombre TEXT NOT NULL,
+  estado TEXT NOT NULL DEFAULT 'Pendiente',
+  peso INTEGER NOT NULL DEFAULT 10,
+  fecha_prevista_inicio DATE,
+  fecha_prevista_fin DATE,
+  fecha_real_inicio DATE,
+  fecha_real_fin DATE,
+  notas TEXT DEFAULT '',
+  creado_en TIMESTAMP DEFAULT NOW(),
+  actualizado_en TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT estado_fase_valido CHECK (estado IN ('Pendiente', 'En curso', 'Bloqueada', 'Completada'))
+);
+CREATE INDEX IF NOT EXISTS idx_fases_cliente ON fases(cliente_id);
+
+CREATE TABLE IF NOT EXISTS accesos (
+  id SERIAL PRIMARY KEY,
+  cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+  categoria TEXT NOT NULL DEFAULT 'Otros',
+  etiqueta TEXT NOT NULL,
+  url TEXT DEFAULT '',
+  usuario TEXT DEFAULT '',
+  password_cifrado TEXT DEFAULT '',
+  notas TEXT DEFAULT '',
+  importante BOOLEAN DEFAULT FALSE,
+  creado_en TIMESTAMP DEFAULT NOW(),
+  actualizado_en TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_accesos_cliente ON accesos(cliente_id);
+
 CREATE TABLE IF NOT EXISTS contadores (
   clave TEXT PRIMARY KEY,
   valor INTEGER NOT NULL DEFAULT 0,
   actualizado_en TIMESTAMP DEFAULT NOW()
 );
 
--- Insertar catalogo de 31 servicios
-INSERT INTO servicios (nombre, categoria, precio, descripcion) VALUES
-('Pack Esencial', 'Webs y landings', 350, 'Web de 1 pagina, formulario, optimizacion movil'),
-('Captacion Pro', 'Webs y landings', 450, 'Landing page con Calendly integrado'),
-('Web de Producto', 'Webs y landings', 400, 'Web de presentacion de producto o servicio'),
-('Web Corporativa', 'Webs y landings', 550, 'Web multi-pagina corporativa (5-7 secciones)'),
-('Lanzamiento Local', 'Webs y landings', 700, 'Web + ficha Google + perfiles redes'),
-('Logo simple', 'Identidad', 150, 'Logo principal en formatos digitales'),
-('Identidad basica', 'Identidad', 300, 'Logo + paleta + tipografias + manual breve'),
-('Identidad completa', 'Identidad', 500, 'Identidad basica + papeleria + plantillas redes'),
-('Pack 10 posts', 'Diseno Canva', 80, '10 posts disenados para Instagram y Facebook'),
-('Flyer o tarjeta', 'Diseno Canva', 60, 'Flyer A5 o tarjeta de visita'),
-('Carta menu restaurante', 'Diseno Canva', 80, 'Diseno de carta menu para restaurante'),
-('Carteleria', 'Diseno Canva', 80, 'Cartel A3 o A2 para promocion'),
-('QR carta digital', 'Codigos QR', 50, 'QR + carta digital para hosteleria'),
-('QR WhatsApp', 'Codigos QR', 30, 'QR a WhatsApp con mensaje predefinido'),
-('QR resenas Google', 'Codigos QR', 30, 'QR a resenas Google Business'),
-('Pack QR restaurante', 'Codigos QR', 100, 'QR carta + WhatsApp + resenas'),
-('Optimizacion IG y FB', 'Redes y Google', 200, 'Optimizacion completa de perfiles sociales'),
-('Ficha Google Business', 'Redes y Google', 150, 'Alta y optimizacion ficha Google Business'),
-('Bot WhatsApp basico', 'Bots', 150, 'Auto-respuestas WhatsApp Business'),
-('Bot WhatsApp con IA', 'Bots', 350, 'Bot con IA, +49 EUR/mes mantenimiento'),
-('Migracion hosting o dominio', 'Otros', 200, 'Migracion tecnica de hosting o dominio'),
-('Configuracion de blog', 'Otros', 150, 'Configuracion de blog en web existente'),
-('Pasarela de pago', 'Otros', 150, 'Configuracion Stripe o pasarela equivalente'),
-('Plan Mantenimiento', 'Mensual', 49, '49 EUR/mes mantenimiento web'),
-('Plan Crecimiento', 'Mensual', 250, '250 EUR/mes mantenimiento + redes'),
-('Plan Cliente Activo', 'Mensual', 350, '350 EUR/mes servicio integral'),
-('Combo Arranque', 'Combos', 600, 'Logo simple + Pack Esencial'),
-('Combo Captacion', 'Combos', 1700, 'Identidad + Captacion Pro + Google + redes'),
-('Combo Lanzamiento Total', 'Combos', 1150, 'Identidad basica + web + redes + Google'),
-('Combo Marca y Web', 'Combos', 850, 'Identidad completa + Pack Esencial'),
-('Servicio personalizado', 'Personalizado', 0, 'A definir segun necesidades')
-ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS intentos_login (
+  id SERIAL PRIMARY KEY,
+  ip TEXT NOT NULL,
+  exitoso BOOLEAN DEFAULT FALSE,
+  cuando TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_intentos_ip_cuando ON intentos_login(ip, cuando DESC);

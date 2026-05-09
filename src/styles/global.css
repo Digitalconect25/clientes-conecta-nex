@@ -755,3 +755,304 @@ input:disabled, select:disabled, textarea:disabled {
   background: var(--rojo);
   color: #fff;
 }
+
+/* ====================================================== */
+/* ENTREGABLES                                             */
+/* ====================================================== */
+.grupo-entregables { margin-bottom: 20px; }
+.grupo-entregables h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--gris-5);
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--gris-3);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+.entregable-fila {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid var(--gris-3);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  transition: background 0.15s;
+}
+.entregable-fila.completado {
+  background: var(--verde-claro);
+  border-color: #86efac;
+}
+.entregable-fila input[type="checkbox"] {
+  width: 18px; height: 18px;
+  cursor: pointer;
+  accent-color: var(--verde);
+}
+.entregable-info { flex: 1; }
+.entregable-nombre { font-weight: 500; font-size: 14px; }
+.entregable-fila.completado .entregable-nombre { color: var(--verde-oscuro); }
+.entregable-fecha { font-size: 11px; color: var(--gris-5); margin-top: 2px; }
+.entregable-notas { font-size: 12px; color: var(--gris-6); margin-top: 4px; font-style: italic; }
+
+/* ====================================================== */
+/* SELECTOR DE MODO ACTA y PIEZAS DE SEGURIDAD            */
+/* ====================================================== */
+.selector-modo-acta {
+  background: var(--gris-1);
+  border: 1px solid var(--gris-3);
+  border-radius: 6px;
+  padding: 14px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.selector-modo-acta strong {
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: var(--verde);
+}
+.selector-modo-acta label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.selector-modo-acta label.opcion-deshabilitada {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.selector-modo-acta label small {
+  display: block;
+  font-size: 11px;
+  color: var(--gris-5);
+  margin-top: 2px;
+}
+.info-acceso-generado {
+  background: var(--verde-claro);
+  border-left: 3px solid var(--verde);
+  padding: 10px 14px;
+  font-size: 12px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.info-acceso-generado code {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--verde-oscuro);
+  letter-spacing: 4px;
+}
+.info-acceso-pendiente {
+  background: var(--amarillo-claro);
+  border-left: 3px solid var(--amarillo);
+  padding: 10px 14px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+/* Filas de accesos al acta en pestaña Entregables */
+.acceso-acta-fila {
+  background: #fff;
+  border: 1px solid var(--gris-3);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+/* ====================================================== */
+/* PAGINA PUBLICA DE ACCESO AL ACTA                       */
+/* ====================================================== */
+.acceso-publico {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f0fdf4 0%, #fff 100%);
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.acceso-header {
+  text-align: center;
+  padding: 30px 20px;
+  background: var(--verde);
+  color: #fff;
+}
+.acceso-header h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: 1px;
+}
+.acceso-header p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+.acceso-contenido {
+  flex: 1;
+  max-width: 700px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 30px 20px;
+}
+.acceso-cargando {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--gris-5);
+}
+.acceso-error {
+  background: #fff;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 30px;
+  text-align: center;
+}
+.acceso-error h2 {
+  color: var(--rojo);
+  margin: 0 0 10px;
+}
+.acceso-form-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+  padding: 30px;
+}
+.acceso-form-card h2 {
+  color: var(--verde);
+  margin-top: 0;
+}
+.acceso-form {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.acceso-form label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gris-7);
+}
+.acceso-pin-input {
+  font-size: 32px;
+  text-align: center;
+  letter-spacing: 12px;
+  padding: 12px;
+  font-family: 'Courier New', monospace;
+  border: 2px solid var(--gris-3);
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.acceso-pin-input:focus {
+  outline: none;
+  border-color: var(--verde);
+}
+.acceso-form button {
+  background: var(--verde);
+  color: #fff;
+  font-size: 16px;
+  padding: 14px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.acceso-form button:hover:not(:disabled) {
+  background: var(--verde-oscuro);
+}
+.acceso-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.acceso-mensaje-error {
+  background: var(--rojo-claro);
+  color: var(--rojo);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.acceso-info {
+  font-size: 12px;
+  color: var(--gris-5);
+  text-align: center;
+  margin-top: 10px;
+}
+.acceso-resultado {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+  padding: 30px;
+}
+.acceso-bienvenida {
+  border-bottom: 1px solid var(--gris-3);
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+}
+.acceso-bienvenida h2 { color: var(--verde); margin: 0 0 8px; }
+.acceso-grupo { margin-bottom: 24px; }
+.acceso-grupo h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--gris-5);
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--gris-2);
+  padding-bottom: 6px;
+}
+.acceso-ficha {
+  background: var(--gris-1);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.acceso-ficha.importante {
+  background: var(--amarillo-claro);
+  border-left: 3px solid var(--amarillo);
+}
+.acceso-ficha-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.acceso-ficha-fila {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+  margin: 4px 0;
+}
+.acceso-ficha-fila button {
+  padding: 3px 10px;
+  font-size: 11px;
+  background: var(--gris-2);
+  color: var(--gris-7);
+  border: 1px solid var(--gris-3);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.acceso-ficha-notas {
+  font-size: 12px;
+  color: var(--gris-5);
+  font-style: italic;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--gris-2);
+}
+.acceso-aviso-final {
+  margin-top: 24px;
+  padding: 14px;
+  background: var(--amarillo-claro);
+  border-left: 3px solid var(--amarillo);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.acceso-footer {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  color: var(--gris-5);
+  border-top: 1px solid var(--gris-2);
+}

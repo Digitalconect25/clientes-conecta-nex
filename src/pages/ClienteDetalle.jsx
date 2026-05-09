@@ -61,10 +61,11 @@ export default function ClienteDetalle() {
     }
   }
 
+  // Guarda solo los campos enviados (PUT inteligente).
+  // El backend mezcla con los datos actuales y NO sobreescribe campos no enviados.
   async function guardarCliente(parcial) {
-    const next = { ...cliente, ...parcial };
     try {
-      const saved = await api.clienteUpdate(next);
+      const saved = await api.clienteUpdate({ id: cliente.id, ...parcial });
       setCliente(saved);
       // Si cambia el total, recargar pagos para reflejar la propagacion
       if (parcial.servicios_json || parcial.iva || parcial.forma_pago) {
@@ -75,6 +76,23 @@ export default function ClienteDetalle() {
     } catch (err) {
       alert('Error guardando: ' + err.message);
       throw err;
+    }
+  }
+
+  async function eliminarCliente() {
+    const ok1 = confirm(`Vas a eliminar al cliente "${cliente.nombre}" y TODOS sus datos: pagos, fases, accesos, documentos y archivos. Esta accion NO se puede deshacer. Continuar?`);
+    if (!ok1) return;
+    const respuesta = prompt(`Para confirmar, escribe el nombre del cliente exactamente como aparece: ${cliente.nombre}`);
+    if (respuesta !== cliente.nombre) {
+      if (respuesta !== null) alert('El nombre no coincide. Eliminacion cancelada.');
+      return;
+    }
+    try {
+      await api.clienteDelete(cliente.id);
+      alert('Cliente eliminado.');
+      navigate('/clientes');
+    } catch (err) {
+      alert('Error: ' + err.message);
     }
   }
 
@@ -119,12 +137,12 @@ export default function ClienteDetalle() {
       </div>
 
       <div className="contenido-pestana">
-        {pestana === 'datos' && <PanelDatos cliente={cliente} guardar={guardarCliente} />}
+        {pestana === 'datos' && <PanelDatos cliente={cliente} guardar={guardarCliente} eliminar={eliminarCliente} />}
         {pestana === 'servicios' && <PanelServicios cliente={cliente} servicios={servicios} guardar={guardarCliente} />}
         {pestana === 'pipeline' && <PanelPipeline cliente={cliente} fases={fases} setFases={setFases} guardar={guardarCliente} recargar={cargar} />}
         {pestana === 'pagos' && <PanelPagos cliente={cliente} pagos={pagos} setPagos={setPagos} />}
         {pestana === 'accesos' && <PanelAccesos cliente={cliente} accesos={accesos} setAccesos={setAccesos} />}
-        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} setDocumentos={setDocumentos} setCliente={setCliente} guardar={guardarCliente} />}
+        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} setDocumentos={setDocumentos} setArchivos={setArchivos} setCliente={setCliente} guardar={guardarCliente} />}
         {pestana === 'archivos' && <PanelArchivos cliente={cliente} archivos={archivos} setArchivos={setArchivos} />}
       </div>
     </div>
@@ -132,63 +150,136 @@ export default function ClienteDetalle() {
 }
 
 // =============================================================
-// PANEL: DATOS DEL CLIENTE
+// PANEL: DATOS DEL CLIENTE - con modo Editar / Guardar / Cancelar
 // =============================================================
-function PanelDatos({ cliente, guardar }) {
+function PanelDatos({ cliente, guardar, eliminar }) {
+  const [modoEdicion, setModoEdicion] = useState(false);
   const [f, setF] = useState({ ...cliente });
   const [guardando, setGuardando] = useState(false);
-  useEffect(() => { setF({ ...cliente }); }, [cliente.id]);
 
-  function up(k, v) { setF({ ...f, [k]: v }); }
+  // Cuando cambia el cliente desde fuera (por ejemplo tras un guardado), refrescamos
+  useEffect(() => {
+    setF({ ...cliente });
+    setModoEdicion(false);
+  }, [cliente.id]);
+
+  function up(k, v) {
+    setF({ ...f, [k]: v });
+  }
+
+  function entrarEdicion() {
+    setF({ ...cliente });
+    setModoEdicion(true);
+  }
+
+  function cancelar() {
+    if (JSON.stringify(f) !== JSON.stringify(cliente)) {
+      if (!confirm('Tienes cambios sin guardar. Descartar?')) return;
+    }
+    setF({ ...cliente });
+    setModoEdicion(false);
+  }
 
   async function onGuardar() {
     setGuardando(true);
-    try { await guardar(f); alert('Guardado'); }
-    finally { setGuardando(false); }
+    try {
+      // Solo enviamos los campos editables del panel datos. NO mandamos firma_cliente
+      // ni fecha_firma para no arriesgarnos a borrarlas por accidente.
+      const cambios = {
+        id: f.id,
+        estado: f.estado,
+        tipo_persona: f.tipo_persona,
+        nombre: f.nombre,
+        nif: f.nif,
+        contacto: f.contacto,
+        direccion: f.direccion,
+        cp: f.cp,
+        ciudad: f.ciudad,
+        provincia: f.provincia,
+        pais: f.pais,
+        email: f.email,
+        telefono: f.telefono,
+        estado_proyecto: f.estado_proyecto,
+        fecha_inicio: f.fecha_inicio,
+        fecha_fin_prevista: f.fecha_fin_prevista,
+        fecha_fin_real: f.fecha_fin_real,
+        notas: f.notas,
+      };
+      await guardar(cambios);
+      setModoEdicion(false);
+      alert('Cambios guardados');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setGuardando(false);
+    }
   }
+
+  const ro = !modoEdicion; // ro = read-only
 
   return (
     <div>
-      <h3>Datos del cliente</h3>
+      <div className="cabecera-panel">
+        <h3 style={{ margin: 0 }}>Datos del cliente</h3>
+        <div className="cabecera-acciones">
+          {ro ? (
+            <button onClick={entrarEdicion} className="btn-principal">Editar datos</button>
+          ) : (
+            <>
+              <button onClick={cancelar} disabled={guardando}>Cancelar</button>
+              <button onClick={onGuardar} disabled={guardando} className="btn-principal">
+                {guardando ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {ro && (
+        <div className="aviso-lectura">
+          Estas viendo los datos en modo solo lectura. Pulsa "Editar datos" si necesitas cambiar algo.
+        </div>
+      )}
+
       <div className="grid2">
         <label>Nombre / Razon social
-          <input value={f.nombre || ''} onChange={(e) => up('nombre', e.target.value)} />
+          <input value={f.nombre || ''} onChange={(e) => up('nombre', e.target.value)} disabled={ro} />
         </label>
         <label>Tipo
-          <select value={f.tipo_persona || 'Fisica'} onChange={(e) => up('tipo_persona', e.target.value)}>
+          <select value={f.tipo_persona || 'Fisica'} onChange={(e) => up('tipo_persona', e.target.value)} disabled={ro}>
             <option value="Fisica">Fisica</option>
             <option value="Juridica">Juridica</option>
           </select>
         </label>
         <label>NIF / CIF
-          <input value={f.nif || ''} onChange={(e) => up('nif', e.target.value.toUpperCase())} />
+          <input value={f.nif || ''} onChange={(e) => up('nif', e.target.value.toUpperCase())} disabled={ro} />
         </label>
         <label>Persona de contacto
-          <input value={f.contacto || ''} onChange={(e) => up('contacto', e.target.value)} />
+          <input value={f.contacto || ''} onChange={(e) => up('contacto', e.target.value)} disabled={ro} />
         </label>
         <label>Email
-          <input type="email" value={f.email || ''} onChange={(e) => up('email', e.target.value)} />
+          <input type="email" value={f.email || ''} onChange={(e) => up('email', e.target.value)} disabled={ro} />
         </label>
         <label>Telefono
-          <input value={f.telefono || ''} onChange={(e) => up('telefono', e.target.value)} />
+          <input value={f.telefono || ''} onChange={(e) => up('telefono', e.target.value)} disabled={ro} />
         </label>
         <label style={{ gridColumn: '1 / -1' }}>Direccion
-          <input value={f.direccion || ''} onChange={(e) => up('direccion', e.target.value)} />
+          <input value={f.direccion || ''} onChange={(e) => up('direccion', e.target.value)} disabled={ro} />
         </label>
         <label>CP
-          <input value={f.cp || ''} onChange={(e) => up('cp', e.target.value)} />
+          <input value={f.cp || ''} onChange={(e) => up('cp', e.target.value)} disabled={ro} />
         </label>
         <label>Ciudad
-          <input value={f.ciudad || ''} onChange={(e) => up('ciudad', e.target.value)} />
+          <input value={f.ciudad || ''} onChange={(e) => up('ciudad', e.target.value)} disabled={ro} />
         </label>
         <label>Provincia
-          <input value={f.provincia || ''} onChange={(e) => up('provincia', e.target.value)} />
+          <input value={f.provincia || ''} onChange={(e) => up('provincia', e.target.value)} disabled={ro} />
         </label>
         <label>Pais
-          <input value={f.pais || ''} onChange={(e) => up('pais', e.target.value)} />
+          <input value={f.pais || ''} onChange={(e) => up('pais', e.target.value)} disabled={ro} />
         </label>
         <label>Estado del cliente
-          <select value={f.estado || 'Pendiente firma'} onChange={(e) => up('estado', e.target.value)}>
+          <select value={f.estado || 'Pendiente firma'} onChange={(e) => up('estado', e.target.value)} disabled={ro}>
             <option>Pendiente firma</option>
             <option>Firmado</option>
             <option>Activo</option>
@@ -198,31 +289,40 @@ function PanelDatos({ cliente, guardar }) {
           </select>
         </label>
         <label>Estado del proyecto
-          <select value={f.estado_proyecto || 'Sin iniciar'} onChange={(e) => up('estado_proyecto', e.target.value)}>
+          <select value={f.estado_proyecto || 'Sin iniciar'} onChange={(e) => up('estado_proyecto', e.target.value)} disabled={ro}>
             {ESTADOS_PROYECTO.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
         <label>Fecha inicio prevista
-          <input type="date" value={f.fecha_inicio || ''} onChange={(e) => up('fecha_inicio', e.target.value)} />
+          <input type="date" value={f.fecha_inicio || ''} onChange={(e) => up('fecha_inicio', e.target.value)} disabled={ro} />
         </label>
         <label>Fecha fin prevista
-          <input type="date" value={f.fecha_fin_prevista || ''} onChange={(e) => up('fecha_fin_prevista', e.target.value)} />
+          <input type="date" value={f.fecha_fin_prevista || ''} onChange={(e) => up('fecha_fin_prevista', e.target.value)} disabled={ro} />
         </label>
         <label style={{ gridColumn: '1 / -1' }}>Notas internas
-          <textarea rows="3" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} />
+          <textarea rows="3" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} disabled={ro} />
         </label>
       </div>
-      <div style={{ marginTop: 16 }}>
-        <button onClick={onGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar cambios'}</button>
-      </div>
+
+      {/* Zona de peligro: eliminar cliente, separada y con doble confirmacion */}
+      {ro && (
+        <div className="zona-peligro">
+          <div>
+            <strong>Eliminar cliente</strong>
+            <p>Borra al cliente y todos sus datos: pagos, fases, accesos, documentos y archivos. Esta accion no se puede deshacer.</p>
+          </div>
+          <button onClick={eliminar} className="btn-peligro-grande">Eliminar cliente</button>
+        </div>
+      )}
     </div>
   );
 }
 
 // =============================================================
-// PANEL: SERVICIOS
+// PANEL: SERVICIOS - con modo Editar / Guardar / Cancelar
 // =============================================================
 function PanelServicios({ cliente, servicios, guardar }) {
+  const [modoEdicion, setModoEdicion] = useState(false);
   const [lineas, setLineas] = useState(cliente.servicios_json || []);
   const [iva, setIva] = useState(cliente.iva || 21);
   const [formaPago, setFormaPago] = useState(cliente.forma_pago || '50% al inicio, 50% a la entrega');
@@ -231,12 +331,18 @@ function PanelServicios({ cliente, servicios, guardar }) {
   const [generarContrato, setGenerarContrato] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  useEffect(() => {
+  function resetear() {
     setLineas(cliente.servicios_json || []);
     setIva(cliente.iva || 21);
     setFormaPago(cliente.forma_pago || '50% al inicio, 50% a la entrega');
     setPlazo(cliente.plazo || '');
     setDescripcion(cliente.descripcion || '');
+    setGenerarContrato(false);
+  }
+
+  useEffect(() => {
+    resetear();
+    setModoEdicion(false);
   }, [cliente.id]);
 
   const totales = useMemo(() => {
@@ -254,6 +360,18 @@ function PanelServicios({ cliente, servicios, guardar }) {
     const nuevas = [...lineas]; nuevas[i] = { ...nuevas[i], [k]: v }; setLineas(nuevas);
   }
 
+  function entrarEdicion() {
+    resetear();
+    setModoEdicion(true);
+  }
+
+  function cancelar() {
+    if (confirm('Descartar cambios sin guardar?')) {
+      resetear();
+      setModoEdicion(false);
+    }
+  }
+
   async function onGuardar() {
     if (cliente.numero_contrato && !confirm('Este cliente ya tiene contrato generado. Si cambias servicios o precios, los pagos pendientes se recalcularan proporcionalmente. Continuar?')) return;
     setGuardando(true);
@@ -263,42 +381,77 @@ function PanelServicios({ cliente, servicios, guardar }) {
         iva, forma_pago: formaPago, plazo, descripcion,
         generar_contrato: generarContrato && !cliente.numero_contrato,
       });
+      setModoEdicion(false);
       alert('Servicios guardados' + (generarContrato && !cliente.numero_contrato ? '. Contrato y pagos generados.' : ''));
+    } catch (err) {
+      alert('Error: ' + err.message);
     } finally {
       setGuardando(false);
     }
   }
 
+  const ro = !modoEdicion;
+
   return (
     <div>
-      <h3>Servicios contratados</h3>
-      {lineas.map((l, i) => (
-        <div key={i} className="linea-servicio">
-          <select value={l.nombre || ''} onChange={(e) => {
-            const sv = servicios.find(s => s.nombre === e.target.value);
-            upLinea(i, 'nombre', e.target.value);
-            if (sv) {
-              upLinea(i, 'precio', Number(sv.precio));
-              upLinea(i, 'categoria', sv.categoria);
-            }
-          }}>
-            <option value="">-- Selecciona servicio --</option>
-            {servicios.map(s => <option key={s.id} value={s.nombre}>{s.nombre} ({fmtEuros(s.precio)})</option>)}
-          </select>
-          <input type="number" min="1" value={l.cantidad || 1} onChange={(e) => upLinea(i, 'cantidad', e.target.value)} placeholder="Cant" />
-          <input type="number" step="0.01" value={l.precio || 0} onChange={(e) => upLinea(i, 'precio', e.target.value)} placeholder="Precio" />
-          <span>{fmtEuros((parseFloat(l.cantidad) || 0) * (parseFloat(l.precio) || 0))}</span>
-          <button onClick={() => delLinea(i)}>Quitar</button>
+      <div className="cabecera-panel">
+        <h3 style={{ margin: 0 }}>Servicios contratados</h3>
+        <div className="cabecera-acciones">
+          {ro ? (
+            <button onClick={entrarEdicion} className="btn-principal">Editar servicios</button>
+          ) : (
+            <>
+              <button onClick={cancelar} disabled={guardando}>Cancelar</button>
+              <button onClick={onGuardar} disabled={guardando} className="btn-principal">
+                {guardando ? 'Guardando...' : 'Guardar servicios'}
+              </button>
+            </>
+          )}
         </div>
-      ))}
-      <button onClick={() => addLinea(null)}>+ Anadir linea</button>
+      </div>
+
+      {ro && (
+        <div className="aviso-lectura">
+          Estas viendo los servicios en modo solo lectura. Pulsa "Editar servicios" si necesitas cambiar algo.
+        </div>
+      )}
+
+      {lineas.length === 0 && ro ? (
+        <p style={{ color: '#666' }}>Este cliente todavia no tiene servicios contratados.</p>
+      ) : (
+        lineas.map((l, i) => (
+          <div key={i} className="linea-servicio">
+            <select
+              value={l.nombre || ''}
+              disabled={ro}
+              onChange={(e) => {
+                const sv = servicios.find(s => s.nombre === e.target.value);
+                upLinea(i, 'nombre', e.target.value);
+                if (sv) {
+                  upLinea(i, 'precio', Number(sv.precio));
+                  upLinea(i, 'categoria', sv.categoria);
+                }
+              }}
+            >
+              <option value="">-- Selecciona servicio --</option>
+              {servicios.map(s => <option key={s.id} value={s.nombre}>{s.nombre} ({fmtEuros(s.precio)})</option>)}
+            </select>
+            <input type="number" min="1" value={l.cantidad || 1} onChange={(e) => upLinea(i, 'cantidad', e.target.value)} placeholder="Cant" disabled={ro} />
+            <input type="number" step="0.01" value={l.precio || 0} onChange={(e) => upLinea(i, 'precio', e.target.value)} placeholder="Precio" disabled={ro} />
+            <span>{fmtEuros((parseFloat(l.cantidad) || 0) * (parseFloat(l.precio) || 0))}</span>
+            {!ro && <button onClick={() => delLinea(i)}>Quitar</button>}
+          </div>
+        ))
+      )}
+
+      {!ro && <button onClick={() => addLinea(null)}>+ Anadir linea</button>}
 
       <div className="grid2" style={{ marginTop: 20 }}>
         <label>IVA (%)
-          <input type="number" value={iva} onChange={(e) => setIva(e.target.value)} />
+          <input type="number" value={iva} onChange={(e) => setIva(e.target.value)} disabled={ro} />
         </label>
         <label>Forma de pago
-          <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)}>
+          <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} disabled={ro}>
             <option>50% al inicio, 50% a la entrega</option>
             <option>30% al inicio, 70% a la entrega</option>
             <option>100% al inicio</option>
@@ -307,10 +460,10 @@ function PanelServicios({ cliente, servicios, guardar }) {
           </select>
         </label>
         <label>Plazo de entrega
-          <input value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="Ej: 30 dias naturales" />
+          <input value={plazo} onChange={(e) => setPlazo(e.target.value)} placeholder="Ej: 30 dias naturales" disabled={ro} />
         </label>
         <label style={{ gridColumn: '1 / -1' }}>Descripcion del proyecto
-          <textarea rows="3" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          <textarea rows="3" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} disabled={ro} />
         </label>
       </div>
 
@@ -320,16 +473,12 @@ function PanelServicios({ cliente, servicios, guardar }) {
         <p className="total-final">TOTAL: {fmtEuros(totales.total)}</p>
       </div>
 
-      {!cliente.numero_contrato && (
+      {!ro && !cliente.numero_contrato && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           <input type="checkbox" checked={generarContrato} onChange={(e) => setGenerarContrato(e.target.checked)} />
           Al guardar, generar numero de contrato y crear los pagos automaticamente
         </label>
       )}
-
-      <div style={{ marginTop: 16 }}>
-        <button onClick={onGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar servicios'}</button>
-      </div>
     </div>
   );
 }
@@ -843,7 +992,7 @@ function ModalAcceso({ inicial, onGuardar, onCancelar }) {
 // =============================================================
 // PANEL: DOCUMENTOS - Hoja, Cesion, Contrato y Acta
 // =============================================================
-function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDocumentos, setCliente, guardar }) {
+function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDocumentos, setArchivos, setCliente, guardar }) {
   const [previsualizando, setPrevisualizando] = useState(null);
   const [tipoNuevo, setTipoNuevo] = useState(null);
   const [emailHab, setEmailHab] = useState(false);
@@ -934,10 +1083,14 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDo
           onGuardado={async (doc) => {
             setDocumentos([doc, ...documentos]);
             setTipoNuevo(null);
-            // Si se firmo, recargar cliente para reflejar firma
-            if (doc.firmado && (doc.tipo === 'contrato' || doc.tipo === 'hoja')) {
-              const c = await api.clienteGet(cliente.id);
+            // Si se firmo, recargar cliente Y archivos para reflejar la firma
+            if (doc.firmado) {
+              const [c, ar] = await Promise.all([
+                api.clienteGet(cliente.id),
+                api.archivosList(cliente.id),
+              ]);
               setCliente(c);
+              if (typeof setArchivos === 'function') setArchivos(ar);
             }
           }}
           onActualizarCliente={(data) => guardar(data)}
@@ -992,14 +1145,36 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
         contenido_html: html,
         firmado,
       });
-      // Si es contrato firmado, marcar el cliente como firmado
-      if (firmado && tipo === 'contrato') {
-        await onActualizarCliente({
-          firma_cliente: firmaURL,
-          fecha_firma: new Date().toISOString(),
-          estado: 'Firmado',
-        });
+
+      // Si esta firmado, hacemos dos cosas extra para no perder la firma:
+      // 1. Guardar la firma como archivo PNG independiente en la pestaña Archivos
+      // 2. Si es Hoja de Encargo o Contrato, marcar al cliente como Firmado
+      if (firmado && firmaURL) {
+        // 1. Subir la firma como archivo PNG
+        try {
+          const base64 = firmaURL.split(',')[1] || firmaURL;
+          const fechaHoy = new Date().toISOString().slice(0, 10);
+          await api.archivoUpload({
+            cliente_id: cliente.id,
+            nombre: `Firma cliente - ${tipoInfo.nombre} - ${fechaHoy}.png`,
+            tipo: 'image/png',
+            contenido_base64: base64,
+          });
+        } catch (errArch) {
+          // No bloqueamos el guardado del documento por un fallo al subir el archivo
+          console.error('No se pudo guardar la firma como archivo:', errArch.message);
+        }
+
+        // 2. Si es Hoja o Contrato, marcar cliente como firmado
+        if (tipo === 'contrato' || tipo === 'hoja') {
+          await onActualizarCliente({
+            firma_cliente: firmaURL,
+            fecha_firma: new Date().toISOString(),
+            estado: 'Firmado',
+          });
+        }
       }
+
       onGuardado(doc);
     } catch (err) {
       alert('Error: ' + err.message);

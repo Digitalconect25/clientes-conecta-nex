@@ -146,6 +146,11 @@ export const api = {
   accesosActaList: (clienteId, conPin) => request('GET', `/api/accesos-acta-admin?cliente_id=${clienteId}${conPin ? '&con_pin=1' : ''}`),
   accesoActaAccion: (id, accion) => request('PUT', '/api/accesos-acta-admin', { id, accion }),
   accesoActaDelete: (id) => request('DELETE', `/api/accesos-acta-admin?id=${id}`),
+  // Reenviar PIN al cliente por email (si lo borro o lo perdio)
+  reenviarPinActa: (id, emailDestino) => request('POST', '/api/reenviar-pin-acta', {
+    id,
+    email_destino: emailDestino || '',
+  }),
 
   // Plantillas de email
   emailPlantillasList: () => request('GET', '/api/email-plantillas'),
@@ -164,6 +169,25 @@ export const api = {
   },
   emailEnviar: (data) => request('POST', '/api/emails-enviados', data),
   emailDelete: (id) => request('DELETE', `/api/emails-enviados?id=${id}`),
+
+  // IA - Redactar y mejorar emails con Groq (gratis)
+  iaEstado: () => request('GET', '/api/ia-redactar'),
+  iaRedactar: (instruccion, clienteId) => request('POST', '/api/ia-redactar', {
+    accion: 'redactar',
+    instruccion,
+    cliente_id: clienteId || null,
+  }),
+  iaMejorar: (borrador, clienteId) => request('POST', '/api/ia-redactar', {
+    accion: 'mejorar',
+    borrador,
+    cliente_id: clienteId || null,
+  }),
+
+  // Regeneracion de pagos (recuperacion tras incidente o ajuste)
+  regenerarPagos: (clienteId, modo) => request('POST', '/api/regenerar-pagos', {
+    cliente_id: clienteId,
+    modo: modo || 'simular',
+  }),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

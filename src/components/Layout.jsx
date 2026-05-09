@@ -8,6 +8,8 @@ export default function Layout({ children, onLogout }) {
         <nav>
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/clientes">Clientes</NavLink>
+          <NavLink to="/proyectos">Proyectos</NavLink>
+          <NavLink to="/emails">Emails</NavLink>
           <NavLink to="/catalogo">Catalogo</NavLink>
           <NavLink to="/emisor">Mis datos</NavLink>
         </nav>

@@ -25,11 +25,19 @@ export default function EmailCompositor({ cliente, plantillaInicial, onCerrar, o
   const [error, setError] = useState('');
   const [exito, setExito] = useState(false);
 
+  // IA
+  const [iaHabilitada, setIaHabilitada] = useState(false);
+  const [modalIA, setModalIA] = useState(null); // 'redactar' | 'mejorar' | null
+  const [instruccionIA, setInstruccionIA] = useState('');
+  const [iaTrabajando, setIaTrabajando] = useState(false);
+  const [iaError, setIaError] = useState('');
+
   useEffect(() => {
     api.emailPlantillasList().then(setPlantillas).catch(() => setPlantillas([]));
     if (cliente?.id) {
       api.archivosList(cliente.id).then(setArchivosCliente).catch(() => setArchivosCliente([]));
     }
+    api.iaEstado().then(r => setIaHabilitada(!!r.habilitado)).catch(() => setIaHabilitada(false));
   }, [cliente?.id]);
 
   // Cuando cambia la plantilla seleccionada, copiar su contenido
@@ -140,6 +148,50 @@ export default function EmailCompositor({ cliente, plantillaInicial, onCerrar, o
     }
   }
 
+  function abrirRedactarIA() {
+    setIaError('');
+    setInstruccionIA('');
+    setModalIA('redactar');
+  }
+
+  async function ejecutarMejorarIA() {
+    if (!cuerpo.trim()) {
+      setIaError('Escribe primero un borrador. Mejorar pule lo que ya hay.');
+      setModalIA('mejorar');
+      return;
+    }
+    setIaError('');
+    setIaTrabajando(true);
+    try {
+      const r = await api.iaMejorar(cuerpo, cliente?.id || null);
+      setCuerpo(r.cuerpo_html);
+      setModalIA(null);
+    } catch (err) {
+      setIaError(err.message);
+      setModalIA('mejorar');
+    } finally {
+      setIaTrabajando(false);
+    }
+  }
+
+  async function ejecutarRedactarIA() {
+    if (!instruccionIA.trim()) {
+      setIaError('Dime que quieres decirle al cliente.');
+      return;
+    }
+    setIaError('');
+    setIaTrabajando(true);
+    try {
+      const r = await api.iaRedactar(instruccionIA.trim(), cliente?.id || null);
+      setCuerpo(r.cuerpo_html);
+      setModalIA(null);
+    } catch (err) {
+      setIaError(err.message);
+    } finally {
+      setIaTrabajando(false);
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onCerrar}>
       <div className="modal modal-grande compositor-email" onClick={(e) => e.stopPropagation()}>
@@ -202,15 +254,37 @@ export default function EmailCompositor({ cliente, plantillaInicial, onCerrar, o
                   />
                 </label>
 
-                <label>
-                  Mensaje (HTML basico admitido)
-                  <textarea
-                    rows="14"
-                    value={cuerpo}
-                    onChange={(e) => setCuerpo(e.target.value)}
-                    placeholder="<p>Hola {{cliente_nombre}},</p><p>Tu mensaje aqui</p>"
-                  />
-                </label>
+                <div className="cuerpo-cabecera">
+                  <strong>Mensaje (HTML basico admitido)</strong>
+                  {iaHabilitada && (
+                    <div className="botones-ia">
+                      <button
+                        type="button"
+                        onClick={abrirRedactarIA}
+                        disabled={iaTrabajando}
+                        title="Pide a la IA que redacte un email desde cero"
+                        className="btn-ia"
+                      >
+                        {iaTrabajando && modalIA === 'redactar' ? 'Pensando...' : 'Redactar con IA'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={ejecutarMejorarIA}
+                        disabled={iaTrabajando || !cuerpo.trim()}
+                        title="Pule el borrador actual con IA (corrige tono, ortografia, longitud)"
+                        className="btn-ia"
+                      >
+                        {iaTrabajando && modalIA !== 'redactar' ? 'Puliendo...' : 'Mejorar con IA'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  rows="14"
+                  value={cuerpo}
+                  onChange={(e) => setCuerpo(e.target.value)}
+                  placeholder="<p>Hola {{cliente_nombre}},</p><p>Tu mensaje aqui</p>"
+                />
 
                 <div className="ayuda-variables">
                   <strong>Variables disponibles:</strong>
@@ -295,6 +369,55 @@ export default function EmailCompositor({ cliente, plantillaInicial, onCerrar, o
               </button>
             </div>
           </>
+        )}
+
+        {/* Modal IA: Redactar con instruccion */}
+        {modalIA === 'redactar' && (
+          <div className="modal-overlay" onClick={() => !iaTrabajando && setModalIA(null)} style={{ zIndex: 100 }}>
+            <div className="modal" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0 }}>Redactar con IA</h3>
+                <button onClick={() => !iaTrabajando && setModalIA(null)}>X</button>
+              </div>
+              <p style={{ color: '#666', fontSize: 13, marginTop: 0 }}>
+                Cuentale a la IA que quieres decirle al cliente. Ella se encarga del tono y de incluir los datos del cliente.
+                {cliente?.nombre && <> Cliente: <strong>{cliente.nombre}</strong>.</>}
+              </p>
+              <label>
+                Que quieres decirle
+                <textarea
+                  rows="5"
+                  value={instruccionIA}
+                  onChange={(e) => setInstruccionIA(e.target.value)}
+                  placeholder="Ej: agradecer la firma del contrato y recordar que el primer pago vence en 7 dias por transferencia"
+                  autoFocus
+                />
+              </label>
+              {iaError && <div className="error-banner">{iaError}</div>}
+              <div className="modal-acciones">
+                <button onClick={() => setModalIA(null)} disabled={iaTrabajando}>Cancelar</button>
+                <button onClick={ejecutarRedactarIA} disabled={iaTrabajando || !instruccionIA.trim()} className="btn-principal">
+                  {iaTrabajando ? 'Redactando...' : 'Redactar email'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal IA: Mensaje de error al pulsar Mejorar sin borrador */}
+        {modalIA === 'mejorar' && iaError && (
+          <div className="modal-overlay" onClick={() => setModalIA(null)} style={{ zIndex: 100 }}>
+            <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0 }}>Mejorar con IA</h3>
+                <button onClick={() => setModalIA(null)}>X</button>
+              </div>
+              <div className="error-banner">{iaError}</div>
+              <div className="modal-acciones">
+                <button onClick={() => setModalIA(null)}>Cerrar</button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

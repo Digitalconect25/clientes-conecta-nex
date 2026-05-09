@@ -1302,3 +1302,45 @@ input:disabled, select:disabled, textarea:disabled {
   }
   .previa-marco { height: 300px; }
 }
+
+/* === IA en compositor de email === */
+.cuerpo-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.botones-ia {
+  display: flex;
+  gap: 6px;
+}
+.btn-ia {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.btn-ia:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(4, 120, 87, 0.3);
+}
+.btn-ia:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* === Acceso al acta firmada === */
+.acceso-acta-fila {
+  background: #fff;
+  border: 1px solid var(--gris-3);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}

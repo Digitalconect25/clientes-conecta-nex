@@ -61,9 +61,6 @@ async function generarPagosIniciales(clienteId, totales, formaPago, servicios) {
   }
 }
 
-// Recalcula los importes de los pagos PENDIENTES cuando cambia el total del cliente.
-// Mantiene la proporcion entre los pagos pendientes existentes.
-// No toca pagos cobrados ni cancelados.
 async function recalcularPagosPendientes(clienteId, nuevoTotal) {
   const pendientes = await sql`
     SELECT id, importe FROM pagos
@@ -72,7 +69,6 @@ async function recalcularPagosPendientes(clienteId, nuevoTotal) {
   `;
   if (pendientes.length === 0) return;
 
-  // Suma total cobrado + cancelado para saber cuanto queda por cobrar
   const [resumen] = await sql`
     SELECT
       COALESCE(SUM(CASE WHEN estado = 'Cobrado' THEN importe ELSE 0 END), 0) AS cobrado,
@@ -86,13 +82,11 @@ async function recalcularPagosPendientes(clienteId, nuevoTotal) {
   if (sumaPendientes === 0 || objetivoPendiente === 0) return;
   const factor = objetivoPendiente / sumaPendientes;
 
-  // Actualizamos cada pago pendiente proporcionalmente
   let acumulado = 0;
   for (let i = 0; i < pendientes.length; i++) {
     const p = pendientes[i];
     let nuevo;
     if (i === pendientes.length - 1) {
-      // Ultimo absorbe redondeo para que sume exactamente el objetivo
       nuevo = Math.round((objetivoPendiente - acumulado) * 100) / 100;
     } else {
       nuevo = Math.round(Number(p.importe) * factor * 100) / 100;
@@ -100,6 +94,28 @@ async function recalcularPagosPendientes(clienteId, nuevoTotal) {
     }
     await sql`UPDATE pagos SET importe = ${nuevo}, actualizado_en = NOW() WHERE id = ${p.id}`;
   }
+}
+
+// Mezcla los datos enviados con los existentes en la BD.
+// Si el frontend NO envia un campo, mantiene el valor actual.
+// Esto evita que un guardado accidental borre la firma o fechas sensibles.
+function mergearCliente(actual, parcial) {
+  const camposPermitidos = [
+    'estado', 'tipo_persona', 'nombre', 'nif', 'contacto',
+    'direccion', 'cp', 'ciudad', 'provincia', 'pais', 'email', 'telefono',
+    'servicios_json', 'descripcion', 'plazo', 'forma_pago', 'iva',
+    'notas', 'firma_cliente', 'fecha_firma',
+    'estado_proyecto', 'porcentaje_avance', 'fecha_inicio',
+    'fecha_fin_prevista', 'fecha_fin_real', 'notas_proyecto',
+    'numero_contrato',
+  ];
+  const merged = { ...actual };
+  for (const k of camposPermitidos) {
+    if (Object.prototype.hasOwnProperty.call(parcial, k) && parcial[k] !== undefined) {
+      merged[k] = parcial[k];
+    }
+  }
+  return merged;
 }
 
 export default async function handler(req, res) {
@@ -133,7 +149,7 @@ export default async function handler(req, res) {
           estado_proyecto, porcentaje_avance
         ) VALUES (
           ${numeroCliente}, ${c.estado || 'Pendiente firma'}, ${c.tipo_persona || 'Fisica'},
-          ${c.nombre}, ${c.nif.toUpperCase()}, ${c.contacto || ''},
+          ${c.nombre}, ${(c.nif || '').toUpperCase()}, ${c.contacto || ''},
           ${c.direccion || ''}, ${c.cp || ''}, ${c.ciudad || ''}, ${c.provincia || 'Alicante'},
           ${c.pais || 'Espana'}, ${c.email || ''}, ${c.telefono || ''},
           ${JSON.stringify(c.servicios_json || [])}::jsonb, ${c.descripcion || ''},
@@ -146,19 +162,26 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const c = req.body || {};
-      if (!c.id) return jsonResponse(res, 400, { error: 'Falta id' });
+      const enviado = req.body || {};
+      if (!enviado.id) return jsonResponse(res, 400, { error: 'Falta id' });
 
-      // Total anterior para detectar si cambio
-      const [previo] = await sql`SELECT total FROM clientes WHERE id = ${c.id}`;
-      const totalPrevio = previo ? parseFloat(previo.total) : 0;
+      // 1. Cargar cliente actual COMPLETO de la BD
+      const [actual] = await sql`SELECT * FROM clientes WHERE id = ${enviado.id}`;
+      if (!actual) return jsonResponse(res, 404, { error: 'Cliente no encontrado' });
 
+      // 2. Mezclar: solo se sobreescriben campos que el frontend envia explicitamente
+      const c = mergearCliente(actual, enviado);
+
+      // 3. Si pidio generar contrato y aun no hay numero, generarlo
       let numeroContrato = c.numero_contrato;
-      if (c.generar_contrato && !numeroContrato) {
+      if (enviado.generar_contrato && !numeroContrato) {
         numeroContrato = await siguienteNumero('contrato', 'CN');
       }
 
+      // 4. Recalcular totales si cambian servicios o IVA
       const totales = calcularTotales(c.servicios_json, c.iva);
+
+      const totalPrevio = parseFloat(actual.total) || 0;
 
       const [row] = await sql`
         UPDATE clientes SET
@@ -193,20 +216,20 @@ export default async function handler(req, res) {
           fecha_fin_real = ${c.fecha_fin_real || null},
           notas_proyecto = ${c.notas_proyecto || ''},
           actualizado_en = NOW()
-        WHERE id = ${c.id}
+        WHERE id = ${enviado.id}
         RETURNING *
       `;
 
-      // Si cambio el total y ya hay pagos, recalcular pendientes proporcionalmente
+      // 5. Si cambio el total, recalcular pagos pendientes
       if (Math.abs(totalPrevio - parseFloat(row.total)) > 0.01) {
-        await recalcularPagosPendientes(c.id, parseFloat(row.total));
+        await recalcularPagosPendientes(enviado.id, parseFloat(row.total));
       }
 
-      // Si se acaba de generar el numero de contrato y no hay pagos, generarlos
-      if (c.generar_contrato && numeroContrato) {
-        const [{ n }] = await sql`SELECT COUNT(*)::int AS n FROM pagos WHERE cliente_id = ${c.id}`;
+      // 6. Si se acaba de generar el numero de contrato y no hay pagos, generarlos
+      if (enviado.generar_contrato && numeroContrato) {
+        const [{ n }] = await sql`SELECT COUNT(*)::int AS n FROM pagos WHERE cliente_id = ${enviado.id}`;
         if (n === 0) {
-          await generarPagosIniciales(c.id, totales, row.forma_pago, row.servicios_json);
+          await generarPagosIniciales(enviado.id, totales, row.forma_pago, row.servicios_json);
         }
       }
 

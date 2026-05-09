@@ -246,7 +246,33 @@ ${bloqueFirmas(c, e, firmaURL)}
 // NUEVO: Acta de Entrega y Acceso a Recursos
 // Genera el documento que se entrega al cliente al finalizar el proyecto.
 // Incluye resumen, accesos, archivos entregados y firmas.
-export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
+// Censura una contrasena dejando solo los ultimos 4 caracteres visibles.
+// Ejemplo: "miPassw0rd123" -> "*********1234"
+function censurarPassword(pwd) {
+  if (!pwd) return '';
+  if (pwd.length <= 4) return '*'.repeat(pwd.length);
+  return '*'.repeat(pwd.length - 4) + pwd.slice(-4);
+}
+
+// Generar Acta de Entrega.
+// modo='borrador' (durante el proyecto, contraseñas en claro, sin QR)
+// modo='definitiva' (al firmar, contraseñas censuradas, con QR + codigo + PIN info)
+//
+// extras puede incluir:
+//   accesos: array de credenciales del cliente
+//   archivos: array de archivos del cliente
+//   entregables: array de items entregados (para mostrar lo que se entrega)
+//   modo: 'borrador' | 'definitiva'
+//   qr_dataurl: imagen base64 del codigo QR (solo en definitiva)
+//   url_acceso: URL del QR para mostrar como texto debajo
+//   codigo_aceptacion: codigo legible tipo ACT-2026-0001-ABCDE
+export function generarActaEntrega(c, e, firmaURL, accesos, archivos, opciones) {
+  const modo = (opciones && opciones.modo) || 'borrador';
+  const qrDataURL = opciones && opciones.qr_dataurl;
+  const urlAcceso = opciones && opciones.url_acceso;
+  const codigoAceptacion = opciones && opciones.codigo_aceptacion;
+  const entregables = opciones && opciones.entregables;
+
   const b = bloqueComun(c, e);
   const lista = (Array.isArray(accesos) ? accesos : []).filter(a => a && a.etiqueta);
   const archs = Array.isArray(archivos) ? archivos : [];
@@ -263,7 +289,15 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
     const filas = grupos[cat].map((a) => {
       const url = a.url ? `<a href="${a.url}" style="color:#047857">${a.url}</a>` : '-';
       const usu = a.usuario || '-';
-      const pwd = a.password ? a.password : (a.tiene_password ? '(ver al cliente en mano)' : '-');
+      let pwd;
+      if (modo === 'definitiva') {
+        // En modo definitiva censuramos las contraseñas
+        pwd = a.password
+          ? censurarPassword(a.password)
+          : (a.tiene_password ? censurarPassword('xxxxxxxxxxxx') : '-');
+      } else {
+        pwd = a.password ? a.password : (a.tiene_password ? '(consultar)' : '-');
+      }
       const notas = a.notas ? `<div style="font-size:9pt;color:#666;margin-top:3px">${a.notas}</div>` : '';
       return `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:600">${a.etiqueta}${notas}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt">${url}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt">${usu}</td><td style="padding:8px;border:1px solid #ddd;font-size:10pt;font-family:monospace">${pwd}</td></tr>`;
     }).join('');
@@ -281,6 +315,25 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
     `;
   }).join('');
 
+  // Seccion de entregables (si existen)
+  let seccionEntregables = '';
+  if (Array.isArray(entregables) && entregables.length > 0) {
+    const filas = entregables.map(en => {
+      const check = en.completado ? '✓' : '·';
+      const fecha = en.fecha_completado ? new Date(en.fecha_completado).toLocaleDateString('es-ES') : '-';
+      const estilo = en.completado
+        ? 'background: #f0fdf4; border-left: 3px solid #047857;'
+        : 'background: #fafafa; border-left: 3px solid #d1d5db;';
+      return `<tr><td style="padding: 6px 10px; ${estilo}; font-weight: 600;">${check} ${en.nombre}</td><td style="padding: 6px 10px; ${estilo}; font-size: 10pt; color: #666;">${en.completado ? 'Entregado el ' + fecha : 'Pendiente'}</td></tr>`;
+    }).join('');
+    seccionEntregables = `
+      <h2>Entregables del proyecto</h2>
+      <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:11pt">
+        ${filas}
+      </table>
+    `;
+  }
+
   const seccionArchivos = archs.length > 0 ? `
     <h2>Archivos entregados</h2>
     <ul>${archs.map(a => `<li>${a.nombre} (${(a.tamano / 1024).toFixed(1)} KB)</li>`).join('')}</ul>
@@ -288,8 +341,46 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
 
   const totalServ = (c.servicios_json || []).filter(s => s.nombre).map(s => s.nombre).join(', ') || c.descripcion || 'Servicios contratados';
 
+  // Bloque de QR + codigo de aceptacion (solo en modo definitiva)
+  let bloqueQR = '';
+  if (modo === 'definitiva' && qrDataURL) {
+    bloqueQR = `
+      <div style="margin: 30px 0; padding: 20px; background: #f0fdf4; border: 1px solid #047857; border-radius: 8px; display: flex; align-items: center; gap: 20px;">
+        <img src="${qrDataURL}" alt="Codigo QR de acceso" style="width: 140px; height: 140px; border: 1px solid #ccc; padding: 5px; background: white;" />
+        <div style="flex: 1; font-size: 11pt;">
+          <strong style="color: #047857; font-size: 13pt;">Acceso seguro a tus contraseñas</strong>
+          <p style="margin: 6px 0;">Las contraseñas de este documento estan censuradas por seguridad. Para verlas completas:</p>
+          <ol style="padding-left: 20px; margin: 6px 0;">
+            <li>Escanea este codigo QR con tu movil.</li>
+            <li>Introduce el PIN de 5 digitos que te enviamos por email.</li>
+            <li>Veras todas tus contraseñas completas en una pagina segura.</li>
+          </ol>
+          <p style="margin: 8px 0 0; font-size: 9pt; color: #666; word-break: break-all;">${urlAcceso || ''}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  const bloqueCodigoAceptacion = (modo === 'definitiva' && codigoAceptacion)
+    ? `<div style="margin: 20px 0; padding: 12px; background: #fafafa; border: 1px dashed #999; text-align: center; font-family: monospace; font-size: 11pt;">
+         Codigo de aceptacion: <strong>${codigoAceptacion}</strong>
+       </div>`
+    : '';
+
+  const aviso = modo === 'definitiva'
+    ? `<div class="aviso">
+        <strong>IMPORTANTE - Seguridad de tus contraseñas:</strong> Las contraseñas de este documento aparecen censuradas. Para verlas completas, escanea el codigo QR de arriba e introduce el PIN que recibiste por email. Tras la primera consulta te recomendamos cambiar las contraseñas, asumiendo desde ese momento la unica responsabilidad sobre su custodia. El Prestador queda eximido de cualquier responsabilidad por accesos posteriores.
+      </div>`
+    : `<div class="aviso">
+        <strong>BORRADOR - Documento de uso interno:</strong> Este es un borrador del acta para revision interna del prestador. Las contraseñas aparecen en claro porque no se ha generado todavia la version firmada. La version definitiva mostrara las contraseñas censuradas y un codigo QR de acceso seguro.
+      </div>`;
+
+  const tituloDoc = modo === 'definitiva'
+    ? 'ACTA DE ENTREGA Y ACCESO A RECURSOS'
+    : 'ACTA DE ENTREGA - BORRADOR';
+
   return CSS_BASE + cabeceraLogo(e) + `
-<h1>ACTA DE ENTREGA Y ACCESO A RECURSOS</h1>
+<h1>${tituloDoc}</h1>
 <p class="sub">N de contrato: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
 <h2>1. Reunidos</h2>
@@ -301,12 +392,14 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos) {
 <p><strong>Servicios entregados:</strong> ${totalServ}.</p>
 ${b.descBl}
 
+${seccionEntregables}
+
 <h2>3. Accesos y credenciales entregados</h2>
 ${lista.length === 0 ? '<p>No se entregan credenciales en este proyecto.</p>' : seccionesAccesos}
 
-<div class="aviso">
-  <strong>IMPORTANTE - Cambio de contrasenas:</strong> Una vez recibidos estos accesos, el Cliente debe cambiar inmediatamente todas las contrasenas que le hayan sido suministradas, asumiendo desde ese momento la unica responsabilidad sobre la seguridad y custodia de las mismas. El Prestador queda eximido de cualquier responsabilidad por accesos posteriores realizados con dichas credenciales.
-</div>
+${bloqueQR}
+
+${aviso}
 
 ${seccionArchivos}
 
@@ -317,6 +410,8 @@ ${seccionArchivos}
 <h2>5. Periodo de garantia</h2>
 <p>Se mantiene el periodo de garantia de 30 dias naturales para la correccion de defectos directamente atribuibles al Prestador, segun lo establecido en el contrato firmado.</p>
 
+${bloqueCodigoAceptacion}
+
 ${bloqueFirmas(c, e, firmaURL)}
 `;
 }
@@ -325,7 +420,20 @@ export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
   if (tipo === 'hoja') return generarHojaEncargo(cliente, emisor, firmaURL);
   if (tipo === 'cesion') return generarCesion(cliente, emisor, firmaURL);
   if (tipo === 'contrato') return generarContrato(cliente, emisor, firmaURL);
-  if (tipo === 'acta') return generarActaEntrega(cliente, emisor, firmaURL, extras?.accesos, extras?.archivos);
+  if (tipo === 'acta') {
+    return generarActaEntrega(
+      cliente, emisor, firmaURL,
+      extras?.accesos,
+      extras?.archivos,
+      {
+        modo: extras?.modo || 'borrador',
+        qr_dataurl: extras?.qr_dataurl,
+        url_acceso: extras?.url_acceso,
+        codigo_aceptacion: extras?.codigo_aceptacion,
+        entregables: extras?.entregables,
+      }
+    );
+  }
   return '';
 }
 
@@ -333,5 +441,5 @@ export const TIPOS_DOC = [
   { id: 'hoja', nombre: 'Hoja de Encargo' },
   { id: 'cesion', nombre: 'Cesion de Derechos y Proteccion de Datos' },
   { id: 'contrato', nombre: 'Contrato de Prestacion de Servicios' },
-  { id: 'acta', nombre: 'Acta de Entrega', soloEntregado: true },
+  { id: 'acta', nombre: 'Acta de Entrega' },
 ];

@@ -129,4 +129,45 @@ export const api = {
   // Email de actas
   emailEstado: () => request('GET', '/api/enviar-acta'),
   enviarActa: (data) => request('POST', '/api/enviar-acta', data),
+
+  // Entregables del proyecto (Acta Progresiva)
+  entregablesList: (clienteId) => request('GET', `/api/entregables?cliente_id=${clienteId}`),
+  entregableCreate: (data) => request('POST', '/api/entregables', data),
+  entregableUpdate: (data) => request('PUT', '/api/entregables', data),
+  entregableDelete: (id) => request('DELETE', `/api/entregables?id=${id}`),
+  aplicarEntregables: (clienteId, sustituir) => request('POST', '/api/aplicar-entregables', { cliente_id: clienteId, sustituir: !!sustituir }),
+
+  // Acceso seguro al acta (QR + PIN)
+  generarAccesoActa: (clienteId, documentoId, enviarEmail) => request('POST', '/api/generar-acceso-acta', {
+    cliente_id: clienteId,
+    documento_id: documentoId,
+    enviar_email: !!enviarEmail,
+  }),
+  accesosActaList: (clienteId, conPin) => request('GET', `/api/accesos-acta-admin?cliente_id=${clienteId}${conPin ? '&con_pin=1' : ''}`),
+  accesoActaAccion: (id, accion) => request('PUT', '/api/accesos-acta-admin', { id, accion }),
+  accesoActaDelete: (id) => request('DELETE', `/api/accesos-acta-admin?id=${id}`),
 };
+
+// Endpoint PUBLICO de acceso al acta (sin auth de admin)
+// Lo usan los clientes desde la pagina /acceso/:token
+export async function verificarAccesoActa(token) {
+  const res = await fetch(`/api/acceso-acta?token=${encodeURIComponent(token)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'No se pudo cargar');
+  }
+  return res.json();
+}
+
+export async function entrarConPIN(token, pin) {
+  const res = await fetch('/api/acceso-acta', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, pin }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, status: res.status, ...data };
+  }
+  return { ok: true, ...data };
+}

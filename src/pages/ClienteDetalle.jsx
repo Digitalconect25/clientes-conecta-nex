@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { fmtEuros, generarPorTipo, TIPOS_DOC } from '../lib/contratos.js';
 import FirmaCanvas from '../components/FirmaCanvas.jsx';
+import EmailCompositor from '../components/EmailCompositor.jsx';
 
 const CATEGORIAS_ACCESO = [
   'Email', 'Hosting', 'Dominio', 'Web / WordPress', 'Google',
@@ -135,6 +136,7 @@ export default function ClienteDetalle() {
           ['accesos', 'Accesos'],
           ['documentos', 'Documentos'],
           ['archivos', 'Archivos'],
+          ['emails', 'Emails'],
         ].map(([k, l]) => (
           <button key={k} className={`pestana ${pestana === k ? 'activa' : ''}`} onClick={() => setPestana(k)}>{l}</button>
         ))}
@@ -149,6 +151,7 @@ export default function ClienteDetalle() {
         {pestana === 'accesos' && <PanelAccesos cliente={cliente} accesos={accesos} setAccesos={setAccesos} />}
         {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} entregables={entregables} setDocumentos={setDocumentos} setArchivos={setArchivos} setCliente={setCliente} guardar={guardarCliente} />}
         {pestana === 'archivos' && <PanelArchivos cliente={cliente} archivos={archivos} setArchivos={setArchivos} />}
+        {pestana === 'emails' && <PanelEmailsCliente cliente={cliente} />}
       </div>
     </div>
   );
@@ -1708,6 +1711,142 @@ function ModalEntregable({ inicial, onGuardar, onCancelar }) {
           <button onClick={() => onGuardar(f)} disabled={!f.nombre}>Guardar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: EMAILS DEL CLIENTE
+// =============================================================
+function PanelEmailsCliente({ cliente }) {
+  const [emails, setEmails] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [verEmail, setVerEmail] = useState(null);
+  const [nuevoEmail, setNuevoEmail] = useState(false);
+
+  useEffect(() => { cargar(); }, [cliente.id]);
+
+  async function cargar() {
+    setCargando(true);
+    try {
+      const data = await api.emailsList(cliente.id, 100);
+      setEmails(data);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function eliminar(id) {
+    if (!confirm('Eliminar este email del historial?')) return;
+    try {
+      await api.emailDelete(id);
+      setEmails(emails.filter(e => e.id !== id));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  if (cargando) return <div>Cargando...</div>;
+
+  return (
+    <div>
+      <div className="cabecera-panel">
+        <h3 style={{ margin: 0 }}>Emails enviados al cliente</h3>
+        <button onClick={() => setNuevoEmail(true)} className="btn-principal">+ Nuevo email</button>
+      </div>
+
+      {emails.length === 0 ? (
+        <div className="estado-vacio">
+          <p>No has enviado ningun email a este cliente todavia.</p>
+          <button onClick={() => setNuevoEmail(true)}>Enviar el primer email</button>
+        </div>
+      ) : (
+        <table className="tabla-docs">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Asunto</th>
+              <th>Para</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {emails.map(e => (
+              <tr key={e.id}>
+                <td>{new Date(e.enviado_en).toLocaleString('es-ES', {
+                  day: '2-digit', month: '2-digit', year: '2-digit',
+                  hour: '2-digit', minute: '2-digit'
+                })}</td>
+                <td>{e.asunto}</td>
+                <td style={{ fontSize: 12 }}>{e.destinatario}</td>
+                <td>
+                  {e.exitoso ? (
+                    <span className="pill" style={{ background: '#dcfce7', color: '#166534' }}>Enviado</span>
+                  ) : (
+                    <span className="pill" style={{ background: '#fee2e2', color: '#991b1b' }} title={e.error}>Fallo</span>
+                  )}
+                  {Array.isArray(e.archivos_adjuntos) && e.archivos_adjuntos.length > 0 && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: '#666' }} title={e.archivos_adjuntos.map(a => a.nombre).join(', ')}>
+                      📎 {e.archivos_adjuntos.length}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <button onClick={() => setVerEmail(e)}>Ver</button>
+                  <button onClick={() => eliminar(e.id)} className="btn-peligro">X</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {nuevoEmail && (
+        <EmailCompositor
+          cliente={cliente}
+          onCerrar={() => setNuevoEmail(false)}
+          onEnviado={cargar}
+        />
+      )}
+
+      {verEmail && (
+        <div className="modal-overlay" onClick={() => setVerEmail(null)}>
+          <div className="modal modal-grande" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>{verEmail.asunto}</h3>
+              <button onClick={() => setVerEmail(null)}>X</button>
+            </div>
+            <div className="ver-email-meta">
+              <div><strong>Para:</strong> {verEmail.destinatario}</div>
+              {verEmail.cc && <div><strong>Cc:</strong> {verEmail.cc}</div>}
+              <div><strong>Enviado:</strong> {new Date(verEmail.enviado_en).toLocaleString('es-ES')}</div>
+              <div><strong>Estado:</strong> {verEmail.exitoso ? 'Entregado' : 'Fallo: ' + verEmail.error}</div>
+              {Array.isArray(verEmail.archivos_adjuntos) && verEmail.archivos_adjuntos.length > 0 && (
+                <div>
+                  <strong>Adjuntos:</strong>
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                    {verEmail.archivos_adjuntos.map((a, i) => (
+                      <li key={i}>{a.nombre} ({(a.tamano / 1024).toFixed(1)} KB)</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="ver-email-cuerpo">
+              {verEmail.cuerpo_html ? (
+                <iframe
+                  title="contenido-email"
+                  srcDoc={verEmail.cuerpo_html}
+                  style={{ width: '100%', height: 500, border: '1px solid #e5e7eb', borderRadius: 4 }}
+                />
+              ) : (
+                <p style={{ color: '#666' }}>(Contenido no disponible)</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

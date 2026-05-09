@@ -683,3 +683,75 @@ button:hover { background: var(--verde-oscuro); }
 .estado-pausado { background: var(--gris-2); color: var(--gris-7); }
 .estado-finalizado { background: #e0e7ff; color: #3730a3; }
 .estado-cancelado { background: var(--rojo-claro); color: #991b1b; }
+
+/* ====================================================== */
+/* MODO EDICION / LECTURA en pestañas Datos y Servicios   */
+/* ====================================================== */
+.cabecera-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gris-2);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cabecera-acciones {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.aviso-lectura {
+  background: var(--gris-1);
+  border-left: 3px solid var(--gris-4);
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--gris-5);
+  margin-bottom: 16px;
+}
+
+/* Inputs deshabilitados (modo lectura) */
+input:disabled, select:disabled, textarea:disabled {
+  background: var(--gris-1);
+  color: var(--gris-7);
+  cursor: default;
+  opacity: 1;
+  border-color: var(--gris-2);
+}
+
+/* Zona de peligro: eliminar cliente */
+.zona-peligro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 40px;
+  padding: 20px;
+  background: var(--rojo-claro);
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.zona-peligro strong {
+  color: #991b1b;
+  font-size: 14px;
+}
+.zona-peligro p {
+  font-size: 12px;
+  color: #7f1d1d;
+  margin-top: 4px;
+}
+.btn-peligro-grande {
+  background: #fff;
+  color: var(--rojo);
+  border: 2px solid var(--rojo);
+  padding: 10px 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.btn-peligro-grande:hover {
+  background: var(--rojo);
+  color: #fff;
+}

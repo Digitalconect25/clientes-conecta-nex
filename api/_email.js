@@ -6,7 +6,7 @@ export function emailHabilitado() {
   return !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 }
 
-export async function enviarEmail({ to, subject, html, attachments }) {
+export async function enviarEmail({ to, cc, subject, html, attachments }) {
   if (!emailHabilitado()) {
     throw new Error('Email no configurado. Anade RESEND_API_KEY y RESEND_FROM_EMAIL en Vercel.');
   }
@@ -16,6 +16,9 @@ export async function enviarEmail({ to, subject, html, attachments }) {
     subject,
     html,
   };
+  if (cc) {
+    body.cc = Array.isArray(cc) ? cc : [cc];
+  }
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }

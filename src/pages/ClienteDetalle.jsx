@@ -28,6 +28,7 @@ export default function ClienteDetalle() {
   const [accesos, setAccesos] = useState([]);
   const [documentos, setDocumentos] = useState([]);
   const [archivos, setArchivos] = useState([]);
+  const [entregables, setEntregables] = useState([]);
   const [pestana, setPestana] = useState('datos');
   const [cargando, setCargando] = useState(true);
 
@@ -36,7 +37,7 @@ export default function ClienteDetalle() {
   async function cargar() {
     setCargando(true);
     try {
-      const [c, e, s, p, f, ac, d, ar] = await Promise.all([
+      const [c, e, s, p, f, ac, d, ar, en] = await Promise.all([
         api.clienteGet(id),
         api.emisorGet(),
         api.serviciosList(),
@@ -45,6 +46,7 @@ export default function ClienteDetalle() {
         api.accesosList(id),
         api.documentosList(id),
         api.archivosList(id),
+        api.entregablesList(id),
       ]);
       setCliente(c);
       setEmisor(e);
@@ -54,6 +56,7 @@ export default function ClienteDetalle() {
       setAccesos(ac);
       setDocumentos(d);
       setArchivos(ar);
+      setEntregables(en);
     } catch (err) {
       alert('Error cargando: ' + err.message);
     } finally {
@@ -127,6 +130,7 @@ export default function ClienteDetalle() {
           ['datos', 'Datos'],
           ['servicios', 'Servicios'],
           ['pipeline', 'Pipeline'],
+          ['entregables', 'Entregables'],
           ['pagos', 'Pagos'],
           ['accesos', 'Accesos'],
           ['documentos', 'Documentos'],
@@ -140,9 +144,10 @@ export default function ClienteDetalle() {
         {pestana === 'datos' && <PanelDatos cliente={cliente} guardar={guardarCliente} eliminar={eliminarCliente} />}
         {pestana === 'servicios' && <PanelServicios cliente={cliente} servicios={servicios} guardar={guardarCliente} />}
         {pestana === 'pipeline' && <PanelPipeline cliente={cliente} fases={fases} setFases={setFases} guardar={guardarCliente} recargar={cargar} />}
+        {pestana === 'entregables' && <PanelEntregables cliente={cliente} entregables={entregables} setEntregables={setEntregables} setCliente={setCliente} recargar={cargar} />}
         {pestana === 'pagos' && <PanelPagos cliente={cliente} pagos={pagos} setPagos={setPagos} />}
         {pestana === 'accesos' && <PanelAccesos cliente={cliente} accesos={accesos} setAccesos={setAccesos} />}
-        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} setDocumentos={setDocumentos} setArchivos={setArchivos} setCliente={setCliente} guardar={guardarCliente} />}
+        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} entregables={entregables} setDocumentos={setDocumentos} setArchivos={setArchivos} setCliente={setCliente} guardar={guardarCliente} />}
         {pestana === 'archivos' && <PanelArchivos cliente={cliente} archivos={archivos} setArchivos={setArchivos} />}
       </div>
     </div>
@@ -992,7 +997,7 @@ function ModalAcceso({ inicial, onGuardar, onCancelar }) {
 // =============================================================
 // PANEL: DOCUMENTOS - Hoja, Cesion, Contrato y Acta
 // =============================================================
-function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDocumentos, setArchivos, setCliente, guardar }) {
+function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entregables, setDocumentos, setArchivos, setCliente, guardar }) {
   const [previsualizando, setPrevisualizando] = useState(null);
   const [tipoNuevo, setTipoNuevo] = useState(null);
   const [emailHab, setEmailHab] = useState(false);
@@ -1003,7 +1008,7 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDo
 
   async function abrirNuevo(tipo) {
     if (tipo === 'acta') {
-      // Para el acta, cargamos accesos con passwords descifradas para incluirlas
+      // Para el acta siempre cargamos accesos descifrados (para uso interno)
       try {
         const accDescifrados = await api.accesosList(cliente.id, true);
         setTipoNuevo({ tipo, accesosDescifrados: accDescifrados });
@@ -1034,20 +1039,11 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDo
     <div>
       <h3>Documentos</h3>
       <div className="botones-doc">
-        {TIPOS_DOC.map(t => {
-          const habilitado = !t.soloEntregado || cliente.estado_proyecto === 'Entregado y aceptado';
-          const titulo = !habilitado ? 'Disponible cuando el proyecto este en estado "Entregado y aceptado"' : '';
-          return (
-            <button
-              key={t.id}
-              onClick={() => abrirNuevo(t.id)}
-              disabled={!habilitado}
-              title={titulo}
-            >
-              + {t.nombre}
-            </button>
-          );
-        })}
+        {TIPOS_DOC.map(t => (
+          <button key={t.id} onClick={() => abrirNuevo(t.id)}>
+            + {t.nombre}
+          </button>
+        ))}
       </div>
 
       {documentos.length === 0 ? (
@@ -1079,11 +1075,11 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDo
           emisor={emisor}
           accesos={tipoNuevo.accesosDescifrados || accesos}
           archivos={archivos}
+          entregables={entregables}
           emailHab={emailHab}
           onGuardado={async (doc) => {
             setDocumentos([doc, ...documentos]);
             setTipoNuevo(null);
-            // Si se firmo, recargar cliente Y archivos para reflejar la firma
             if (doc.firmado) {
               const [c, ar] = await Promise.all([
                 api.clienteGet(cliente.id),
@@ -1110,24 +1106,44 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, setDo
   );
 }
 
-function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, onGuardado, onActualizarCliente, onCerrar }) {
+function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables, emailHab, onGuardado, onActualizarCliente, onCerrar }) {
   const [paso, setPaso] = useState('preview'); // preview | firma
   const [firmaURL, setFirmaURL] = useState(null);
   const [guardando, setGuardando] = useState(false);
-  const ref = useRef(null);
 
+  // Acta tiene dos modos: borrador (uso interno) y definitiva (para cliente)
+  // Por defecto borrador. Solo se permite definitiva si estado_proyecto = "Entregado y aceptado"
+  const [modoActa, setModoActa] = useState('borrador');
+  const [qrDataURL, setQrDataURL] = useState(null);
+  const [datosAcceso, setDatosAcceso] = useState(null); // {token, pin, codigo_aceptacion, url_acceso}
+  const [generandoAcceso, setGenerandoAcceso] = useState(false);
+  const [enviarEmailPin, setEnviarEmailPin] = useState(true);
+
+  const ref = useRef(null);
   const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
+  const esActaDefinitiva = tipo === 'acta' && modoActa === 'definitiva';
+  const puedeDefinitiva = cliente.estado_proyecto === 'Entregado y aceptado';
+
   const html = useMemo(
-    () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, { accesos, archivos }),
-    [tipo, cliente, emisor, firmaURL, accesos, archivos]
+    () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, {
+      accesos,
+      archivos,
+      entregables,
+      modo: modoActa,
+      qr_dataurl: qrDataURL,
+      url_acceso: datosAcceso?.url_acceso,
+      codigo_aceptacion: datosAcceso?.codigo_aceptacion,
+    }),
+    [tipo, cliente, emisor, firmaURL, accesos, archivos, entregables, modoActa, qrDataURL, datosAcceso]
   );
 
-  async function descargarPDF(firmado) {
+  async function descargarPDF() {
     if (!ref.current) return;
     const html2pdf = (await import('html2pdf.js')).default;
+    const sufijo = tipo === 'acta' ? `-${modoActa}` : '';
     const opt = {
       margin: 0,
-      filename: `${tipoInfo.nombre.toLowerCase().replace(/ /g, '-')}-${cliente.numero_contrato || cliente.numero_cliente}.pdf`,
+      filename: `${tipoInfo.nombre.toLowerCase().replace(/ /g, '-')}${sufijo}-${cliente.numero_contrato || cliente.numero_cliente}.pdf`,
       image: { type: 'jpeg', quality: 0.95 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -1135,22 +1151,68 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
     await html2pdf().set(opt).from(ref.current).save();
   }
 
+  // Genera el QR + PIN + codigo y lo pre-incrusta en el HTML del Acta.
+  // Solo se llama si tipo === 'acta' y modoActa === 'definitiva'.
+  async function generarPiezasSeguridad() {
+    setGenerandoAcceso(true);
+    try {
+      // 1. Crear el acceso en la BD (genera token, PIN, codigo)
+      const r = await api.generarAccesoActa(cliente.id, null, enviarEmailPin && !!cliente.email);
+
+      // 2. Generar el QR como dataURL con la libreria qrcode
+      const QRCode = (await import('qrcode')).default;
+      const dataURL = await QRCode.toDataURL(r.url_acceso, {
+        errorCorrectionLevel: 'H',
+        margin: 1,
+        width: 280,
+        color: { dark: '#047857', light: '#ffffff' },
+      });
+
+      setQrDataURL(dataURL);
+      setDatosAcceso(r);
+      return r;
+    } catch (err) {
+      alert('Error generando acceso seguro: ' + err.message);
+      throw err;
+    } finally {
+      setGenerandoAcceso(false);
+    }
+  }
+
   async function guardarDocumento(firmado) {
     setGuardando(true);
     try {
+      // Si es acta definitiva y aun no hay datos de acceso, generamos QR + PIN antes de guardar
+      let accesoFinal = datosAcceso;
+      if (esActaDefinitiva && !accesoFinal && firmado) {
+        accesoFinal = await generarPiezasSeguridad();
+      }
+
+      // Re-renderizar el HTML con el QR ya incrustado (importante si se acaba de generar)
+      const htmlFinal = generarPorTipo(tipo, { ...cliente, fecha_firma: firmado ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, {
+        accesos,
+        archivos,
+        entregables,
+        modo: modoActa,
+        qr_dataurl: qrDataURL,
+        url_acceso: accesoFinal?.url_acceso,
+        codigo_aceptacion: accesoFinal?.codigo_aceptacion,
+      });
+
+      const nombreDoc = tipo === 'acta'
+        ? `${tipoInfo.nombre} (${modoActa === 'definitiva' ? 'definitiva' : 'borrador'}) - ${cliente.nombre}`
+        : `${tipoInfo.nombre} - ${cliente.nombre}`;
+
       const doc = await api.documentoCreate({
         cliente_id: cliente.id,
         tipo,
-        nombre: `${tipoInfo.nombre} - ${cliente.nombre}`,
-        contenido_html: html,
+        nombre: nombreDoc,
+        contenido_html: htmlFinal,
         firmado,
       });
 
-      // Si esta firmado, hacemos dos cosas extra para no perder la firma:
-      // 1. Guardar la firma como archivo PNG independiente en la pestaña Archivos
-      // 2. Si es Hoja de Encargo o Contrato, marcar al cliente como Firmado
       if (firmado && firmaURL) {
-        // 1. Subir la firma como archivo PNG
+        // Guardar firma como archivo PNG (siempre)
         try {
           const base64 = firmaURL.split(',')[1] || firmaURL;
           const fechaHoy = new Date().toISOString().slice(0, 10);
@@ -1161,11 +1223,10 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
             contenido_base64: base64,
           });
         } catch (errArch) {
-          // No bloqueamos el guardado del documento por un fallo al subir el archivo
           console.error('No se pudo guardar la firma como archivo:', errArch.message);
         }
 
-        // 2. Si es Hoja o Contrato, marcar cliente como firmado
+        // Si es Hoja o Contrato, marcar cliente como firmado
         if (tipo === 'contrato' || tipo === 'hoja') {
           await onActualizarCliente({
             firma_cliente: firmaURL,
@@ -1183,6 +1244,47 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
     }
   }
 
+  // Bloque selector de modo solo para Acta
+  const selectorModoActa = tipo === 'acta' ? (
+    <div className="selector-modo-acta">
+      <strong>Modo del acta:</strong>
+      <label>
+        <input type="radio" checked={modoActa === 'borrador'} onChange={() => { setModoActa('borrador'); setQrDataURL(null); setDatosAcceso(null); }} />
+        Borrador (uso interno, contraseñas en claro)
+      </label>
+      <label className={!puedeDefinitiva ? 'opcion-deshabilitada' : ''}>
+        <input
+          type="radio"
+          checked={modoActa === 'definitiva'}
+          onChange={() => setModoActa('definitiva')}
+          disabled={!puedeDefinitiva}
+        />
+        Definitiva (entrega al cliente, contraseñas censuradas + QR)
+        {!puedeDefinitiva && <small> · Disponible cuando el proyecto este en estado "Entregado y aceptado"</small>}
+      </label>
+      {esActaDefinitiva && datosAcceso && (
+        <div className="info-acceso-generado">
+          <div><strong>Codigo:</strong> {datosAcceso.codigo_aceptacion}</div>
+          <div><strong>PIN:</strong> <code>{datosAcceso.pin}</code> {datosAcceso.email_resultado?.ok && <span style={{color:'#047857'}}>(enviado por email)</span>}</div>
+          <div style={{ fontSize: 11, color: '#666', wordBreak: 'break-all' }}><strong>URL del QR:</strong> {datosAcceso.url_acceso}</div>
+        </div>
+      )}
+      {esActaDefinitiva && !datosAcceso && (
+        <div className="info-acceso-pendiente">
+          Al firmar, se generara automaticamente un PIN de 5 digitos, un codigo QR y un codigo de aceptacion.
+          {emailHab && cliente.email && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+              <input type="checkbox" checked={enviarEmailPin} onChange={(e) => setEnviarEmailPin(e.target.checked)} />
+              Enviar PIN por email a {cliente.email}
+            </label>
+          )}
+          {!cliente.email && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>El cliente no tiene email guardado. El PIN solo aparecera en tu panel.</div>}
+          {cliente.email && !emailHab && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>Email no configurado en Vercel. El PIN solo aparecera en tu panel.</div>}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="modal-overlay" onClick={onCerrar}>
       <div className="modal modal-grande" onClick={(e) => e.stopPropagation()}>
@@ -1191,13 +1293,17 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
           <button onClick={onCerrar}>X</button>
         </div>
 
+        {selectorModoActa}
+
         {paso === 'preview' && (
           <>
             <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
             <div className="modal-acciones">
-              <button onClick={() => descargarPDF(false)}>Descargar PDF (sin firma)</button>
+              <button onClick={descargarPDF}>Descargar PDF (sin firma)</button>
               <button onClick={() => guardarDocumento(false)} disabled={guardando}>Guardar sin firmar</button>
-              <button onClick={() => setPaso('firma')} className="btn-principal">Pasar a firma</button>
+              <button onClick={() => setPaso('firma')} className="btn-principal" disabled={generandoAcceso}>
+                {generandoAcceso ? 'Generando...' : 'Pasar a firma'}
+              </button>
             </div>
           </>
         )}
@@ -1206,11 +1312,17 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, emailHab, o
           <>
             <h4>Firma del cliente</h4>
             <FirmaCanvas onChange={setFirmaURL} />
-            <div className="preview-doc" dangerouslySetInnerHTML={{ __html: html }}></div>
+            <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
             <div className="modal-acciones">
               <button onClick={() => setPaso('preview')}>Volver</button>
-              <button onClick={() => descargarPDF(true)} disabled={!firmaURL}>Descargar PDF firmado</button>
-              <button onClick={() => guardarDocumento(true)} disabled={!firmaURL || guardando} className="btn-principal">Guardar firmado</button>
+              <button onClick={descargarPDF} disabled={!firmaURL}>Descargar PDF firmado</button>
+              <button
+                onClick={() => guardarDocumento(true)}
+                disabled={!firmaURL || guardando || generandoAcceso}
+                className="btn-principal"
+              >
+                {guardando || generandoAcceso ? 'Guardando...' : (esActaDefinitiva ? 'Firmar y generar QR/PIN' : 'Guardar firmado')}
+              </button>
             </div>
           </>
         )}
@@ -1361,6 +1473,241 @@ function PanelArchivos({ cliente, archivos, setArchivos }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL: ENTREGABLES (Acta Progresiva)
+// =============================================================
+function PanelEntregables({ cliente, entregables, setEntregables, setCliente, recargar }) {
+  const [editando, setEditando] = useState(null);
+  const [accesosActaInfo, setAccesosActaInfo] = useState([]);
+
+  useEffect(() => {
+    api.accesosActaList(cliente.id, false).then(setAccesosActaInfo).catch(() => {});
+  }, [cliente.id]);
+
+  async function aplicarPlantilla(sustituir) {
+    const msg = sustituir
+      ? 'Esto borrara los entregables actuales y creara los de plantilla. Continuar?'
+      : 'Esto anadira los entregables de plantilla a los que ya tienes. Continuar?';
+    if (!confirm(msg)) return;
+    try {
+      await api.aplicarEntregables(cliente.id, sustituir);
+      await recargar();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function toggleCompletado(en) {
+    try {
+      const actualizado = await api.entregableUpdate({ ...en, completado: !en.completado });
+      setEntregables(entregables.map(x => x.id === en.id ? actualizado : x));
+      // Recargar cliente para ver el nuevo % de avance
+      const c = await api.clienteGet(cliente.id);
+      setCliente(c);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function eliminar(en) {
+    if (!confirm('Eliminar el entregable "' + en.nombre + '"?')) return;
+    try {
+      await api.entregableDelete(en.id);
+      setEntregables(entregables.filter(x => x.id !== en.id));
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function guardarEntregable(datos) {
+    try {
+      let saved;
+      if (datos.id) {
+        saved = await api.entregableUpdate(datos);
+        setEntregables(entregables.map(x => x.id === datos.id ? saved : x));
+      } else {
+        saved = await api.entregableCreate({
+          ...datos,
+          cliente_id: cliente.id,
+          orden: entregables.length + 1,
+        });
+        setEntregables([...entregables, saved]);
+      }
+      setEditando(null);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  // Agrupar por categoria
+  const grupos = useMemo(() => {
+    const g = {};
+    entregables.forEach(e => {
+      const k = e.categoria || 'General';
+      if (!g[k]) g[k] = [];
+      g[k].push(e);
+    });
+    return g;
+  }, [entregables]);
+
+  const completados = entregables.filter(e => e.completado).length;
+  const total = entregables.length;
+
+  return (
+    <div>
+      <div className="cabecera-panel">
+        <div>
+          <h3 style={{ margin: 0 }}>Entregables del proyecto</h3>
+          {total > 0 && (
+            <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>
+              {completados} de {total} completados ({Math.round((completados / total) * 100)}%)
+            </div>
+          )}
+        </div>
+        <div className="cabecera-acciones">
+          <button onClick={() => setEditando({ nombre: '', categoria: 'General', completado: false })}>+ Nuevo entregable</button>
+        </div>
+      </div>
+
+      {entregables.length === 0 ? (
+        <div className="estado-vacio">
+          <p>Aun no hay entregables definidos para este proyecto. Puedes generar la lista automaticamente segun los servicios contratados, o anadir uno por uno.</p>
+          <button onClick={() => aplicarPlantilla(false)} className="btn-principal">Generar entregables desde servicios</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => aplicarPlantilla(false)}>Anadir entregables desde servicios</button>
+            <button onClick={() => aplicarPlantilla(true)} style={{ background: '#ef4444' }}>Sustituir todo desde servicios</button>
+          </div>
+
+          {Object.keys(grupos).map(cat => (
+            <div key={cat} className="grupo-entregables">
+              <h4>{cat}</h4>
+              {grupos[cat].sort((a, b) => a.orden - b.orden).map(en => (
+                <div key={en.id} className={`entregable-fila ${en.completado ? 'completado' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={en.completado}
+                    onChange={() => toggleCompletado(en)}
+                  />
+                  <div className="entregable-info">
+                    <div className="entregable-nombre">{en.nombre}</div>
+                    {en.fecha_completado && (
+                      <div className="entregable-fecha">Completado el {new Date(en.fecha_completado).toLocaleDateString('es-ES')}</div>
+                    )}
+                    {en.notas && <div className="entregable-notas">{en.notas}</div>}
+                  </div>
+                  <button onClick={() => setEditando(en)}>Editar</button>
+                  <button onClick={() => eliminar(en)} className="btn-peligro">X</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+
+      {accesosActaInfo.length > 0 && (
+        <div style={{ marginTop: 30, padding: 16, background: '#f9fafb', borderRadius: 8 }}>
+          <h4 style={{ marginTop: 0 }}>Acceso al acta firmada (QR + PIN)</h4>
+          {accesosActaInfo.map(a => <FilaAccesoActa key={a.id} acceso={a} clienteId={cliente.id} onCambio={() => api.accesosActaList(cliente.id, false).then(setAccesosActaInfo)} />)}
+        </div>
+      )}
+
+      {editando && <ModalEntregable inicial={editando} onGuardar={guardarEntregable} onCancelar={() => setEditando(null)} />}
+    </div>
+  );
+}
+
+function FilaAccesoActa({ acceso, clienteId, onCambio }) {
+  const [pinVisible, setPinVisible] = useState(null);
+
+  async function verPIN() {
+    if (!confirm('Vas a mostrar el PIN del cliente. Asegurate de que nadie ve la pantalla. Continuar?')) return;
+    try {
+      const lista = await api.accesosActaList(clienteId, true);
+      const f = lista.find(x => x.id === acceso.id);
+      if (f) setPinVisible(f.pin);
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function desbloquear() {
+    if (!confirm('Desbloquear el acceso del cliente (resetear intentos fallidos)?')) return;
+    try {
+      await api.accesoActaAccion(acceso.id, 'desbloquear');
+      onCambio();
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function desactivar() {
+    if (!confirm('Desactivar este acceso? El cliente ya no podra ver sus contraseñas con este enlace.')) return;
+    try {
+      await api.accesoActaAccion(acceso.id, 'desactivar');
+      onCambio();
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  const bloqueado = acceso.bloqueado_hasta && new Date(acceso.bloqueado_hasta) > new Date();
+  const url = `${window.location.origin}/acceso/${acceso.token}`;
+
+  return (
+    <div className="acceso-acta-fila">
+      <div>
+        <strong>{acceso.codigo_aceptacion}</strong>
+        <span style={{ marginLeft: 8, fontSize: 11, color: '#666' }}>
+          {new Date(acceso.creado_en).toLocaleDateString('es-ES')}
+        </span>
+        {!acceso.activo && <span className="pill" style={{ background: '#ef4444', color: '#fff', marginLeft: 6 }}>Desactivado</span>}
+        {bloqueado && <span className="pill" style={{ background: '#f59e0b', color: '#fff', marginLeft: 6 }}>Bloqueado</span>}
+      </div>
+      <div style={{ fontSize: 12, color: '#666', wordBreak: 'break-all', marginTop: 4 }}>{url}</div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>
+        Visitas: {acceso.visitas} · Intentos fallidos: {acceso.intentos_fallidos} · Email: {acceso.email_enviado ? 'enviado' : 'no enviado'}
+      </div>
+      {pinVisible && (
+        <div style={{ marginTop: 8, padding: '6px 10px', background: '#f0fdf4', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+          PIN: {pinVisible}
+        </div>
+      )}
+      <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+        <button onClick={verPIN}>Ver PIN</button>
+        <button onClick={() => navigator.clipboard.writeText(url)}>Copiar URL</button>
+        {bloqueado && <button onClick={desbloquear}>Desbloquear</button>}
+        {acceso.activo && <button onClick={desactivar} className="btn-peligro">Desactivar</button>}
+      </div>
+    </div>
+  );
+}
+
+function ModalEntregable({ inicial, onGuardar, onCancelar }) {
+  const [f, setF] = useState({ ...inicial });
+  function up(k, v) { setF({ ...f, [k]: v }); }
+  return (
+    <div className="modal-overlay" onClick={onCancelar}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{f.id ? 'Editar entregable' : 'Nuevo entregable'}</h3>
+        <label>Nombre
+          <input value={f.nombre || ''} onChange={(e) => up('nombre', e.target.value)} autoFocus />
+        </label>
+        <label>Categoria
+          <input value={f.categoria || 'General'} onChange={(e) => up('categoria', e.target.value)} />
+        </label>
+        <label>Notas
+          <textarea rows="2" value={f.notas || ''} onChange={(e) => up('notas', e.target.value)} />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={!!f.completado} onChange={(e) => up('completado', e.target.checked)} />
+          Marcar como completado
+        </label>
+        <div className="modal-acciones">
+          <button onClick={onCancelar}>Cancelar</button>
+          <button onClick={() => onGuardar(f)} disabled={!f.nombre}>Guardar</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -689,6 +689,8 @@ function ModalFase({ inicial, onGuardar, onCancelar }) {
 // =============================================================
 function PanelPagos({ cliente, pagos, setPagos }) {
   const [editando, setEditando] = useState(null);
+  const [simulacion, setSimulacion] = useState(null);
+  const [regenerando, setRegenerando] = useState(false);
 
   async function eliminar(p) {
     if (!confirm('Eliminar este pago?')) return;
@@ -696,6 +698,35 @@ function PanelPagos({ cliente, pagos, setPagos }) {
       await api.pagoDelete(p.id);
       setPagos(pagos.filter(x => x.id !== p.id));
     } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function simularRegeneracion() {
+    setRegenerando(true);
+    try {
+      const r = await api.regenerarPagos(cliente.id, 'simular');
+      setSimulacion(r);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setRegenerando(false);
+    }
+  }
+
+  async function aplicarRegeneracion() {
+    if (!confirm('Vas a CREAR ' + simulacion.pagos_a_crear + ' pagos nuevos en este cliente. No se borra nada existente. Continuar?')) return;
+    setRegenerando(true);
+    try {
+      const r = await api.regenerarPagos(cliente.id, 'aplicar');
+      alert('Listo. Se crearon ' + r.creados + ' pagos.');
+      // Recargar lista de pagos
+      const lista = await api.pagosList(cliente.id);
+      setPagos(lista);
+      setSimulacion(null);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setRegenerando(false);
+    }
   }
 
   async function guardar(datos) {
@@ -727,7 +758,68 @@ function PanelPagos({ cliente, pagos, setPagos }) {
         <div className="card-pago"><span>Pendiente</span><strong style={{ color: '#f59e0b' }}>{fmtEuros(totales.pendiente)}</strong></div>
         <div className="card-pago"><span>Cancelado</span><strong style={{ color: '#9ca3af' }}>{fmtEuros(totales.cancelado)}</strong></div>
       </div>
-      <button onClick={() => setEditando({ concepto: '', importe: 0, estado: 'Pendiente' })}>+ Nuevo pago</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => setEditando({ concepto: '', importe: 0, estado: 'Pendiente' })}>+ Nuevo pago</button>
+        <button
+          onClick={simularRegeneracion}
+          disabled={regenerando}
+          title="Regenera los pagos segun los servicios y forma de pago del cliente. Util tras incidente o cambio de servicios. NO borra los pagos existentes, solo anade los que faltan."
+        >
+          {regenerando ? 'Calculando...' : 'Regenerar pagos del contrato'}
+        </button>
+      </div>
+
+      {simulacion && (
+        <div className="modal-overlay" onClick={() => !regenerando && setSimulacion(null)}>
+          <div className="modal modal-grande" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>Regenerar pagos - Vista previa</h3>
+              <button onClick={() => !regenerando && setSimulacion(null)}>X</button>
+            </div>
+            <p style={{ color: '#666' }}>
+              Cliente: <strong>{simulacion.cliente.nombre}</strong> · Total: <strong>{fmtEuros(simulacion.cliente.total)}</strong> · Forma de pago: <strong>{simulacion.cliente.forma_pago}</strong>
+            </p>
+            <div className="resumen-pagos">
+              <div className="card-pago"><span>Pagos existentes</span><strong>{simulacion.pagos_existentes}</strong></div>
+              <div className="card-pago"><span>A crear</span><strong style={{ color: '#10b981' }}>{simulacion.pagos_a_crear}</strong></div>
+              <div className="card-pago"><span>Ya existen (se omiten)</span><strong style={{ color: '#9ca3af' }}>{simulacion.pagos_ya_existentes}</strong></div>
+            </div>
+            {simulacion.pagos_a_crear === 0 ? (
+              <div style={{ padding: 16, background: '#f0fdf4', borderLeft: '3px solid #10b981', borderRadius: 4, margin: '16px 0' }}>
+                Todos los pagos del contrato ya existen. No hay nada que regenerar.
+              </div>
+            ) : (
+              <>
+                <h4 style={{ marginTop: 16 }}>Pagos que se crearian:</h4>
+                <table className="tabla-pagos">
+                  <thead><tr><th>Concepto</th><th>Importe</th><th>Esperada</th><th>Recurrente</th></tr></thead>
+                  <tbody>
+                    {simulacion.vista_previa.map((p, i) => (
+                      <tr key={i}>
+                        <td>{p.concepto}</td>
+                        <td>{fmtEuros(p.importe)}</td>
+                        <td>{p.fecha_esperada}</td>
+                        <td>{p.es_recurrente ? p.mes_recurrencia : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {simulacion.pagos_a_crear > simulacion.vista_previa.length && (
+                  <p style={{ color: '#666', fontSize: 13 }}>... y {simulacion.pagos_a_crear - simulacion.vista_previa.length} mas.</p>
+                )}
+              </>
+            )}
+            <div className="modal-acciones">
+              <button onClick={() => setSimulacion(null)} disabled={regenerando}>Cancelar</button>
+              {simulacion.pagos_a_crear > 0 && (
+                <button onClick={aplicarRegeneracion} disabled={regenerando} className="btn-principal">
+                  {regenerando ? 'Creando...' : `Crear los ${simulacion.pagos_a_crear} pagos`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <table className="tabla-pagos">
         <thead><tr><th>Concepto</th><th>Importe</th><th>Esperada</th><th>Pago</th><th>Estado</th><th>Metodo</th><th></th></tr></thead>
@@ -1628,6 +1720,7 @@ function PanelEntregables({ cliente, entregables, setEntregables, setCliente, re
 
 function FilaAccesoActa({ acceso, clienteId, onCambio }) {
   const [pinVisible, setPinVisible] = useState(null);
+  const [reenviando, setReenviando] = useState(false);
 
   async function verPIN() {
     if (!confirm('Vas a mostrar el PIN del cliente. Asegurate de que nadie ve la pantalla. Continuar?')) return;
@@ -1636,6 +1729,35 @@ function FilaAccesoActa({ acceso, clienteId, onCambio }) {
       const f = lista.find(x => x.id === acceso.id);
       if (f) setPinVisible(f.pin);
     } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function reenviarAlCliente() {
+    if (!confirm('Reenviar el email con el PIN al cliente (al mismo email guardado)?')) return;
+    setReenviando(true);
+    try {
+      const r = await api.reenviarPinActa(acceso.id, '');
+      alert('Email reenviado a ' + r.destino);
+      onCambio();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setReenviando(false);
+    }
+  }
+
+  async function reenviarAOtroEmail() {
+    const otro = prompt('Email destino (dejalo en blanco para cancelar):');
+    if (!otro || !otro.trim()) return;
+    setReenviando(true);
+    try {
+      const r = await api.reenviarPinActa(acceso.id, otro.trim());
+      alert('Email reenviado a ' + r.destino);
+      onCambio();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setReenviando(false);
+    }
   }
 
   async function desbloquear() {
@@ -1676,9 +1798,19 @@ function FilaAccesoActa({ acceso, clienteId, onCambio }) {
           PIN: {pinVisible}
         </div>
       )}
-      <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+      <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <button onClick={verPIN}>Ver PIN</button>
         <button onClick={() => navigator.clipboard.writeText(url)}>Copiar URL</button>
+        {acceso.activo && (
+          <button onClick={reenviarAlCliente} disabled={reenviando}>
+            {reenviando ? 'Enviando...' : 'Reenviar al cliente'}
+          </button>
+        )}
+        {acceso.activo && (
+          <button onClick={reenviarAOtroEmail} disabled={reenviando}>
+            Reenviar a otro email
+          </button>
+        )}
         {bloqueado && <button onClick={desbloquear}>Desbloquear</button>}
         {acceso.activo && <button onClick={desactivar} className="btn-peligro">Desactivar</button>}
       </div>

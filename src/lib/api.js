@@ -146,6 +146,24 @@ export const api = {
   accesosActaList: (clienteId, conPin) => request('GET', `/api/accesos-acta-admin?cliente_id=${clienteId}${conPin ? '&con_pin=1' : ''}`),
   accesoActaAccion: (id, accion) => request('PUT', '/api/accesos-acta-admin', { id, accion }),
   accesoActaDelete: (id) => request('DELETE', `/api/accesos-acta-admin?id=${id}`),
+
+  // Plantillas de email
+  emailPlantillasList: () => request('GET', '/api/email-plantillas'),
+  emailPlantillaGet: (id) => request('GET', `/api/email-plantillas?id=${id}`),
+  emailPlantillaCreate: (data) => request('POST', '/api/email-plantillas', data),
+  emailPlantillaUpdate: (data) => request('PUT', '/api/email-plantillas', data),
+  emailPlantillaDelete: (id) => request('DELETE', `/api/email-plantillas?id=${id}`),
+
+  // Emails enviados (historial + envio)
+  emailsList: (clienteId, limit) => {
+    const params = [];
+    if (clienteId) params.push(`cliente_id=${clienteId}`);
+    if (limit) params.push(`limit=${limit}`);
+    const qs = params.length ? '?' + params.join('&') : '';
+    return request('GET', `/api/emails-enviados${qs}`);
+  },
+  emailEnviar: (data) => request('POST', '/api/emails-enviados', data),
+  emailDelete: (id) => request('DELETE', `/api/emails-enviados?id=${id}`),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

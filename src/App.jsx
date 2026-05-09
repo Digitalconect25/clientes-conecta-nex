@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { getPassword, clearPassword } from './lib/api.js';
 import Layout from './components/Layout.jsx';
@@ -9,10 +9,12 @@ import ClienteDetalle from './pages/ClienteDetalle.jsx';
 import Catalogo from './pages/Catalogo.jsx';
 import Emisor from './pages/Emisor.jsx';
 import Proyectos from './pages/Proyectos.jsx';
+import AccesoActa from './pages/AccesoActa.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const onStorage = () => setAuth(!!getPassword());
@@ -24,6 +26,17 @@ export default function App() {
     clearPassword();
     setAuth(false);
     navigate('/login');
+  }
+
+  // La ruta /acceso/:token es PUBLICA. Cualquier persona con el enlace
+  // puede entrar (luego se le pedira el PIN). NO requiere login de admin.
+  const esRutaPublica = location.pathname.startsWith('/acceso/');
+  if (esRutaPublica) {
+    return (
+      <Routes>
+        <Route path="/acceso/:token" element={<AccesoActa />} />
+      </Routes>
+    );
   }
 
   if (!auth) {

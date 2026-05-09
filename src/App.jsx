@@ -9,6 +9,7 @@ import ClienteDetalle from './pages/ClienteDetalle.jsx';
 import Catalogo from './pages/Catalogo.jsx';
 import Emisor from './pages/Emisor.jsx';
 import Proyectos from './pages/Proyectos.jsx';
+import Emails from './pages/Emails.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
 
 export default function App() {
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
         <Route path="/proyectos" element={<Proyectos />} />
+        <Route path="/emails" element={<Emails />} />
         <Route path="/catalogo" element={<Catalogo />} />
         <Route path="/emisor" element={<Emisor />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -26,8 +26,17 @@ function tablaServicios(servicios) {
 }
 
 function cabeceraLogo(e) {
-  if (!e.logo_url) return '';
-  return `<div style="text-align:center;margin-bottom:20px"><img src="${e.logo_url}" alt="Logo" style="max-height:80px;max-width:300px"/></div>`;
+  // Si el emisor tiene una logo_url personalizada (subida por Lazaro), se usa esa.
+  // Si no, se usa el logo por defecto de /public/logo-conecta-nex.png.
+  // Para que html2pdf lo capture correctamente al exportar, usamos URL absoluta.
+  let url = e.logo_url || '';
+  if (!url && typeof window !== 'undefined' && window.location) {
+    url = window.location.origin + '/logo-conecta-nex.png';
+  } else if (!url) {
+    url = 'https://clientes.conectanex.com/logo-conecta-nex.png';
+  }
+  if (!url) return '';
+  return `<div style="text-align:center;margin-bottom:20px"><img src="${url}" alt="Conecta Nex" crossorigin="anonymous" style="max-height:80px;max-width:300px"/></div>`;
 }
 
 function bloqueComun(c, e) {

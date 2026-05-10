@@ -4,7 +4,9 @@ export default function Layout({ children, onLogout }) {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <h2>Conecta Nex</h2>
+        <div className="sidebar-marca">
+          <img src="/logo-conecta-nex.png" alt="Conecta Nex" className="sidebar-logo" />
+        </div>
         <nav>
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/clientes">Clientes</NavLink>

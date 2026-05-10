@@ -149,7 +149,7 @@ export default function ClienteDetalle() {
         {pestana === 'entregables' && <PanelEntregables cliente={cliente} entregables={entregables} setEntregables={setEntregables} setCliente={setCliente} recargar={cargar} />}
         {pestana === 'pagos' && <PanelPagos cliente={cliente} pagos={pagos} setPagos={setPagos} />}
         {pestana === 'accesos' && <PanelAccesos cliente={cliente} accesos={accesos} setAccesos={setAccesos} />}
-        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} entregables={entregables} setDocumentos={setDocumentos} setArchivos={setArchivos} setCliente={setCliente} guardar={guardarCliente} />}
+        {pestana === 'documentos' && <PanelDocumentos cliente={cliente} emisor={emisor} documentos={documentos} accesos={accesos} archivos={archivos} entregables={entregables} setDocumentos={setDocumentos} setArchivos={setArchivos} setAccesos={setAccesos} setCliente={setCliente} guardar={guardarCliente} />}
         {pestana === 'archivos' && <PanelArchivos cliente={cliente} archivos={archivos} setArchivos={setArchivos} />}
         {pestana === 'emails' && <PanelEmailsCliente cliente={cliente} />}
       </div>
@@ -1092,7 +1092,7 @@ function ModalAcceso({ inicial, onGuardar, onCancelar }) {
 // =============================================================
 // PANEL: DOCUMENTOS - Hoja, Cesion, Contrato y Acta
 // =============================================================
-function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entregables, setDocumentos, setArchivos, setCliente, guardar }) {
+function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entregables, setDocumentos, setArchivos, setAccesos, setCliente, guardar }) {
   const [previsualizando, setPrevisualizando] = useState(null);
   const [tipoNuevo, setTipoNuevo] = useState(null);
   const [emailHab, setEmailHab] = useState(false);
@@ -1172,6 +1172,13 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entre
           archivos={archivos}
           entregables={entregables}
           emailHab={emailHab}
+          onAccesosCambian={async () => {
+            // Recargar lista de accesos del cliente y notificar al padre
+            try {
+              const lista = await api.accesosList(cliente.id, false);
+              if (typeof setAccesos === 'function') setAccesos(lista);
+            } catch {}
+          }}
           onGuardado={async (doc) => {
             setDocumentos([doc, ...documentos]);
             setTipoNuevo(null);
@@ -1201,10 +1208,11 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entre
   );
 }
 
-function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables, emailHab, onGuardado, onActualizarCliente, onCerrar }) {
+function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables, emailHab, onGuardado, onActualizarCliente, onAccesosCambian, onCerrar }) {
   const [paso, setPaso] = useState('preview'); // preview | firma
   const [firmaURL, setFirmaURL] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [logoDataURL, setLogoDataURL] = useState('');
 
   // Acta tiene dos modos: borrador (uso interno) y definitiva (para cliente)
   // Por defecto borrador. Solo se permite definitiva si estado_proyecto = "Entregado y aceptado"
@@ -1214,14 +1222,57 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
   const [generandoAcceso, setGenerandoAcceso] = useState(false);
   const [enviarEmailPin, setEnviarEmailPin] = useState(true);
 
+  // Accesos en estado local: arranca con la prop pero se actualiza al
+  // anadir credenciales desde el asistente del Acta. Asi el preview del
+  // documento se regenera con los nuevos accesos sin cerrar el modal.
+  const [accesosLocal, setAccesosLocal] = useState(accesos || []);
+  useEffect(() => { setAccesosLocal(accesos || []); }, [accesos]);
+
+  async function recargarAccesosLocal() {
+    try {
+      // Cargar con password descifrada para que aparezcan en el Acta
+      const lista = await api.accesosList(cliente.id, true);
+      setAccesosLocal(lista);
+      if (typeof onAccesosCambian === 'function') onAccesosCambian();
+    } catch (err) {
+      console.error('Error recargando accesos:', err.message);
+    }
+  }
+
   const ref = useRef(null);
   const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
   const esActaDefinitiva = tipo === 'acta' && modoActa === 'definitiva';
   const puedeDefinitiva = cliente.estado_proyecto === 'Entregado y aceptado';
 
+  // Precargar el logo como dataURL base64. Esto evita problemas de CORS
+  // al generar el PDF con html2pdf (html2canvas no carga imagenes externas
+  // si tienen CORS y en Vercel el favicon no envia los headers correctos).
+  useEffect(() => {
+    let cancelado = false;
+    async function cargarLogo() {
+      try {
+        const res = await fetch('/logo-conecta-nex.png');
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (!cancelado) setLogoDataURL(reader.result || '');
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.warn('No se pudo precargar el logo:', err.message);
+      }
+    }
+    cargarLogo();
+    return () => { cancelado = true; };
+  }, []);
+
+  // Emisor con logo embebido para los documentos
+  const emisorConLogo = useMemo(() => ({ ...emisor, logo_data_url: logoDataURL }), [emisor, logoDataURL]);
+
   const html = useMemo(
-    () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, {
-      accesos,
+    () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisorConLogo, firmaURL, {
+      accesos: accesosLocal,
       archivos,
       entregables,
       modo: modoActa,
@@ -1229,7 +1280,7 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
       url_acceso: datosAcceso?.url_acceso,
       codigo_aceptacion: datosAcceso?.codigo_aceptacion,
     }),
-    [tipo, cliente, emisor, firmaURL, accesos, archivos, entregables, modoActa, qrDataURL, datosAcceso]
+    [tipo, cliente, emisorConLogo, firmaURL, accesosLocal, archivos, entregables, modoActa, qrDataURL, datosAcceso]
   );
 
   async function descargarPDF() {
@@ -1284,7 +1335,7 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
       }
 
       // Re-renderizar el HTML con el QR ya incrustado (importante si se acaba de generar)
-      const htmlFinal = generarPorTipo(tipo, { ...cliente, fecha_firma: firmado ? new Date().toISOString() : cliente.fecha_firma }, emisor, firmaURL, {
+      const htmlFinal = generarPorTipo(tipo, { ...cliente, fecha_firma: firmado ? new Date().toISOString() : cliente.fecha_firma }, emisorConLogo, firmaURL, {
         accesos,
         archivos,
         entregables,
@@ -1390,6 +1441,14 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
 
         {selectorModoActa}
 
+        {esActaDefinitiva && (
+          <PanelCredencialesActa
+            cliente={cliente}
+            accesosLocal={accesosLocal}
+            onRecargar={recargarAccesosLocal}
+          />
+        )}
+
         {paso === 'preview' && (
           <>
             <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
@@ -1422,6 +1481,185 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
+  const [anadiendo, setAnadiendo] = useState(false);
+  const [form, setForm] = useState({
+    categoria: 'Email',
+    etiqueta: '',
+    url: '',
+    usuario: '',
+    password: '',
+    notas: '',
+  });
+  const [guardandoCred, setGuardandoCred] = useState(false);
+  const [verPwd, setVerPwd] = useState({}); // {accesoId: passwordTexto}
+
+  let serviciosContratados = [];
+  try {
+    const sj = cliente.servicios_json;
+    if (typeof sj === 'string') serviciosContratados = JSON.parse(sj || '[]');
+    else if (Array.isArray(sj)) serviciosContratados = sj;
+  } catch {}
+
+  const grupos = {};
+  (accesosLocal || []).forEach(a => {
+    const k = a.categoria || 'Otros';
+    if (!grupos[k]) grupos[k] = [];
+    grupos[k].push(a);
+  });
+  const totalAccesos = (accesosLocal || []).length;
+
+  function abrirForm(categoriaSugerida) {
+    setForm({
+      categoria: categoriaSugerida || 'Email',
+      etiqueta: '',
+      url: '',
+      usuario: '',
+      password: '',
+      notas: '',
+    });
+    setAnadiendo(true);
+  }
+
+  async function guardarCred(e) {
+    e.preventDefault();
+    if (!form.etiqueta.trim()) {
+      alert('Pon al menos una etiqueta para identificar el acceso');
+      return;
+    }
+    setGuardandoCred(true);
+    try {
+      await api.accesoCreate({ ...form, cliente_id: cliente.id });
+      setAnadiendo(false);
+      await onRecargar();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setGuardandoCred(false);
+    }
+  }
+
+  async function eliminarCred(a) {
+    if (!confirm('Eliminar el acceso "' + a.etiqueta + '"?')) return;
+    try {
+      await api.accesoDelete(a.id);
+      await onRecargar();
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function togglePwd(accesoId) {
+    if (verPwd[accesoId]) {
+      setVerPwd(prev => { const n = { ...prev }; delete n[accesoId]; return n; });
+      return;
+    }
+    try {
+      const lista = await api.accesosList(cliente.id, true);
+      const a = lista.find(x => x.id === accesoId);
+      if (a) setVerPwd(prev => ({ ...prev, [accesoId]: a.password || '(sin contrasena)' }));
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  return (
+    <div className="panel-credenciales-acta">
+      <div className="pca-header">
+        <h4 style={{ margin: 0 }}>Credenciales a entregar al cliente</h4>
+        <span className="pca-contador">{totalAccesos} {totalAccesos === 1 ? 'credencial' : 'credenciales'}</span>
+      </div>
+      <p className="pca-explicacion">
+        Estas credenciales aparecen en el QR del Acta. El cliente las vera tras escanear el QR e introducir el PIN.
+        Anade aqui los accesos que has creado durante el proyecto (email corporativo, hosting, redes sociales, etc).
+      </p>
+
+      {serviciosContratados.length > 0 && (
+        <div className="pca-servicios">
+          <strong>Servicios contratados:</strong>{' '}
+          {serviciosContratados.map((s, i) => (
+            <span key={i} className="pca-chip">{typeof s === 'string' ? s : (s.nombre || s.titulo || 'Servicio')}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="pca-grupos">
+        {CATEGORIAS_ACCESO.map(cat => {
+          const items = grupos[cat] || [];
+          return (
+            <div key={cat} className="pca-grupo">
+              <div className="pca-grupo-cabecera">
+                <strong>{cat}</strong>
+                <span className="pca-mini-contador">{items.length}</span>
+                <button type="button" onClick={() => abrirForm(cat)} className="btn-mini">+ Anadir</button>
+              </div>
+              {items.length > 0 && (
+                <ul className="pca-lista">
+                  {items.map(a => (
+                    <li key={a.id}>
+                      <div className="pca-item-principal">
+                        <strong>{a.etiqueta}</strong>
+                        {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="pca-url">{a.url}</a>}
+                      </div>
+                      <div className="pca-item-detalle">
+                        {a.usuario && <span>Usuario: <code>{a.usuario}</code></span>}
+                        {a.tiene_password ? (
+                          <span>
+                            Pwd: {verPwd[a.id] ? <code>{verPwd[a.id]}</code> : <span style={{color:'#999'}}>oculta</span>}
+                            <button type="button" onClick={() => togglePwd(a.id)} className="btn-mini">{verPwd[a.id] ? 'Ocultar' : 'Ver'}</button>
+                          </span>
+                        ) : <span style={{color:'#dc2626'}}>sin contrasena</span>}
+                      </div>
+                      {a.notas && <div className="pca-notas">{a.notas}</div>}
+                      <div className="pca-item-acciones">
+                        <button type="button" onClick={() => eliminarCred(a)} className="btn-peligro btn-mini">Eliminar</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {anadiendo && (
+        <form onSubmit={guardarCred} className="pca-form-inline">
+          <h4 style={{ margin: '0 0 8px' }}>Nueva credencial</h4>
+          <div className="pca-form-fila">
+            <label>Categoria
+              <select value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})}>
+                {CATEGORIAS_ACCESO.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>Etiqueta *
+              <input value={form.etiqueta} onChange={(e) => setForm({...form, etiqueta: e.target.value})} placeholder="Ej: Gmail principal del negocio" required />
+            </label>
+          </div>
+          <div className="pca-form-fila">
+            <label>URL
+              <input value={form.url} onChange={(e) => setForm({...form, url: e.target.value})} placeholder="https://..." />
+            </label>
+            <label>Usuario / email
+              <input value={form.usuario} onChange={(e) => setForm({...form, usuario: e.target.value})} />
+            </label>
+          </div>
+          <div className="pca-form-fila">
+            <label>Contrasena
+              <input type="text" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} placeholder="Se cifra antes de guardar" />
+            </label>
+            <label>Notas
+              <input value={form.notas} onChange={(e) => setForm({...form, notas: e.target.value})} />
+            </label>
+          </div>
+          <div className="pca-form-acciones">
+            <button type="button" onClick={() => setAnadiendo(false)} className="btn-outline">Cancelar</button>
+            <button type="submit" className="btn-primary" disabled={guardandoCred}>
+              {guardandoCred ? 'Guardando...' : 'Guardar credencial'}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

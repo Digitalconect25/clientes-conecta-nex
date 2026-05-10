@@ -282,6 +282,8 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos, opciones) 
   const urlAcceso = opciones && opciones.url_acceso;
   const codigoAceptacion = opciones && opciones.codigo_aceptacion;
   const entregables = opciones && opciones.entregables;
+  const branding = (opciones && opciones.branding) || {};
+  const imagenesDataURL = (opciones && Array.isArray(opciones.imagenes_dataurl)) ? opciones.imagenes_dataurl : [];
 
   const b = bloqueComun(c, e);
   const lista = (Array.isArray(accesos) ? accesos : []).filter(a => a && a.etiqueta);
@@ -389,6 +391,71 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos, opciones) 
     ? 'ACTA DE ENTREGA Y ACCESO A RECURSOS'
     : 'ACTA DE ENTREGA - BORRADOR';
 
+  // Bloque "Identidad de marca y materiales entregados"
+  // Aparece en el Acta para que el cliente tenga un dossier independiente
+  // de los archivos digitales que se le hayan entregado.
+  let bloqueMarca = '';
+  const tagline = (branding.tagline || '').trim();
+  const colores = Array.isArray(branding.colores) ? branding.colores.filter(x => x && x.hex) : [];
+  const tipografias = Array.isArray(branding.tipografias) ? branding.tipografias.filter(x => x && x.nombre) : [];
+
+  const tieneAlgo = tagline || colores.length > 0 || tipografias.length > 0 || imagenesDataURL.length > 0;
+  if (tieneAlgo) {
+    let html = '<h2>Identidad de marca y materiales entregados</h2>';
+
+    if (tagline) {
+      html += `<div style="margin: 12px 0; padding: 14px 18px; background: #f0fdf4; border-left: 4px solid #047857; font-style: italic; font-size: 13pt; color: #064e3b;">"${tagline}"</div>`;
+    }
+
+    if (colores.length > 0) {
+      html += '<h3>Paleta de colores corporativos</h3>';
+      html += '<div style="display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0;">';
+      colores.forEach(col => {
+        const hex = col.hex || '#000';
+        const nombre = col.nombre || hex;
+        const uso = col.uso ? `<div style="font-size: 9pt; color: #666; margin-top: 2px;">${col.uso}</div>` : '';
+        html += `
+          <div style="border: 1px solid #ddd; border-radius: 6px; overflow: hidden; width: 150px;">
+            <div style="background: ${hex}; height: 70px;"></div>
+            <div style="padding: 8px;">
+              <strong style="font-size: 10pt;">${nombre}</strong>
+              <div style="font-family: monospace; font-size: 10pt; color: #444;">${hex}</div>
+              ${uso}
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+    }
+
+    if (tipografias.length > 0) {
+      html += '<h3>Tipografias</h3>';
+      html += '<ul style="font-size: 11pt;">';
+      tipografias.forEach(tp => {
+        const uso = tp.uso ? ` <span style="color: #666;">- ${tp.uso}</span>` : '';
+        html += `<li><strong>${tp.nombre}</strong>${uso}</li>`;
+      });
+      html += '</ul>';
+    }
+
+    if (imagenesDataURL.length > 0) {
+      html += '<h3>Logos e imagenes entregadas</h3>';
+      html += '<div style="display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0;">';
+      imagenesDataURL.forEach(img => {
+        const nombre = img.nombre || 'Imagen';
+        html += `
+          <div style="text-align: center; max-width: 220px;">
+            <img src="${img.dataurl}" alt="${nombre}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; padding: 6px; background: white;" />
+            <div style="font-size: 9pt; color: #666; margin-top: 4px;">${nombre}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+    }
+
+    bloqueMarca = html;
+  }
+
   return CSS_BASE + cabeceraLogo(e) + `
 <h1>${tituloDoc}</h1>
 <p class="sub">N de contrato: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
@@ -403,6 +470,8 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos, opciones) 
 ${b.descBl}
 
 ${seccionEntregables}
+
+${bloqueMarca}
 
 <h2>3. Accesos y credenciales entregados</h2>
 ${lista.length === 0 ? '<p>No se entregan credenciales en este proyecto.</p>' : seccionesAccesos}
@@ -441,6 +510,8 @@ export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
         url_acceso: extras?.url_acceso,
         codigo_aceptacion: extras?.codigo_aceptacion,
         entregables: extras?.entregables,
+        branding: extras?.branding,
+        imagenes_dataurl: extras?.imagenes_dataurl,
       }
     );
   }

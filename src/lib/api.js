@@ -105,7 +105,9 @@ export const api = {
 
   archivosList: (clienteId) => request('GET', `/api/archivos?cliente_id=${clienteId}`),
   archivoUpload: (data) => request('POST', '/api/archivos', data),
+  archivoUpdate: (data) => request('PUT', '/api/archivos', data),
   archivoDelete: (id) => request('DELETE', `/api/archivos?id=${id}`),
+  archivoComoDataURL: (id) => request('GET', `/api/archivos?id=${id}&formato=dataurl`),
   archivoDescargar: descargarArchivo,
 
   pagosList: (clienteId) => request('GET', clienteId ? `/api/pagos?cliente_id=${clienteId}` : '/api/pagos'),

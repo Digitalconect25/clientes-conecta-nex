@@ -25,7 +25,7 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>Conecta Nex</h1>
+        <img src="/logo-conecta-nex.png" alt="Conecta Nex" className="login-logo" />
         <p className="subtitle">Sistema de gestion de clientes</p>
         <form onSubmit={handleSubmit}>
           <label>Contrasena</label>

@@ -1253,53 +1253,14 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
     }
   }
 
-  // Cache de imagenes del cliente como dataURL. Sirve tanto para mostrar
-  // miniatura en el panel de marca (todas) como para embeber en el PDF
-  // (solo las marcadas como incluir_en_acta).
-  // Estructura: { [archivoId]: {id, nombre, dataurl} }
-  const [cacheImagenes, setCacheImagenes] = useState({});
-  const [cargandoImagenes, setCargandoImagenes] = useState(false);
-
-  // Cuando se abra el modo Acta definitiva, descargar todas las imagenes
-  // del cliente (limitadas a 20) y cachearlas para mostrar miniaturas.
-  useEffect(() => {
-    if (tipo !== 'acta' || modoActa !== 'definitiva') return;
-    const imgs = (archivosLocal || []).filter(a => (a.tipo || '').startsWith('image/')).slice(0, 20);
-    if (imgs.length === 0) return;
-    const idsCache = new Set(Object.keys(cacheImagenes).map(Number));
-    const pendientes = imgs.filter(a => !idsCache.has(a.id));
-    if (pendientes.length === 0) return;
-
-    let cancelado = false;
-    setCargandoImagenes(true);
-    (async () => {
-      try {
-        const nuevas = {};
-        for (const a of pendientes) {
-          if (cancelado) return;
-          try {
-            const r = await api.archivoComoDataURL(a.id);
-            nuevas[a.id] = { id: a.id, nombre: r.nombre, dataurl: r.dataurl };
-            // Update incremental para que las miniaturas vayan apareciendo
-            if (!cancelado) setCacheImagenes(prev => ({ ...prev, [a.id]: nuevas[a.id] }));
-          } catch (err) {
-            console.warn('No se pudo cargar imagen', a.id, err.message);
-          }
-        }
-      } finally {
-        if (!cancelado) setCargandoImagenes(false);
-      }
-    })();
-    return () => { cancelado = true; };
-  }, [archivosLocal, tipo, modoActa]);
-
-  // Imagenes seleccionadas para incluir en el PDF, en formato array.
+  // Lista de archivos seleccionados para incluir en la lista del Acta.
+  // No se descargan ni se embeben en el PDF, solo aparecen como lista
+  // textual con nombre y tamano. Asi el PDF no se hace gigante.
   const imagenesDataURL = useMemo(() => {
-    const seleccionadas = (archivosLocal || []).filter(a => a.incluir_en_acta && (a.tipo || '').startsWith('image/'));
-    return seleccionadas
-      .map(a => cacheImagenes[a.id])
-      .filter(x => x && x.dataurl);
-  }, [archivosLocal, cacheImagenes]);
+    return (archivosLocal || [])
+      .filter(a => a.incluir_en_acta)
+      .map(a => ({ id: a.id, nombre: a.nombre, tamano: a.tamano, tipo: a.tipo }));
+  }, [archivosLocal]);
 
   const ref = useRef(null);
   const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
@@ -1555,8 +1516,6 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
           <PanelMarcaActa
             cliente={cliente}
             archivos={archivosLocal}
-            cacheImagenes={cacheImagenes}
-            cargandoImagenes={cargandoImagenes}
             onClienteActualizado={(c) => {
               if (typeof onActualizarCliente === 'function') onActualizarCliente(c);
             }}
@@ -1605,7 +1564,7 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
   );
 }
 
-function PanelMarcaActa({ cliente, archivos, cacheImagenes, cargandoImagenes, onClienteActualizado, onArchivosActualizados }) {
+function PanelMarcaActa({ cliente, archivos, onClienteActualizado, onArchivosActualizados }) {
   // El branding vive en cliente.branding_json. Editamos en local
   // y guardamos via api.clienteUpdate. Si llega un cliente nuevo del padre,
   // resyncronizamos con useEffect.
@@ -1691,7 +1650,9 @@ function PanelMarcaActa({ cliente, archivos, cacheImagenes, cargandoImagenes, on
   }
 
   // Filtrar solo los archivos que son imagenes
-  const imagenes = (archivos || []).filter(a => (a.tipo || '').startsWith('image/'));
+  // Mostramos todos los archivos del cliente, no solo imagenes.
+  // Asi Lazaro puede listar tambien PDFs, ZIPs, contratos auxiliares, etc.
+  const imagenes = archivos || [];
   const seleccionadas = imagenes.filter(a => a.incluir_en_acta).length;
 
   return (
@@ -1699,7 +1660,7 @@ function PanelMarcaActa({ cliente, archivos, cacheImagenes, cargandoImagenes, on
       <div className="pma-header">
         <h4 style={{ margin: 0 }}>Marca y materiales graficos</h4>
         <span className="pma-contador">
-          {branding.colores.length} colores · {branding.tipografias.length} fuentes · {seleccionadas} de {imagenes.length} imagenes
+          {branding.colores.length} colores · {branding.tipografias.length} fuentes · {seleccionadas} de {imagenes.length} archivos
         </span>
       </div>
       <p className="pma-explicacion">
@@ -1800,45 +1761,33 @@ function PanelMarcaActa({ cliente, archivos, cacheImagenes, cargandoImagenes, on
         )}
       </div>
 
-      {/* IMAGENES */}
+      {/* ARCHIVOS PARA INCLUIR EN LA LISTA DEL ACTA */}
       <div className="pma-bloque">
-        <strong>Logos e imagenes para el Acta</strong>
+        <strong>Archivos a listar en el Acta</strong>
         <p style={{ fontSize: 11, color: '#666', margin: '4px 0 8px' }}>
-          Marca las imagenes que quieres incluir en el PDF del Acta (vienen de la pestaña Archivos del cliente).
-          {cargandoImagenes && <span style={{ color: '#1e40af', marginLeft: 6 }}>· cargando vistas previas...</span>}
+          Marca los archivos que quieres que aparezcan en el Acta como lista de materiales entregados.
+          Solo aparecen el nombre y el tamano, no se incrustan los archivos en el PDF.
         </p>
         {imagenes.length === 0 ? (
           <p style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>
-            No hay imagenes en los archivos del cliente. Sube logos o imagenes en la pestaña Archivos.
+            No hay archivos en este cliente. Sube los logos, mockups o cualquier archivo entregado en la pestaña Archivos.
           </p>
         ) : (
-          <div className="pma-imagenes-grid">
-            {imagenes.map(img => {
-              const cache = cacheImagenes && cacheImagenes[img.id];
-              return (
-                <label key={img.id} className={`pma-imagen-card ${img.incluir_en_acta ? 'seleccionada' : ''}`}>
-                  <div className="pma-imagen-thumb">
-                    {cache ? (
-                      <img src={cache.dataurl} alt={img.nombre} />
-                    ) : (
-                      <div className="pma-imagen-placeholder">cargando...</div>
-                    )}
-                  </div>
-                  <div className="pma-imagen-info">
-                    <input
-                      type="checkbox"
-                      checked={!!img.incluir_en_acta}
-                      onChange={(e) => toggleIncluir(img, e.target.checked)}
-                    />
-                    <div>
-                      <div className="pma-imagen-nombre">{img.nombre}</div>
-                      <div className="pma-imagen-tamano">{(img.tamano / 1024).toFixed(0)} KB</div>
-                    </div>
-                  </div>
+          <ul className="pma-archivos-lista">
+            {imagenes.map(img => (
+              <li key={img.id} className={img.incluir_en_acta ? 'seleccionado' : ''}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!!img.incluir_en_acta}
+                    onChange={(e) => toggleIncluir(img, e.target.checked)}
+                  />
+                  <span className="pma-archivo-nombre">{img.nombre}</span>
+                  <span className="pma-archivo-tamano">{(img.tamano / 1024).toFixed(0)} KB</span>
                 </label>
-              );
-            })}
-          </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

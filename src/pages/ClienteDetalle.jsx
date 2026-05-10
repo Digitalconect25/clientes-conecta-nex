@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { api, getPassword } from '../lib/api.js';
 import { fmtEuros, generarPorTipo, TIPOS_DOC } from '../lib/contratos.js';
 import FirmaCanvas from '../components/FirmaCanvas.jsx';
 import EmailCompositor from '../components/EmailCompositor.jsx';
@@ -1498,6 +1498,73 @@ function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
   const [guardandoCred, setGuardandoCred] = useState(false);
   const [verPwd, setVerPwd] = useState({}); // {accesoId: passwordTexto}
 
+  // Sistema de desbloqueo: las contrasenas estan bloqueadas por defecto.
+  // Para verlas hay que introducir la contrasena de entrada (la del login).
+  // Una vez desbloqueadas, se mantienen accesibles 5 minutos en esta sesion.
+  const UNLOCK_KEY = 'creds_unlock_until';
+  const UNLOCK_MIN = 5;
+  const [desbloqueado, setDesbloqueado] = useState(() => {
+    const until = parseInt(sessionStorage.getItem(UNLOCK_KEY) || '0', 10);
+    return until > Date.now();
+  });
+  const [pidiendoPwd, setPidiendoPwd] = useState(false);
+  const [pwdInput, setPwdInput] = useState('');
+  const [pwdError, setPwdError] = useState('');
+  const [tiempoRestante, setTiempoRestante] = useState('');
+
+  // Auto-bloqueo cuando expira el tiempo
+  useEffect(() => {
+    if (!desbloqueado) { setTiempoRestante(''); return; }
+    const tick = () => {
+      const until = parseInt(sessionStorage.getItem(UNLOCK_KEY) || '0', 10);
+      const restante = until - Date.now();
+      if (restante <= 0) {
+        setDesbloqueado(false);
+        setVerPwd({});
+        sessionStorage.removeItem(UNLOCK_KEY);
+        setTiempoRestante('');
+        return;
+      }
+      const min = Math.floor(restante / 60000);
+      const seg = Math.floor((restante % 60000) / 1000);
+      setTiempoRestante(`${min}:${String(seg).padStart(2, '0')}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [desbloqueado]);
+
+  function abrirDesbloqueo() {
+    setPwdInput('');
+    setPwdError('');
+    setPidiendoPwd(true);
+  }
+
+  function confirmarDesbloqueo(e) {
+    e.preventDefault();
+    const pwdGuardada = getPassword();
+    if (!pwdInput) {
+      setPwdError('Introduce la contrasena');
+      return;
+    }
+    if (pwdInput !== pwdGuardada) {
+      setPwdError('Contrasena incorrecta');
+      return;
+    }
+    const until = Date.now() + UNLOCK_MIN * 60 * 1000;
+    sessionStorage.setItem(UNLOCK_KEY, String(until));
+    setDesbloqueado(true);
+    setPidiendoPwd(false);
+    setPwdInput('');
+    setPwdError('');
+  }
+
+  function bloquearAhora() {
+    sessionStorage.removeItem(UNLOCK_KEY);
+    setDesbloqueado(false);
+    setVerPwd({});
+  }
+
   let serviciosContratados = [];
   try {
     const sj = cliente.servicios_json;
@@ -1552,6 +1619,10 @@ function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
   }
 
   async function togglePwd(accesoId) {
+    if (!desbloqueado) {
+      abrirDesbloqueo();
+      return;
+    }
     if (verPwd[accesoId]) {
       setVerPwd(prev => { const n = { ...prev }; delete n[accesoId]; return n; });
       return;
@@ -1573,6 +1644,19 @@ function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
         Estas credenciales aparecen en el QR del Acta. El cliente las vera tras escanear el QR e introducir el PIN.
         Anade aqui los accesos que has creado durante el proyecto (email corporativo, hosting, redes sociales, etc).
       </p>
+
+      <div className="pca-bloqueo">
+        {!desbloqueado ? (
+          <button type="button" onClick={abrirDesbloqueo} className="btn-desbloquear">
+            🔒 Desbloquear contrasenas
+          </button>
+        ) : (
+          <div className="pca-desbloqueado">
+            <span className="pca-estado-ok">✓ Desbloqueado · se bloquea en {tiempoRestante}</span>
+            <button type="button" onClick={bloquearAhora} className="btn-bloquear-ahora">Bloquear ahora</button>
+          </div>
+        )}
+      </div>
 
       {serviciosContratados.length > 0 && (
         <div className="pca-servicios">
@@ -1604,9 +1688,13 @@ function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
                       <div className="pca-item-detalle">
                         {a.usuario && <span>Usuario: <code>{a.usuario}</code></span>}
                         {a.tiene_password ? (
-                          <span>
-                            Pwd: {verPwd[a.id] ? <code>{verPwd[a.id]}</code> : <span style={{color:'#999'}}>oculta</span>}
-                            <button type="button" onClick={() => togglePwd(a.id)} className="btn-mini">{verPwd[a.id] ? 'Ocultar' : 'Ver'}</button>
+                          <span className="pca-pwd-fila">
+                            Pwd: {desbloqueado && verPwd[a.id]
+                              ? <code className="pca-pwd-visible">{verPwd[a.id]}</code>
+                              : <code className="pca-pwd-oculta">●●●●●●●●</code>}
+                            <button type="button" onClick={() => togglePwd(a.id)} className="btn-ver-pwd">
+                              {!desbloqueado ? '🔒 Ver' : (verPwd[a.id] ? 'Ocultar' : '👁 Ver')}
+                            </button>
                           </span>
                         ) : <span style={{color:'#dc2626'}}>sin contrasena</span>}
                       </div>
@@ -1659,6 +1747,35 @@ function PanelCredencialesActa({ cliente, accesosLocal, onRecargar }) {
             </button>
           </div>
         </form>
+      )}
+
+      {pidiendoPwd && (
+        <div className="modal-overlay" onClick={() => setPidiendoPwd(false)}>
+          <div className="modal modal-pequeno" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Verificar identidad</h3>
+            <p style={{ fontSize: 13, color: '#555' }}>
+              Para mostrar las contrasenas, introduce tu contrasena de entrada (la misma que usas para acceder al sistema).
+              Las contrasenas quedaran visibles durante {UNLOCK_MIN} minutos.
+            </p>
+            <form onSubmit={confirmarDesbloqueo}>
+              <input
+                type="password"
+                value={pwdInput}
+                onChange={(e) => { setPwdInput(e.target.value); setPwdError(''); }}
+                placeholder="Contrasena de entrada"
+                autoFocus
+                style={{ width: '100%' }}
+              />
+              {pwdError && <div className="alerta alerta-error" style={{ marginTop: 8 }}>{pwdError}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setPidiendoPwd(false)} className="btn-outline">Cancelar</button>
+                <button type="submit" className="btn-desbloquear" disabled={!pwdInput}>
+                  🔓 Desbloquear
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

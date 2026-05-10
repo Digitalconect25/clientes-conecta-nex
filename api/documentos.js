@@ -2,7 +2,7 @@ import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
 export const config = {
-  api: { bodyParser: { sizeLimit: '5mb' } },
+  api: { bodyParser: { sizeLimit: '12mb' } },
 };
 
 export default async function handler(req, res) {

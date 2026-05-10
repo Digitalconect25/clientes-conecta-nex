@@ -1239,6 +1239,68 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
     }
   }
 
+  // Archivos en estado local. Cuando marcamos "incluir_en_acta" en alguno,
+  // recargamos para reflejar el cambio.
+  const [archivosLocal, setArchivosLocal] = useState(archivos || []);
+  useEffect(() => { setArchivosLocal(archivos || []); }, [archivos]);
+
+  async function recargarArchivosLocal() {
+    try {
+      const lista = await api.archivosList(cliente.id);
+      setArchivosLocal(lista);
+    } catch (err) {
+      console.error('Error recargando archivos:', err.message);
+    }
+  }
+
+  // Cache de imagenes del cliente como dataURL. Sirve tanto para mostrar
+  // miniatura en el panel de marca (todas) como para embeber en el PDF
+  // (solo las marcadas como incluir_en_acta).
+  // Estructura: { [archivoId]: {id, nombre, dataurl} }
+  const [cacheImagenes, setCacheImagenes] = useState({});
+  const [cargandoImagenes, setCargandoImagenes] = useState(false);
+
+  // Cuando se abra el modo Acta definitiva, descargar todas las imagenes
+  // del cliente (limitadas a 20) y cachearlas para mostrar miniaturas.
+  useEffect(() => {
+    if (tipo !== 'acta' || modoActa !== 'definitiva') return;
+    const imgs = (archivosLocal || []).filter(a => (a.tipo || '').startsWith('image/')).slice(0, 20);
+    if (imgs.length === 0) return;
+    const idsCache = new Set(Object.keys(cacheImagenes).map(Number));
+    const pendientes = imgs.filter(a => !idsCache.has(a.id));
+    if (pendientes.length === 0) return;
+
+    let cancelado = false;
+    setCargandoImagenes(true);
+    (async () => {
+      try {
+        const nuevas = {};
+        for (const a of pendientes) {
+          if (cancelado) return;
+          try {
+            const r = await api.archivoComoDataURL(a.id);
+            nuevas[a.id] = { id: a.id, nombre: r.nombre, dataurl: r.dataurl };
+            // Update incremental para que las miniaturas vayan apareciendo
+            if (!cancelado) setCacheImagenes(prev => ({ ...prev, [a.id]: nuevas[a.id] }));
+          } catch (err) {
+            console.warn('No se pudo cargar imagen', a.id, err.message);
+          }
+        }
+      } finally {
+        if (!cancelado) setCargandoImagenes(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [archivosLocal, tipo, modoActa]);
+
+  // Imagenes seleccionadas para incluir en el PDF, en formato array.
+  const imagenesDataURL = useMemo(() => {
+    const seleccionadas = (archivosLocal || []).filter(a => a.incluir_en_acta && (a.tipo || '').startsWith('image/'));
+    return seleccionadas
+      .map(a => cacheImagenes[a.id])
+      .filter(x => x && x.dataurl);
+  }, [archivosLocal, cacheImagenes]);
+
   const ref = useRef(null);
   const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
   const esActaDefinitiva = tipo === 'acta' && modoActa === 'definitiva';
@@ -1297,14 +1359,16 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
   const html = useMemo(
     () => generarPorTipo(tipo, { ...cliente, fecha_firma: firmaURL ? new Date().toISOString() : cliente.fecha_firma }, emisorConLogo, firmaURL, {
       accesos: accesosLocal,
-      archivos,
+      archivos: archivosLocal,
       entregables,
       modo: modoActa,
       qr_dataurl: qrDataURL,
       url_acceso: datosAcceso?.url_acceso,
       codigo_aceptacion: datosAcceso?.codigo_aceptacion,
+      branding: cliente.branding_json || {},
+      imagenes_dataurl: imagenesDataURL,
     }),
-    [tipo, cliente, emisorConLogo, firmaURL, accesosLocal, archivos, entregables, modoActa, qrDataURL, datosAcceso]
+    [tipo, cliente, emisorConLogo, firmaURL, accesosLocal, archivosLocal, entregables, modoActa, qrDataURL, datosAcceso, imagenesDataURL]
   );
 
   async function descargarPDF() {
@@ -1366,12 +1430,14 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
       // (que incluyen las credenciales que se acaban de anadir desde el asistente).
       const htmlFinal = generarPorTipo(tipo, { ...cliente, fecha_firma: firmado ? new Date().toISOString() : cliente.fecha_firma }, emisorConLogo, firmaURL, {
         accesos: accesosLocal,
-        archivos,
+        archivos: archivosLocal,
         entregables,
         modo: modoActa,
         qr_dataurl: qrDataURLLocal,
         url_acceso: accesoFinal?.url_acceso,
         codigo_aceptacion: accesoFinal?.codigo_aceptacion,
+        branding: cliente.branding_json || {},
+        imagenes_dataurl: imagenesDataURL,
       });
 
       const nombreDoc = tipo === 'acta'
@@ -1485,6 +1551,19 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
           />
         )}
 
+        {esActaDefinitiva && (
+          <PanelMarcaActa
+            cliente={cliente}
+            archivos={archivosLocal}
+            cacheImagenes={cacheImagenes}
+            cargandoImagenes={cargandoImagenes}
+            onClienteActualizado={(c) => {
+              if (typeof onActualizarCliente === 'function') onActualizarCliente(c);
+            }}
+            onArchivosActualizados={recargarArchivosLocal}
+          />
+        )}
+
         {paso === 'preview' && (
           <>
             <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
@@ -1520,6 +1599,246 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
               </button>
             </div>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PanelMarcaActa({ cliente, archivos, cacheImagenes, cargandoImagenes, onClienteActualizado, onArchivosActualizados }) {
+  // El branding vive en cliente.branding_json. Editamos en local
+  // y guardamos via api.clienteUpdate. Si llega un cliente nuevo del padre,
+  // resyncronizamos con useEffect.
+  const initialBranding = cliente.branding_json || {};
+  const [branding, setBranding] = useState({
+    tagline: initialBranding.tagline || '',
+    colores: Array.isArray(initialBranding.colores) ? initialBranding.colores : [],
+    tipografias: Array.isArray(initialBranding.tipografias) ? initialBranding.tipografias : [],
+  });
+  const [guardando, setGuardando] = useState(false);
+
+  // Estado de los formularios inline
+  const [nuevoColor, setNuevoColor] = useState({ nombre: '', hex: '#0d3b2e', uso: '' });
+  const [mostrarColorForm, setMostrarColorForm] = useState(false);
+  const [nuevaTipo, setNuevaTipo] = useState({ nombre: '', uso: '' });
+  const [mostrarTipoForm, setMostrarTipoForm] = useState(false);
+
+  useEffect(() => {
+    const b = cliente.branding_json || {};
+    setBranding({
+      tagline: b.tagline || '',
+      colores: Array.isArray(b.colores) ? b.colores : [],
+      tipografias: Array.isArray(b.tipografias) ? b.tipografias : [],
+    });
+  }, [cliente.id, cliente.branding_json]);
+
+  async function guardarBranding(nuevoBranding) {
+    setGuardando(true);
+    try {
+      const actualizado = await api.clienteUpdate({ id: cliente.id, branding_json: nuevoBranding });
+      setBranding({
+        tagline: nuevoBranding.tagline || '',
+        colores: Array.isArray(nuevoBranding.colores) ? nuevoBranding.colores : [],
+        tipografias: Array.isArray(nuevoBranding.tipografias) ? nuevoBranding.tipografias : [],
+      });
+      if (typeof onClienteActualizado === 'function') onClienteActualizado(actualizado);
+    } catch (err) {
+      alert('Error guardando marca: ' + err.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  function addColor(e) {
+    e.preventDefault();
+    if (!nuevoColor.hex) return;
+    const nuevoBranding = { ...branding, colores: [...branding.colores, { ...nuevoColor }] };
+    setNuevoColor({ nombre: '', hex: '#0d3b2e', uso: '' });
+    setMostrarColorForm(false);
+    guardarBranding(nuevoBranding);
+  }
+
+  function eliminarColor(i) {
+    const nuevoBranding = { ...branding, colores: branding.colores.filter((_, idx) => idx !== i) };
+    guardarBranding(nuevoBranding);
+  }
+
+  function addTipo(e) {
+    e.preventDefault();
+    if (!nuevaTipo.nombre.trim()) return;
+    const nuevoBranding = { ...branding, tipografias: [...branding.tipografias, { ...nuevaTipo }] };
+    setNuevaTipo({ nombre: '', uso: '' });
+    setMostrarTipoForm(false);
+    guardarBranding(nuevoBranding);
+  }
+
+  function eliminarTipo(i) {
+    const nuevoBranding = { ...branding, tipografias: branding.tipografias.filter((_, idx) => idx !== i) };
+    guardarBranding(nuevoBranding);
+  }
+
+  function guardarTagline() {
+    guardarBranding({ ...branding });
+  }
+
+  async function toggleIncluir(archivo, incluir) {
+    try {
+      await api.archivoUpdate({ id: archivo.id, incluir_en_acta: incluir });
+      if (typeof onArchivosActualizados === 'function') await onArchivosActualizados();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  // Filtrar solo los archivos que son imagenes
+  const imagenes = (archivos || []).filter(a => (a.tipo || '').startsWith('image/'));
+  const seleccionadas = imagenes.filter(a => a.incluir_en_acta).length;
+
+  return (
+    <div className="panel-marca-acta">
+      <div className="pma-header">
+        <h4 style={{ margin: 0 }}>Marca y materiales graficos</h4>
+        <span className="pma-contador">
+          {branding.colores.length} colores · {branding.tipografias.length} fuentes · {seleccionadas} de {imagenes.length} imagenes
+        </span>
+      </div>
+      <p className="pma-explicacion">
+        Anade la identidad visual del cliente y selecciona los logos o imagenes que quieres incluir en el PDF del Acta.
+        Esta seccion convierte el documento en un dossier de marca completo.
+      </p>
+
+      {/* TAGLINE */}
+      <div className="pma-bloque">
+        <strong>Tagline / lema</strong>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <input
+            type="text"
+            value={branding.tagline}
+            onChange={(e) => setBranding({ ...branding, tagline: e.target.value })}
+            placeholder="Ej: Conecta, Vibra, Vive."
+            style={{ flex: 1 }}
+          />
+          <button type="button" onClick={guardarTagline} disabled={guardando} className="btn-mini">Guardar</button>
+        </div>
+      </div>
+
+      {/* COLORES */}
+      <div className="pma-bloque">
+        <div className="pma-bloque-header">
+          <strong>Paleta de colores</strong>
+          <button type="button" onClick={() => setMostrarColorForm(!mostrarColorForm)} className="btn-mini">
+            {mostrarColorForm ? 'Cancelar' : '+ Anadir color'}
+          </button>
+        </div>
+        {branding.colores.length > 0 && (
+          <div className="pma-paleta">
+            {branding.colores.map((col, i) => (
+              <div key={i} className="pma-color-card">
+                <div className="pma-color-muestra" style={{ background: col.hex }}></div>
+                <div className="pma-color-info">
+                  <strong>{col.nombre || col.hex}</strong>
+                  <code>{col.hex}</code>
+                  {col.uso && <small>{col.uso}</small>}
+                </div>
+                <button type="button" onClick={() => eliminarColor(i)} className="btn-peligro btn-mini">x</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {mostrarColorForm && (
+          <form onSubmit={addColor} className="pma-form-inline">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label>Nombre
+                <input value={nuevoColor.nombre} onChange={(e) => setNuevoColor({ ...nuevoColor, nombre: e.target.value })} placeholder="Verde principal" />
+              </label>
+              <label>Color
+                <input type="color" value={nuevoColor.hex} onChange={(e) => setNuevoColor({ ...nuevoColor, hex: e.target.value })} style={{ width: 50, height: 36, padding: 2 }} />
+              </label>
+              <label>Hex
+                <input value={nuevoColor.hex} onChange={(e) => setNuevoColor({ ...nuevoColor, hex: e.target.value })} style={{ width: 90, fontFamily: 'monospace' }} />
+              </label>
+              <label style={{ flex: 1, minWidth: 150 }}>Uso
+                <input value={nuevoColor.uso} onChange={(e) => setNuevoColor({ ...nuevoColor, uso: e.target.value })} placeholder="Fondos, hero, botones" />
+              </label>
+              <button type="submit" className="btn-primary" disabled={guardando}>Guardar</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* TIPOGRAFIAS */}
+      <div className="pma-bloque">
+        <div className="pma-bloque-header">
+          <strong>Tipografias</strong>
+          <button type="button" onClick={() => setMostrarTipoForm(!mostrarTipoForm)} className="btn-mini">
+            {mostrarTipoForm ? 'Cancelar' : '+ Anadir tipografia'}
+          </button>
+        </div>
+        {branding.tipografias.length > 0 && (
+          <ul className="pma-tipos">
+            {branding.tipografias.map((tp, i) => (
+              <li key={i}>
+                <strong>{tp.nombre}</strong>
+                {tp.uso && <span> · {tp.uso}</span>}
+                <button type="button" onClick={() => eliminarTipo(i)} className="btn-peligro btn-mini">x</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {mostrarTipoForm && (
+          <form onSubmit={addTipo} className="pma-form-inline">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label style={{ flex: 1, minWidth: 200 }}>Nombre
+                <input value={nuevaTipo.nombre} onChange={(e) => setNuevaTipo({ ...nuevaTipo, nombre: e.target.value })} placeholder="Bricolage Grotesque" required />
+              </label>
+              <label style={{ flex: 1, minWidth: 150 }}>Uso
+                <input value={nuevaTipo.uso} onChange={(e) => setNuevaTipo({ ...nuevaTipo, uso: e.target.value })} placeholder="Titulos" />
+              </label>
+              <button type="submit" className="btn-primary" disabled={guardando}>Guardar</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* IMAGENES */}
+      <div className="pma-bloque">
+        <strong>Logos e imagenes para el Acta</strong>
+        <p style={{ fontSize: 11, color: '#666', margin: '4px 0 8px' }}>
+          Marca las imagenes que quieres incluir en el PDF del Acta (vienen de la pestaña Archivos del cliente).
+          {cargandoImagenes && <span style={{ color: '#1e40af', marginLeft: 6 }}>· cargando vistas previas...</span>}
+        </p>
+        {imagenes.length === 0 ? (
+          <p style={{ fontSize: 12, color: '#999', fontStyle: 'italic' }}>
+            No hay imagenes en los archivos del cliente. Sube logos o imagenes en la pestaña Archivos.
+          </p>
+        ) : (
+          <div className="pma-imagenes-grid">
+            {imagenes.map(img => {
+              const cache = cacheImagenes && cacheImagenes[img.id];
+              return (
+                <label key={img.id} className={`pma-imagen-card ${img.incluir_en_acta ? 'seleccionada' : ''}`}>
+                  <div className="pma-imagen-thumb">
+                    {cache ? (
+                      <img src={cache.dataurl} alt={img.nombre} />
+                    ) : (
+                      <div className="pma-imagen-placeholder">cargando...</div>
+                    )}
+                  </div>
+                  <div className="pma-imagen-info">
+                    <input
+                      type="checkbox"
+                      checked={!!img.incluir_en_acta}
+                      onChange={(e) => toggleIncluir(img, e.target.checked)}
+                    />
+                    <div>
+                      <div className="pma-imagen-nombre">{img.nombre}</div>
+                      <div className="pma-imagen-tamano">{(img.tamano / 1024).toFixed(0)} KB</div>
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

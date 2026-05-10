@@ -1242,7 +1242,21 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
   const ref = useRef(null);
   const tipoInfo = TIPOS_DOC.find(t => t.id === tipo);
   const esActaDefinitiva = tipo === 'acta' && modoActa === 'definitiva';
-  const puedeDefinitiva = cliente.estado_proyecto === 'Entregado y aceptado';
+  // Comparacion robusta: normaliza tildes, mayusculas y espacios para evitar
+  // que un valor con tilde diferente bloquee el radio "Definitiva".
+  const _norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const puedeDefinitiva = _norm(cliente.estado_proyecto) === _norm('Entregado y aceptado');
+
+  async function ponerEnEntregado() {
+    if (!confirm('Voy a cambiar el estado del proyecto del cliente a "Entregado y aceptado". ¿Seguro?')) return;
+    try {
+      const actualizado = await api.clienteUpdate({ id: cliente.id, estado_proyecto: 'Entregado y aceptado' });
+      if (typeof onActualizarCliente === 'function') onActualizarCliente(actualizado);
+      alert('Estado actualizado. Ya puedes marcar el modo Definitiva.');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
 
   // Precargar el logo como dataURL base64. Esto evita problemas de CORS
   // al generar el PDF con html2pdf (html2canvas no carga imagenes externas
@@ -1251,16 +1265,26 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
     let cancelado = false;
     async function cargarLogo() {
       try {
-        const res = await fetch('/logo-conecta-nex.png');
-        if (!res.ok) return;
+        const res = await fetch('/logo-conecta-nex.png', { cache: 'force-cache' });
+        if (!res.ok) {
+          console.error('[Logo] No se pudo descargar logo-conecta-nex.png. Status:', res.status);
+          // Fallback: usar un dataURL minimo (1x1 transparente) para no bloquear el flujo
+          if (!cancelado) setLogoDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+          return;
+        }
         const blob = await res.blob();
         const reader = new FileReader();
         reader.onloadend = () => {
-          if (!cancelado) setLogoDataURL(reader.result || '');
+          if (!cancelado) {
+            setLogoDataURL(reader.result || '');
+            console.log('[Logo] Cargado correctamente, tamano:', blob.size, 'bytes');
+          }
         };
         reader.readAsDataURL(blob);
       } catch (err) {
-        console.warn('No se pudo precargar el logo:', err.message);
+        console.error('[Logo] Fallo al cargar:', err.message);
+        // Fallback para no bloquear
+        if (!cancelado) setLogoDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
       }
     }
     cargarLogo();
@@ -1297,7 +1321,7 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
     await html2pdf().set(opt).from(ref.current).save();
   }
 
-  // Genera el QR + PIN + codigo y lo pre-incrusta en el HTML del Acta.
+  // Genera el QR + PIN + codigo y devuelve TODO (acceso + dataURL del QR).
   // Solo se llama si tipo === 'acta' y modoActa === 'definitiva'.
   async function generarPiezasSeguridad() {
     setGenerandoAcceso(true);
@@ -1316,7 +1340,8 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
 
       setQrDataURL(dataURL);
       setDatosAcceso(r);
-      return r;
+      // Devolvemos ambos para evitar el problema de closure de React
+      return { acceso: r, qrDataUrlLocal: dataURL };
     } catch (err) {
       alert('Error generando acceso seguro: ' + err.message);
       throw err;
@@ -1330,17 +1355,21 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
     try {
       // Si es acta definitiva y aun no hay datos de acceso, generamos QR + PIN antes de guardar
       let accesoFinal = datosAcceso;
+      let qrDataURLLocal = qrDataURL;
       if (esActaDefinitiva && !accesoFinal && firmado) {
-        accesoFinal = await generarPiezasSeguridad();
+        const piezas = await generarPiezasSeguridad();
+        accesoFinal = piezas.acceso;
+        qrDataURLLocal = piezas.qrDataUrlLocal;
       }
 
-      // Re-renderizar el HTML con el QR ya incrustado (importante si se acaba de generar)
+      // Re-renderizar el HTML con el QR ya incrustado y los accesos LOCALES
+      // (que incluyen las credenciales que se acaban de anadir desde el asistente).
       const htmlFinal = generarPorTipo(tipo, { ...cliente, fecha_firma: firmado ? new Date().toISOString() : cliente.fecha_firma }, emisorConLogo, firmaURL, {
-        accesos,
+        accesos: accesosLocal,
         archivos,
         entregables,
         modo: modoActa,
-        qr_dataurl: qrDataURL,
+        qr_dataurl: qrDataURLLocal,
         url_acceso: accesoFinal?.url_acceso,
         codigo_aceptacion: accesoFinal?.codigo_aceptacion,
       });
@@ -1406,7 +1435,14 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
           disabled={!puedeDefinitiva}
         />
         Definitiva (entrega al cliente, contraseñas censuradas + QR)
-        {!puedeDefinitiva && <small> · Disponible cuando el proyecto este en estado "Entregado y aceptado"</small>}
+        {!puedeDefinitiva && (
+          <small style={{ display: 'block', marginTop: 4 }}>
+            · Disponible cuando el proyecto este en estado "Entregado y aceptado".{' '}
+            <button type="button" onClick={ponerEnEntregado} className="btn-mini" style={{ marginLeft: 4 }}>
+              Cambiar ahora
+            </button>
+          </small>
+        )}
       </label>
       {esActaDefinitiva && datosAcceso && (
         <div className="info-acceso-generado">
@@ -1452,11 +1488,16 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
         {paso === 'preview' && (
           <>
             <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
+            {!logoDataURL && (
+              <div className="aviso-logo-cargando">
+                Cargando logo del documento... espera unos segundos antes de firmar para que aparezca en el PDF.
+              </div>
+            )}
             <div className="modal-acciones">
               <button onClick={descargarPDF}>Descargar PDF (sin firma)</button>
               <button onClick={() => guardarDocumento(false)} disabled={guardando}>Guardar sin firmar</button>
-              <button onClick={() => setPaso('firma')} className="btn-principal" disabled={generandoAcceso}>
-                {generandoAcceso ? 'Generando...' : 'Pasar a firma'}
+              <button onClick={() => setPaso('firma')} className="btn-principal" disabled={generandoAcceso || !logoDataURL}>
+                {generandoAcceso ? 'Generando...' : (!logoDataURL ? 'Cargando logo...' : 'Pasar a firma')}
               </button>
             </div>
           </>

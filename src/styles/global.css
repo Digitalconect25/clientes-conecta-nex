@@ -1621,3 +1621,15 @@ input:disabled, select:disabled, textarea:disabled {
   max-width: 420px;
   width: 90%;
 }
+
+/* Aviso de carga del logo */
+.aviso-logo-cargando {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin: 10px 0;
+  text-align: center;
+}

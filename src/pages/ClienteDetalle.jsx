@@ -1505,11 +1505,11 @@ function ModalGenerarDoc({ tipo, cliente, emisor, accesos, archivos, entregables
 
         {paso === 'firma' && (
           <>
-            <h4>Firma del cliente</h4>
-            <FirmaCanvas onChange={setFirmaURL} />
+            <h4>Firma del cliente {firmaURL && <span style={{ color: '#047857', fontSize: 13 }}>· firma capturada</span>}</h4>
+            <FirmaCanvas key={paso + '-firma'} onChange={setFirmaURL} />
             <div className="preview-doc" ref={ref} dangerouslySetInnerHTML={{ __html: html }}></div>
             <div className="modal-acciones">
-              <button onClick={() => setPaso('preview')}>Volver</button>
+              <button onClick={() => { setFirmaURL(null); setPaso('preview'); }}>Volver y borrar firma</button>
               <button onClick={descargarPDF} disabled={!firmaURL}>Descargar PDF firmado</button>
               <button
                 onClick={() => guardarDocumento(true)}

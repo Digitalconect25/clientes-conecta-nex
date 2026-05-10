@@ -439,18 +439,15 @@ export function generarActaEntrega(c, e, firmaURL, accesos, archivos, opciones) 
     }
 
     if (imagenesDataURL.length > 0) {
-      html += '<h3>Logos e imagenes entregadas</h3>';
-      html += '<div style="display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0;">';
+      html += '<h3>Materiales graficos entregados</h3>';
+      html += '<ul style="font-size: 11pt; line-height: 1.6;">';
       imagenesDataURL.forEach(img => {
-        const nombre = img.nombre || 'Imagen';
-        html += `
-          <div style="text-align: center; max-width: 220px;">
-            <img src="${img.dataurl}" alt="${nombre}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; padding: 6px; background: white;" />
-            <div style="font-size: 9pt; color: #666; margin-top: 4px;">${nombre}</div>
-          </div>
-        `;
+        const nombre = img.nombre || 'Archivo';
+        const tam = img.tamano ? ` <span style="color: #666; font-size: 10pt;">(${(img.tamano / 1024).toFixed(0)} KB)</span>` : '';
+        html += `<li>${nombre}${tam}</li>`;
       });
-      html += '</div>';
+      html += '</ul>';
+      html += '<p style="font-size: 10pt; color: #666; font-style: italic;">Estos materiales se entregan al cliente en formato digital aparte de este documento.</p>';
     }
 
     bloqueMarca = html;

@@ -26,10 +26,11 @@ function tablaServicios(servicios) {
 }
 
 function cabeceraLogo(e) {
-  // Si el emisor tiene una logo_url personalizada (subida por Lazaro), se usa esa.
-  // Si no, se usa el logo por defecto de /public/logo-conecta-nex.png.
-  // Para que html2pdf lo capture correctamente al exportar, usamos URL absoluta.
-  let url = e.logo_url || '';
+  // Orden de prioridad para encontrar el logo:
+  // 1. e.logo_data_url -> dataURL base64 precargado por el frontend (mejor para PDFs)
+  // 2. e.logo_url      -> URL personalizada que el usuario haya guardado en BD
+  // 3. fallback        -> /logo-conecta-nex.png con URL absoluta
+  let url = e.logo_data_url || e.logo_url || '';
   if (!url && typeof window !== 'undefined' && window.location) {
     url = window.location.origin + '/logo-conecta-nex.png';
   } else if (!url) {

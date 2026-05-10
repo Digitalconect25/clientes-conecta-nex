@@ -13,11 +13,27 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const clienteId = parseInt(req.query.cliente_id, 10);
       const id = req.query.id ? parseInt(req.query.id, 10) : null;
+      const formato = req.query.formato || 'binario'; // 'binario' o 'dataurl'
 
       if (id) {
-        // Descarga binaria. La auth ya esta validada con la cabecera X-App-Password.
-        const [row] = await sql`SELECT id, cliente_id, nombre, tipo, tamano, contenido, creado_en FROM archivos WHERE id = ${id}`;
+        const [row] = await sql`SELECT id, cliente_id, nombre, tipo, tamano, contenido, incluir_en_acta, creado_en FROM archivos WHERE id = ${id}`;
         if (!row) return jsonResponse(res, 404, { error: 'No encontrado' });
+
+        // Modo dataurl: devuelve JSON con { id, nombre, tipo, dataurl: "data:...;base64,..." }
+        // Util para embeber en HTML del PDF sin problemas de CORS.
+        if (formato === 'dataurl') {
+          const buf = Buffer.from(row.contenido);
+          const base64 = buf.toString('base64');
+          return jsonResponse(res, 200, {
+            id: row.id,
+            nombre: row.nombre,
+            tipo: row.tipo,
+            tamano: row.tamano,
+            dataurl: `data:${row.tipo};base64,${base64}`,
+          });
+        }
+
+        // Modo binario (descarga directa)
         const buf = Buffer.from(row.contenido);
         res.setHeader('Content-Type', row.tipo);
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(row.nombre)}`);
@@ -27,7 +43,7 @@ export default async function handler(req, res) {
       }
 
       if (!clienteId) return jsonResponse(res, 400, { error: 'Falta cliente_id' });
-      const rows = await sql`SELECT id, cliente_id, nombre, tipo, tamano, creado_en FROM archivos WHERE cliente_id = ${clienteId} ORDER BY creado_en DESC`;
+      const rows = await sql`SELECT id, cliente_id, nombre, tipo, tamano, incluir_en_acta, creado_en FROM archivos WHERE cliente_id = ${clienteId} ORDER BY creado_en DESC`;
       return jsonResponse(res, 200, rows);
     }
 
@@ -40,7 +56,27 @@ export default async function handler(req, res) {
       const [row] = await sql`
         INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido)
         VALUES (${cliente_id}, ${nombre}, ${tipo || 'application/octet-stream'}, ${buffer.length}, ${buffer})
-        RETURNING id, cliente_id, nombre, tipo, tamano, creado_en
+        RETURNING id, cliente_id, nombre, tipo, tamano, incluir_en_acta, creado_en
+      `;
+      return jsonResponse(res, 200, row);
+    }
+
+    if (req.method === 'PUT') {
+      // Actualiza solo metadatos (no el binario): nombre, incluir_en_acta
+      const { id, nombre, incluir_en_acta } = req.body || {};
+      if (!id) return jsonResponse(res, 400, { error: 'Falta id' });
+
+      const [actual] = await sql`SELECT id, nombre, incluir_en_acta FROM archivos WHERE id = ${id}`;
+      if (!actual) return jsonResponse(res, 404, { error: 'No encontrado' });
+
+      const nuevoNombre = nombre !== undefined ? nombre : actual.nombre;
+      const nuevoFlag = incluir_en_acta !== undefined ? !!incluir_en_acta : actual.incluir_en_acta;
+
+      const [row] = await sql`
+        UPDATE archivos
+        SET nombre = ${nuevoNombre}, incluir_en_acta = ${nuevoFlag}
+        WHERE id = ${id}
+        RETURNING id, cliente_id, nombre, tipo, tamano, incluir_en_acta, creado_en
       `;
       return jsonResponse(res, 200, row);
     }

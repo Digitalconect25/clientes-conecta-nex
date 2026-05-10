@@ -1816,3 +1816,42 @@ input:disabled, select:disabled, textarea:disabled {
   color: #666;
   margin-top: 2px;
 }
+
+/* Lista simple de archivos en panel marca */
+.pma-archivos-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pma-archivos-lista li {
+  border-bottom: 1px solid #f3f4f6;
+  padding: 6px 0;
+  transition: background 0.1s;
+}
+.pma-archivos-lista li.seleccionado {
+  background: #ecfdf5;
+}
+.pma-archivos-lista li:last-child {
+  border-bottom: none;
+}
+.pma-archivos-lista label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.pma-archivos-lista input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+}
+.pma-archivo-nombre {
+  font-size: 13px;
+  flex: 1;
+  word-break: break-all;
+}
+.pma-archivo-tamano {
+  font-size: 11px;
+  color: #666;
+  flex-shrink: 0;
+}

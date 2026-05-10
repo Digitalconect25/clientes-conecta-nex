@@ -1,23 +1,45 @@
 import { useRef, useState } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 
-export default function FirmaCanvas({ onFirmar, onCancelar }) {
+// Acepta dos APIs:
+// - onChange(dataURL): se llama en cada trazo y al limpiar. La firma se va
+//   guardando sola, no hace falta pulsar "Confirmar firma".
+// - onFirmar(dataURL) + onCancelar(): API antigua con botones explicitos.
+// Si pasas onChange, ocultamos los botones "Confirmar firma" y "Cancelar"
+// porque el flujo es continuo y la firma se queda guardada al soltar.
+export default function FirmaCanvas({ onFirmar, onCancelar, onChange }) {
   const sigRef = useRef(null);
   const [vacio, setVacio] = useState(true);
+
+  function getDataURL() {
+    if (!sigRef.current || sigRef.current.isEmpty()) return null;
+    return sigRef.current.getCanvas().toDataURL('image/png');
+  }
 
   function limpiar() {
     sigRef.current?.clear();
     setVacio(true);
+    if (onChange) onChange(null);
+  }
+
+  function alSoltar() {
+    setVacio(sigRef.current?.isEmpty() ?? true);
+    if (onChange) {
+      const dataURL = getDataURL();
+      onChange(dataURL);
+    }
   }
 
   function confirmar() {
-    if (sigRef.current?.isEmpty()) {
+    if (!sigRef.current || sigRef.current.isEmpty()) {
       alert('Por favor firma antes de confirmar');
       return;
     }
-    const dataURL = sigRef.current.getCanvas().toDataURL('image/png');
-    onFirmar(dataURL);
+    const dataURL = getDataURL();
+    if (onFirmar) onFirmar(dataURL);
   }
+
+  const usaOnChange = typeof onChange === 'function';
 
   return (
     <div>
@@ -31,12 +53,22 @@ export default function FirmaCanvas({ onFirmar, onCancelar }) {
           backgroundColor="rgba(255,255,255,1)"
           canvasProps={{ width: 700, height: 200 }}
           onBegin={() => setVacio(false)}
+          onEnd={alSoltar}
         />
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
         <button className="btn-outline" onClick={limpiar}>Limpiar</button>
-        <button className="btn-outline" onClick={onCancelar}>Cancelar</button>
-        <button className="btn-primary" onClick={confirmar} disabled={vacio}>Confirmar firma</button>
+        {!usaOnChange && (
+          <>
+            {onCancelar && <button className="btn-outline" onClick={onCancelar}>Cancelar</button>}
+            <button className="btn-primary" onClick={confirmar} disabled={vacio}>Confirmar firma</button>
+          </>
+        )}
+        {usaOnChange && !vacio && (
+          <span style={{ alignSelf: 'center', fontSize: 12, color: '#047857' }}>
+            ✓ Firma capturada
+          </span>
+        )}
       </div>
     </div>
   );

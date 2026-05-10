@@ -1532,3 +1532,92 @@ input:disabled, select:disabled, textarea:disabled {
 @media (max-width: 600px) {
   .pca-form-fila { grid-template-columns: 1fr; }
 }
+
+/* === Bloqueo / desbloqueo de contrasenas en el Acta === */
+.pca-bloqueo {
+  margin-bottom: 12px;
+  text-align: center;
+}
+.btn-desbloquear {
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(4, 120, 87, 0.3);
+  transition: transform 0.1s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-desbloquear:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(4, 120, 87, 0.4);
+}
+.btn-desbloquear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pca-desbloqueado {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+.pca-estado-ok {
+  color: #047857;
+  font-weight: 600;
+  font-size: 13px;
+}
+.btn-bloquear-ahora {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-bloquear-ahora:hover {
+  background: #f3f4f6;
+}
+.btn-ver-pwd {
+  background: #047857;
+  color: #fff;
+  border: none;
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.btn-ver-pwd:hover {
+  background: #065f46;
+}
+.pca-pwd-fila {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pca-pwd-visible {
+  background: #fef3c7 !important;
+  color: #92400e;
+  font-weight: 600;
+  padding: 2px 6px !important;
+}
+.pca-pwd-oculta {
+  background: #e5e7eb !important;
+  color: #6b7280;
+  letter-spacing: 1px;
+}
+.modal-pequeno {
+  max-width: 420px;
+  width: 90%;
+}

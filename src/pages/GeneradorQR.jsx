@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import html2pdf from 'html2pdf.js';
+import { CREATIVE_SHAPES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
 
-const DOT_STYLES = [
+const STANDARD_DOT_STYLES = [
   { value: 'square', label: 'Cuadrado clasico' },
   { value: 'rounded', label: 'Redondeado' },
   { value: 'dots', label: 'Puntos' },
   { value: 'classy', label: 'Elegante' },
   { value: 'classy-rounded', label: 'Elegante redondeado' },
   { value: 'extra-rounded', label: 'Extra redondeado' },
+];
+
+const LETTER_FONTS = [
+  { value: 'Arial Black, sans-serif', label: 'Arial Black (gruesa)' },
+  { value: 'Impact, sans-serif', label: 'Impact (condensada)' },
+  { value: 'Georgia, serif', label: 'Georgia (serif)' },
+  { value: '"Courier New", monospace', label: 'Courier (monoespaciada)' },
+  { value: '-apple-system, BlinkMacSystemFont, sans-serif', label: 'Sistema' },
 ];
 
 const CORNER_SQUARE_STYLES = [
@@ -47,6 +56,8 @@ const DEFAULT_STATE = {
   texto: 'Escanea para ver el menu',
   textoTamano: 18,
   textoColor: '#1f2937',
+  letra: 'A',
+  letterFont: 'Arial Black, sans-serif',
 };
 
 export default function GeneradorQR() {
@@ -54,21 +65,55 @@ export default function GeneradorQR() {
   const qrRef = useRef(null);
   const qrContainer = useRef(null);
   const exportableRef = useRef(null);
+  const lastCreativeSvgRef = useRef('');
+
+  const creative = isCreativeShape(s.dotStyle);
 
   function set(k, v) { setS((x) => ({ ...x, [k]: v })); }
 
   useEffect(() => {
     qrRef.current = new QRCodeStyling(buildOptions(s));
-    if (qrContainer.current) {
-      qrContainer.current.innerHTML = '';
-      qrRef.current.append(qrContainer.current);
-    }
-    return () => { if (qrContainer.current) qrContainer.current.innerHTML = ''; };
   }, []);
 
   useEffect(() => {
-    if (qrRef.current) qrRef.current.update(buildOptions(s));
-  }, [s]);
+    if (!qrContainer.current) return;
+    if (creative) {
+      qrContainer.current.innerHTML = '';
+      renderCustomQR(creativeOpts(s)).then(({ svg }) => {
+        if (!qrContainer.current) return;
+        if (!isCreativeShape(s.dotStyle)) return;
+        qrContainer.current.innerHTML = svg;
+        lastCreativeSvgRef.current = svg;
+      });
+    } else {
+      if (qrRef.current) {
+        qrRef.current.update(buildOptions(s));
+        if (!qrContainer.current.querySelector('svg, canvas')) {
+          qrContainer.current.innerHTML = '';
+          qrRef.current.append(qrContainer.current);
+        }
+      }
+    }
+  }, [s, creative]);
+
+  function creativeOpts(state) {
+    return {
+      data: state.url || ' ',
+      shape: state.dotStyle,
+      letter: state.letra,
+      letterFont: state.letterFont,
+      fillColor: state.dotColor,
+      bgColor: state.bgColor,
+      useGradient: state.useGradient,
+      fillColor2: state.dotColor2,
+      errorLevel: state.errorLevel,
+      cellSize: 16,
+      margin: 4,
+      logoDataUrl: state.logoDataUrl,
+      logoSize: state.logoSize,
+      hideBgDots: state.hideBgDots,
+    };
+  }
 
   function buildOptions(state) {
     const dotsOptions = state.useGradient
@@ -127,22 +172,39 @@ export default function GeneradorQR() {
     } catch { return 'qr-conecta-nex'; }
   }
 
+  async function getQrPngBlob() {
+    if (creative) {
+      const { svg, size } = await renderCustomQR(creativeOpts(s));
+      return svgToPngBlob(svg, Math.max(s.size, size));
+    }
+    const inst = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
+    return inst.getRawData('png');
+  }
+
+  async function getQrSvgText() {
+    if (creative) {
+      const { svg } = await renderCustomQR(creativeOpts(s));
+      return svg;
+    }
+    const blob = await qrRef.current.getRawData('svg');
+    return blob.text();
+  }
+
   async function exportPNG() {
-    if (!s.texto.trim()) {
+    if (!s.texto.trim() && !creative) {
       const png = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
       png.download({ name: safeName(), extension: 'png' });
       return;
     }
-    await exportComposed('png');
+    await exportComposed();
   }
 
   async function exportSVG() {
+    const qrSvgText = await getQrSvgText();
     if (!s.texto.trim()) {
-      qrRef.current.download({ name: safeName(), extension: 'svg' });
+      triggerDownload(new Blob([qrSvgText], { type: 'image/svg+xml' }), safeName() + '.svg');
       return;
     }
-    const blob = await qrRef.current.getRawData('svg');
-    const qrSvgText = await blob.text();
     const svg = wrapSvgWithText(qrSvgText, s);
     triggerDownload(new Blob([svg], { type: 'image/svg+xml' }), safeName() + '.svg');
   }
@@ -159,14 +221,14 @@ export default function GeneradorQR() {
     await html2pdf().set(opt).from(exportableRef.current).save();
   }
 
-  async function exportComposed(format) {
-    const qrCanvasInst = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
-    const blob = await qrCanvasInst.getRawData('png');
+  async function exportComposed() {
+    const blob = await getQrPngBlob();
     const url = URL.createObjectURL(blob);
     const img = await loadImg(url);
 
+    const hasText = !!s.texto.trim();
     const pad = 60;
-    const textH = s.textoTamano * 1.8;
+    const textH = hasText ? s.textoTamano * 1.8 : 0;
     const W = s.size + pad * 2;
     const H = s.size + pad * 2 + textH;
     const canvas = document.createElement('canvas');
@@ -176,11 +238,13 @@ export default function GeneradorQR() {
     ctx.fillStyle = s.bgColor;
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(img, pad, pad, s.size, s.size);
-    ctx.fillStyle = s.textoColor;
-    ctx.font = `600 ${s.textoTamano * 2}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(s.texto, W / 2, s.size + pad + textH);
+    if (hasText) {
+      ctx.fillStyle = s.textoColor;
+      ctx.font = `600 ${s.textoTamano * 2}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s.texto, W / 2, s.size + pad + textH);
+    }
     URL.revokeObjectURL(url);
 
     canvas.toBlob((b) => triggerDownload(b, safeName() + '.png'), 'image/png');
@@ -311,21 +375,46 @@ export default function GeneradorQR() {
             <div style={{ gridColumn: 'span 2' }}>
               <label>Forma de los puntos</label>
               <select value={s.dotStyle} onChange={(e) => set('dotStyle', e.target.value)}>
-                {DOT_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                <optgroup label="Estandar">
+                  {STANDARD_DOT_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </optgroup>
+                <optgroup label="Creativas">
+                  {CREATIVE_SHAPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </optgroup>
               </select>
             </div>
-            <div>
-              <label>Esquinas (cuadrado)</label>
-              <select value={s.cornerSquareStyle} onChange={(e) => set('cornerSquareStyle', e.target.value)}>
-                {CORNER_SQUARE_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Esquinas (punto)</label>
-              <select value={s.cornerDotStyle} onChange={(e) => set('cornerDotStyle', e.target.value)}>
-                {CORNER_DOT_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
+            {s.dotStyle === 'letter' && (
+              <>
+                <div>
+                  <label>Letra o simbolo</label>
+                  <input value={s.letra} maxLength={2}
+                    onChange={(e) => set('letra', e.target.value)}
+                    placeholder="A" />
+                </div>
+                <div>
+                  <label>Fuente</label>
+                  <select value={s.letterFont} onChange={(e) => set('letterFont', e.target.value)}>
+                    {LETTER_FONTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+            {!creative && (
+              <>
+                <div>
+                  <label>Esquinas (cuadrado)</label>
+                  <select value={s.cornerSquareStyle} onChange={(e) => set('cornerSquareStyle', e.target.value)}>
+                    {CORNER_SQUARE_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label>Esquinas (punto)</label>
+                  <select value={s.cornerDotStyle} onChange={(e) => set('cornerDotStyle', e.target.value)}>
+                    {CORNER_DOT_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
             <div style={{ gridColumn: 'span 2' }}>
               <label>Nivel de correccion de errores</label>
               <select value={s.errorLevel} onChange={(e) => set('errorLevel', e.target.value)}>
@@ -333,6 +422,11 @@ export default function GeneradorQR() {
               </select>
             </div>
           </div>
+          {creative && (
+            <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
+              <strong>Forma creativa activa.</strong> Quedan muy vistosos pero algunos escaneres viejos pueden tener problemas. Mantieni el nivel <strong>Muy alta (H)</strong> y prueba el QR con varios moviles antes de imprimirlo.
+            </div>
+          )}
 
           <h2 style={{ marginTop: 20 }}>Logo central</h2>
           <input id="qr-logo-input" type="file" accept="image/*" onChange={onLogo} />

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import html2pdf from 'html2pdf.js';
 import { CREATIVE_SHAPES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
+import { SILHOUETTES, letterSilhouette } from '../lib/qrSilhouettes.js';
+import { composeQrInSilhouette } from '../lib/qrFrame.js';
 
 const STANDARD_DOT_STYLES = [
   { value: 'square', label: 'Cuadrado clasico' },
@@ -58,6 +60,15 @@ const DEFAULT_STATE = {
   textoColor: '#1f2937',
   letra: 'A',
   letterFont: 'Arial Black, sans-serif',
+  silhouetteMode: 'none',
+  silhouetteId: 'triangle',
+  silhouetteFill: '',
+  silhouetteLetter: 'A',
+  silhouetteLetterFont: 'Arial Black, sans-serif',
+  customSilhouetteSvg: '',
+  customQrScale: 0.45,
+  customQrOffsetX: 0,
+  customQrOffsetY: 0,
 };
 
 export default function GeneradorQR() {
@@ -68,6 +79,7 @@ export default function GeneradorQR() {
   const lastCreativeSvgRef = useRef('');
 
   const creative = isCreativeShape(s.dotStyle);
+  const useSilhouette = s.silhouetteMode !== 'none';
 
   function set(k, v) { setS((x) => ({ ...x, [k]: v })); }
 
@@ -77,24 +89,60 @@ export default function GeneradorQR() {
 
   useEffect(() => {
     if (!qrContainer.current) return;
-    if (creative) {
-      qrContainer.current.innerHTML = '';
-      renderCustomQR(creativeOpts(s)).then(({ svg }) => {
-        if (!qrContainer.current) return;
-        if (!isCreativeShape(s.dotStyle)) return;
-        qrContainer.current.innerHTML = svg;
-        lastCreativeSvgRef.current = svg;
-      });
-    } else {
-      if (qrRef.current) {
-        qrRef.current.update(buildOptions(s));
-        if (!qrContainer.current.querySelector('svg, canvas')) {
-          qrContainer.current.innerHTML = '';
-          qrRef.current.append(qrContainer.current);
-        }
+    let cancelled = false;
+    async function render() {
+      const qrSvg = await getQrSvgText();
+      const finalSvg = useSilhouette ? composeWithSilhouette(qrSvg) : qrSvg;
+      if (!cancelled && qrContainer.current) {
+        qrContainer.current.innerHTML = finalSvg;
       }
     }
-  }, [s, creative]);
+    render().catch(console.error);
+    return () => { cancelled = true; };
+  }, [s, creative, useSilhouette]);
+
+  function composeWithSilhouette(qrSvgText) {
+    if (s.silhouetteMode === 'gallery') {
+      const sil = SILHOUETTES.find((x) => x.id === s.silhouetteId) || SILHOUETTES[0];
+      return composeQrInSilhouette({
+        qrSvgText,
+        silhouette: sil,
+        silhouetteFill: s.silhouetteFill || sil.defaultFill,
+        bgColor: s.bgColor,
+      });
+    }
+    if (s.silhouetteMode === 'letter') {
+      const sil = letterSilhouette(s.silhouetteLetter, s.silhouetteLetterFont);
+      return composeQrInSilhouette({
+        qrSvgText,
+        silhouette: sil,
+        silhouetteFill: s.silhouetteFill || sil.defaultFill,
+        bgColor: s.bgColor,
+      });
+    }
+    if (s.silhouetteMode === 'custom') {
+      if (!s.customSilhouetteSvg) return qrSvgText;
+      const parsedViewBox = extractViewBoxQuick(s.customSilhouetteSvg);
+      const [, , w, h] = parsedViewBox;
+      const side = Math.min(w, h) * s.customQrScale;
+      const cx = w / 2 + s.customQrOffsetX;
+      const cy = h / 2 + s.customQrOffsetY;
+      return composeQrInSilhouette({
+        qrSvgText,
+        silhouette: { defaultFill: '#000' },
+        customSvgText: s.customSilhouetteSvg,
+        customQrBox: { x: cx - side / 2, y: cy - side / 2, size: side },
+        bgColor: s.bgColor,
+      });
+    }
+    return qrSvgText;
+  }
+
+  function extractViewBoxQuick(svg) {
+    const m = svg.match(/viewBox\s*=\s*"([^"]+)"/i);
+    if (m) return m[1].trim().split(/\s+/).map(Number);
+    return [0, 0, 600, 600];
+  }
 
   function creativeOpts(state) {
     return {
@@ -165,6 +213,14 @@ export default function GeneradorQR() {
     if (input) input.value = '';
   }
 
+  function onCustomSilhouette(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => set('customSilhouetteSvg', String(reader.result));
+    reader.readAsText(file);
+  }
+
   function safeName() {
     try {
       const u = new URL(s.url);
@@ -173,6 +229,11 @@ export default function GeneradorQR() {
   }
 
   async function getQrPngBlob() {
+    if (useSilhouette) {
+      const qrSvg = await getRawQrSvg();
+      const composed = composeWithSilhouette(qrSvg);
+      return svgToPngBlob(composed, s.size);
+    }
     if (creative) {
       const { svg, size } = await renderCustomQR(creativeOpts(s));
       return svgToPngBlob(svg, Math.max(s.size, size));
@@ -181,13 +242,18 @@ export default function GeneradorQR() {
     return inst.getRawData('png');
   }
 
-  async function getQrSvgText() {
+  async function getRawQrSvg() {
     if (creative) {
       const { svg } = await renderCustomQR(creativeOpts(s));
       return svg;
     }
     const blob = await qrRef.current.getRawData('svg');
     return blob.text();
+  }
+
+  async function getQrSvgText() {
+    const raw = await getRawQrSvg();
+    return useSilhouette ? composeWithSilhouette(raw) : raw;
   }
 
   async function exportPNG() {
@@ -451,6 +517,98 @@ export default function GeneradorQR() {
           <div className="alerta alerta-aviso" style={{ marginTop: 20 }}>
             <strong>Consejo:</strong> si vas a poner logo central, usa correccion <strong>Alta</strong> o <strong>Muy alta</strong> para que el QR siga siendo legible.
           </div>
+
+          <h2 style={{ marginTop: 20 }}>Silueta del QR</h2>
+          <p style={{ fontSize: 12, color: 'var(--gris-5)', marginTop: -8, marginBottom: 8 }}>
+            El QR escaneable se incrusta dentro de una forma decorativa. La forma rodea, el QR funciona.
+          </p>
+          <label>Modo</label>
+          <select value={s.silhouetteMode} onChange={(e) => set('silhouetteMode', e.target.value)}>
+            <option value="none">Ninguna (QR cuadrado normal)</option>
+            <option value="gallery">Galeria predefinida</option>
+            <option value="letter">Letra grande como silueta</option>
+            <option value="custom">Subir mi propio SVG</option>
+          </select>
+
+          {s.silhouetteMode === 'gallery' && (
+            <div className="grid" style={{ marginTop: 10 }}>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label>Silueta</label>
+                <select value={s.silhouetteId} onChange={(e) => set('silhouetteId', e.target.value)}>
+                  {SILHOUETTES.map((sil) => <option key={sil.id} value={sil.id}>{sil.label}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label>Color silueta (vacio = color de la marca)</label>
+                <input type="color" value={s.silhouetteFill || (SILHOUETTES.find((x) => x.id === s.silhouetteId)?.defaultFill || '#000000')}
+                  onChange={(e) => set('silhouetteFill', e.target.value)} />
+                <button className="btn-outline btn-sm" style={{ marginTop: 6 }} onClick={() => set('silhouetteFill', '')}>
+                  Usar color por defecto
+                </button>
+              </div>
+            </div>
+          )}
+
+          {s.silhouetteMode === 'letter' && (
+            <div className="grid" style={{ marginTop: 10 }}>
+              <div>
+                <label>Letra (1-2 caracteres)</label>
+                <input value={s.silhouetteLetter} maxLength={2}
+                  onChange={(e) => set('silhouetteLetter', e.target.value)} placeholder="M" />
+              </div>
+              <div>
+                <label>Fuente</label>
+                <select value={s.silhouetteLetterFont} onChange={(e) => set('silhouetteLetterFont', e.target.value)}>
+                  {LETTER_FONTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label>Color letra</label>
+                <input type="color" value={s.silhouetteFill || '#1f2937'}
+                  onChange={(e) => set('silhouetteFill', e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          {s.silhouetteMode === 'custom' && (
+            <div style={{ marginTop: 10 }}>
+              <label>Sube un SVG (logo, mascota, forma…)</label>
+              <input type="file" accept=".svg,image/svg+xml" onChange={onCustomSilhouette} />
+              {s.customSilhouetteSvg && (
+                <>
+                  <div className="grid" style={{ marginTop: 10 }}>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label>Tamano del QR ({Math.round(s.customQrScale * 100)}%)</label>
+                      <input type="range" min="0.2" max="0.85" step="0.05" value={s.customQrScale}
+                        onChange={(e) => set('customQrScale', parseFloat(e.target.value))} />
+                    </div>
+                    <div>
+                      <label>Desplazamiento X ({s.customQrOffsetX})</label>
+                      <input type="range" min="-200" max="200" step="5" value={s.customQrOffsetX}
+                        onChange={(e) => set('customQrOffsetX', parseInt(e.target.value))} />
+                    </div>
+                    <div>
+                      <label>Desplazamiento Y ({s.customQrOffsetY})</label>
+                      <input type="range" min="-200" max="200" step="5" value={s.customQrOffsetY}
+                        onChange={(e) => set('customQrOffsetY', parseInt(e.target.value))} />
+                    </div>
+                  </div>
+                  <button className="btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => set('customSilhouetteSvg', '')}>
+                    Quitar SVG
+                  </button>
+                </>
+              )}
+              <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 6 }}>
+                Tip: usa un SVG con relleno solido en una sola pieza (logo, mascota, letra). Los SVG con muchas capas o texto pueden no escalar bien.
+              </p>
+            </div>
+          )}
+
+          {useSilhouette && (
+            <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
+              <strong>Silueta activa.</strong> El QR escaneable queda incrustado dentro con un fondo blanco de seguridad. Imprime el QR a buen tamano (minimo 3 cm de lado para el cuadrado interior) y prueba antes de tirar miles.
+            </div>
+          )}
         </div>
 
         <div className="card qr-preview-card">

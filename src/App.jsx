@@ -11,6 +11,7 @@ import Emisor from './pages/Emisor.jsx';
 import Proyectos from './pages/Proyectos.jsx';
 import Emails from './pages/Emails.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
+import GeneradorQR from './pages/GeneradorQR.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/catalogo" element={<Catalogo />} />
+        <Route path="/qr" element={<GeneradorQR />} />
         <Route path="/emisor" element={<Emisor />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

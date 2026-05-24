@@ -13,6 +13,7 @@ export default function Layout({ children, onLogout }) {
           <NavLink to="/proyectos">Proyectos</NavLink>
           <NavLink to="/emails">Emails</NavLink>
           <NavLink to="/catalogo">Catalogo</NavLink>
+          <NavLink to="/qr">Generador QR</NavLink>
           <NavLink to="/emisor">Mis datos</NavLink>
         </nav>
         <div style={{ padding: '15px 20px', marginTop: 30, borderTop: '1px solid rgba(255,255,255,0.2)' }}>

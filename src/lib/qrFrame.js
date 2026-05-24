@@ -38,11 +38,11 @@ export function composeQrInSilhouette({
   }
 
   const [vbX, vbY, vbW, vbH] = parseViewBox(viewBox);
-  const safetyPad = qrBox.size * 0.06;
+  const safetyPad = qrBox.size * 0.02;
   const qrPlacement = `
     <rect x="${qrBox.x - safetyPad}" y="${qrBox.y - safetyPad}"
           width="${qrBox.size + safetyPad * 2}" height="${qrBox.size + safetyPad * 2}"
-          fill="${safety}" rx="${safetyPad * 1.5}"/>
+          fill="${safety}"/>
     <g transform="translate(${qrBox.x}, ${qrBox.y}) scale(${qrBox.size / qrInner.size})">
       ${qrInner.body}
     </g>`;

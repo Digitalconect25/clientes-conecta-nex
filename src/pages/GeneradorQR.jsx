@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import html2pdf from 'html2pdf.js';
-import { CREATIVE_SHAPES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
+import { CREATIVE_SHAPES, FRAME_STYLES, PUPIL_STYLES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
 import { SILHOUETTES, letterSilhouette } from '../lib/qrSilhouettes.js';
 import { composeQrInSilhouette } from '../lib/qrFrame.js';
 
@@ -24,14 +24,40 @@ const LETTER_FONTS = [
 
 const CORNER_SQUARE_STYLES = [
   { value: 'square', label: 'Cuadrado' },
-  { value: 'dot', label: 'Punto' },
+  { value: 'dot', label: 'Punto / Circulo' },
   { value: 'extra-rounded', label: 'Extra redondeado' },
 ];
 
 const CORNER_DOT_STYLES = [
   { value: 'square', label: 'Cuadrado' },
-  { value: 'dot', label: 'Punto' },
+  { value: 'dot', label: 'Punto / Circulo' },
 ];
+
+// Para auto-sincronizar las esquinas cuando se cambia la forma de los puntos.
+// (Estilos qr-code-styling)
+const STD_AUTO_CORNERS = {
+  square: { sq: 'square', dot: 'square' },
+  rounded: { sq: 'extra-rounded', dot: 'square' },
+  dots: { sq: 'dot', dot: 'dot' },
+  classy: { sq: 'extra-rounded', dot: 'dot' },
+  'classy-rounded': { sq: 'extra-rounded', dot: 'dot' },
+  'extra-rounded': { sq: 'extra-rounded', dot: 'dot' },
+};
+
+// Para el modo creativo, default coherente al elegir formas.
+const CREATIVE_DEFAULT_CORNERS = {
+  'triangle-up': { frame: 'leaf-tl', pupil: 'diamond' },
+  'triangle-down': { frame: 'leaf-br', pupil: 'diamond' },
+  diamond: { frame: 'extra-rounded', pupil: 'diamond' },
+  star: { frame: 'extra-rounded', pupil: 'star' },
+  heart: { frame: 'extra-rounded', pupil: 'heart' },
+  hexagon: { frame: 'rounded', pupil: 'rounded' },
+  cross: { frame: 'rounded', pupil: 'plus' },
+  drop: { frame: 'circle', pupil: 'dot' },
+  leaf: { frame: 'leaf-tl', pupil: 'rounded' },
+  flower: { frame: 'circle', pupil: 'dot' },
+  letter: { frame: 'rounded', pupil: 'square' },
+};
 
 const ERROR_LEVELS = [
   { value: 'L', label: 'Baja (7%)' },
@@ -46,10 +72,13 @@ const DEFAULT_STATE = {
   dotStyle: 'extra-rounded',
   cornerSquareStyle: 'extra-rounded',
   cornerDotStyle: 'dot',
+  frameStyle: 'extra-rounded',
+  pupilStyle: 'dot',
   useGradient: false,
   dotColor: '#000000',
   dotColor2: '#047857',
   cornerColor: '#000000',
+  cornerPupilColor: '',
   bgColor: '#ffffff',
   errorLevel: 'H',
   logoDataUrl: '',
@@ -81,7 +110,21 @@ export default function GeneradorQR() {
   const creative = isCreativeShape(s.dotStyle);
   const useSilhouette = s.silhouetteMode !== 'none';
 
-  function set(k, v) { setS((x) => ({ ...x, [k]: v })); }
+  function set(k, v) {
+    setS((x) => {
+      const next = { ...x, [k]: v };
+      if (k === 'dotStyle') {
+        if (isCreativeShape(v)) {
+          const def = CREATIVE_DEFAULT_CORNERS[v];
+          if (def) { next.frameStyle = def.frame; next.pupilStyle = def.pupil; }
+        } else {
+          const def = STD_AUTO_CORNERS[v];
+          if (def) { next.cornerSquareStyle = def.sq; next.cornerDotStyle = def.dot; }
+        }
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     qrRef.current = new QRCodeStyling(buildOptions(s));
@@ -160,6 +203,10 @@ export default function GeneradorQR() {
       logoDataUrl: state.logoDataUrl,
       logoSize: state.logoSize,
       hideBgDots: state.hideBgDots,
+      frameStyle: state.frameStyle,
+      pupilStyle: state.pupilStyle,
+      frameColor: state.cornerColor,
+      pupilColor: state.cornerPupilColor || state.cornerColor,
     };
   }
 
@@ -194,7 +241,7 @@ export default function GeneradorQR() {
       },
       dotsOptions,
       cornersSquareOptions: { type: state.cornerSquareStyle, color: state.cornerColor },
-      cornersDotOptions: { type: state.cornerDotStyle, color: state.cornerColor },
+      cornersDotOptions: { type: state.cornerDotStyle, color: state.cornerPupilColor || state.cornerColor },
       backgroundOptions: { color: state.bgColor },
     };
   }
@@ -417,15 +464,26 @@ export default function GeneradorQR() {
                 onChange={(e) => set('bgColor', e.target.value)} />
             </div>
             <div>
-              <label>Color esquinas</label>
+              <label>Color marco esquinas</label>
               <input type="color" value={s.cornerColor}
                 onChange={(e) => set('cornerColor', e.target.value)} />
             </div>
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 18 }}>
+              <label>Color pupila esquinas</label>
+              <input type="color" value={s.cornerPupilColor || s.cornerColor}
+                onChange={(e) => set('cornerPupilColor', e.target.value)} />
+              {s.cornerPupilColor && (
+                <button className="btn-outline btn-sm" style={{ marginTop: 4 }}
+                  onClick={() => set('cornerPupilColor', '')}>
+                  Igual al marco
+                </button>
+              )}
+            </div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input type="checkbox" style={{ width: 'auto' }} checked={s.useGradient}
                   onChange={(e) => set('useGradient', e.target.checked)} />
-                Usar gradiente
+                Usar gradiente en los puntos
               </label>
             </div>
             {s.useGradient && (
@@ -466,18 +524,33 @@ export default function GeneradorQR() {
                 </div>
               </>
             )}
-            {!creative && (
+            {!creative ? (
               <>
                 <div>
-                  <label>Esquinas (cuadrado)</label>
+                  <label>Marco de las esquinas</label>
                   <select value={s.cornerSquareStyle} onChange={(e) => set('cornerSquareStyle', e.target.value)}>
                     {CORNER_SQUARE_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label>Esquinas (punto)</label>
+                  <label>Pupila de las esquinas</label>
                   <select value={s.cornerDotStyle} onChange={(e) => set('cornerDotStyle', e.target.value)}>
                     {CORNER_DOT_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label>Marco de las esquinas</label>
+                  <select value={s.frameStyle} onChange={(e) => set('frameStyle', e.target.value)}>
+                    {FRAME_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label>Pupila de las esquinas</label>
+                  <select value={s.pupilStyle} onChange={(e) => set('pupilStyle', e.target.value)}>
+                    {PUPIL_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               </>

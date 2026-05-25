@@ -83,23 +83,183 @@ function isInFinder(row, col, size) {
   return inTL || inTR || inBL;
 }
 
-function finderPaths(size, cell, color) {
+export const FRAME_STYLES = [
+  { value: 'square', label: 'Cuadrado' },
+  { value: 'rounded', label: 'Redondeado' },
+  { value: 'extra-rounded', label: 'Extra redondeado' },
+  { value: 'circle', label: 'Circulo' },
+  { value: 'leaf-tl', label: 'Hoja (esq superior-izq)' },
+  { value: 'leaf-br', label: 'Hoja (esq inferior-der)' },
+];
+
+export const PUPIL_STYLES = [
+  { value: 'square', label: 'Cuadrado' },
+  { value: 'rounded', label: 'Redondeado' },
+  { value: 'dot', label: 'Punto / Circulo' },
+  { value: 'diamond', label: 'Diamante' },
+  { value: 'star', label: 'Estrella' },
+  { value: 'heart', label: 'Corazon' },
+  { value: 'plus', label: 'Cruz' },
+];
+
+function frameBody(style, x, y, w, color) {
+  switch (style) {
+    case 'square':
+      return `<path d="M ${x} ${y} h ${w} v ${w} h ${-w} Z M ${x + w / 7} ${y + w / 7} h ${5 * w / 7} v ${5 * w / 7} h ${-5 * w / 7} Z" fill="${color}" fill-rule="evenodd"/>`;
+    case 'rounded': {
+      const r = w * 0.18;
+      const iw = 5 * w / 7;
+      const ir = iw * 0.18;
+      const ix = x + w / 7;
+      const iy = y + w / 7;
+      return `<path d="
+        M ${x + r} ${y} h ${w - 2 * r} a ${r} ${r} 0 0 1 ${r} ${r} v ${w - 2 * r} a ${r} ${r} 0 0 1 -${r} ${r} h -${w - 2 * r} a ${r} ${r} 0 0 1 -${r} -${r} v -${w - 2 * r} a ${r} ${r} 0 0 1 ${r} -${r} Z
+        M ${ix + ir} ${iy} h ${iw - 2 * ir} a ${ir} ${ir} 0 0 1 ${ir} ${ir} v ${iw - 2 * ir} a ${ir} ${ir} 0 0 1 -${ir} ${ir} h -${iw - 2 * ir} a ${ir} ${ir} 0 0 1 -${ir} -${ir} v -${iw - 2 * ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} Z
+      " fill="${color}" fill-rule="evenodd"/>`;
+    }
+    case 'extra-rounded': {
+      const r = w * 0.32;
+      const iw = 5 * w / 7;
+      const ir = iw * 0.32;
+      const ix = x + w / 7;
+      const iy = y + w / 7;
+      return `<path d="
+        M ${x + r} ${y} h ${w - 2 * r} a ${r} ${r} 0 0 1 ${r} ${r} v ${w - 2 * r} a ${r} ${r} 0 0 1 -${r} ${r} h -${w - 2 * r} a ${r} ${r} 0 0 1 -${r} -${r} v -${w - 2 * r} a ${r} ${r} 0 0 1 ${r} -${r} Z
+        M ${ix + ir} ${iy} h ${iw - 2 * ir} a ${ir} ${ir} 0 0 1 ${ir} ${ir} v ${iw - 2 * ir} a ${ir} ${ir} 0 0 1 -${ir} ${ir} h -${iw - 2 * ir} a ${ir} ${ir} 0 0 1 -${ir} -${ir} v -${iw - 2 * ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} Z
+      " fill="${color}" fill-rule="evenodd"/>`;
+    }
+    case 'circle': {
+      const cx = x + w / 2;
+      const cy = y + w / 2;
+      const ro = w / 2;
+      const ri = ro * 5 / 7;
+      return `<path d="
+        M ${cx - ro} ${cy} a ${ro} ${ro} 0 1 0 ${ro * 2} 0 a ${ro} ${ro} 0 1 0 -${ro * 2} 0
+        M ${cx - ri} ${cy} a ${ri} ${ri} 0 1 1 ${ri * 2} 0 a ${ri} ${ri} 0 1 1 -${ri * 2} 0
+      " fill="${color}" fill-rule="evenodd"/>`;
+    }
+    case 'leaf-tl': {
+      const r = w * 0.45;
+      const iw = 5 * w / 7;
+      const ir = iw * 0.45;
+      const ix = x + w / 7;
+      const iy = y + w / 7;
+      return `<path d="
+        M ${x + r} ${y} h ${w - r} v ${w - r} a ${r} ${r} 0 0 1 -${r} ${r} h -${w - r} v -${w - r} a ${r} ${r} 0 0 1 ${r} -${r} Z
+        M ${ix + ir} ${iy} h ${iw - ir} v ${iw - ir} a ${ir} ${ir} 0 0 1 -${ir} ${ir} h -${iw - ir} v -${iw - ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} Z
+      " fill="${color}" fill-rule="evenodd"/>`;
+    }
+    case 'leaf-br': {
+      const r = w * 0.45;
+      const iw = 5 * w / 7;
+      const ir = iw * 0.45;
+      const ix = x + w / 7;
+      const iy = y + w / 7;
+      return `<path d="
+        M ${x} ${y + r} a ${r} ${r} 0 0 1 ${r} -${r} h ${w - r} v ${w - r} a ${r} ${r} 0 0 1 -${r} ${r} h -${w - r} Z
+        M ${ix} ${iy + ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} h ${iw - ir} v ${iw - ir} a ${ir} ${ir} 0 0 1 -${ir} ${ir} h -${iw - ir} Z
+      " fill="${color}" fill-rule="evenodd"/>`;
+    }
+    default:
+      return frameBody('square', x, y, w, color);
+  }
+}
+
+function pupilBody(style, x, y, w, color) {
+  const cx = x + w / 2;
+  const cy = y + w / 2;
+  const r = w / 2;
+  switch (style) {
+    case 'square':
+      return `<rect x="${x}" y="${y}" width="${w}" height="${w}" fill="${color}"/>`;
+    case 'rounded': {
+      const rr = w * 0.25;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="${rr}" fill="${color}"/>`;
+    }
+    case 'dot':
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"/>`;
+    case 'diamond':
+      return `<path d="M ${cx} ${y} L ${x + w} ${cy} L ${cx} ${y + w} L ${x} ${cy} Z" fill="${color}"/>`;
+    case 'star': {
+      const inner = r * 0.45;
+      const pts = [];
+      for (let i = 0; i < 10; i++) {
+        const rad = i % 2 === 0 ? r : inner;
+        const a = (Math.PI / 5) * i - Math.PI / 2;
+        pts.push(`${(cx + Math.cos(a) * rad).toFixed(2)} ${(cy + Math.sin(a) * rad).toFixed(2)}`);
+      }
+      return `<path d="M ${pts.join(' L ')} Z" fill="${color}"/>`;
+    }
+    case 'heart':
+      return `<path d="M ${cx} ${y + w * 0.95}
+        C ${x - w * 0.05} ${y + w * 0.55}, ${x + w * 0.15} ${y + w * 0.05}, ${cx} ${y + w * 0.35}
+        C ${x + w * 0.85} ${y + w * 0.05}, ${x + w * 1.05} ${y + w * 0.55}, ${cx} ${y + w * 0.95} Z" fill="${color}"/>`;
+    case 'plus': {
+      const t = w * 0.32;
+      const ox = x + (w - t) / 2;
+      const oy = y + (w - t) / 2;
+      return `<path d="M ${ox} ${y} h ${t} v ${(w - t) / 2} h ${(w - t) / 2} v ${t} h ${-(w - t) / 2} v ${(w - t) / 2} h ${-t} v ${-(w - t) / 2} h ${-(w - t) / 2} v ${-t} h ${(w - t) / 2} Z" fill="${color}"/>`;
+    }
+    default:
+      return pupilBody('square', x, y, w, color);
+  }
+}
+
+function finderPaths(size, cell, frameColor, pupilColor, frameStyle, pupilStyle) {
   const positions = [
-    [0, 0],
-    [0, size - 7],
-    [size - 7, 0],
+    [0, 0, frameStyle],
+    [0, size - 7, mirrorFrame(frameStyle, 'tr')],
+    [size - 7, 0, mirrorFrame(frameStyle, 'bl')],
   ];
   let out = '';
-  for (const [r, c] of positions) {
+  for (const [r, c, fStyle] of positions) {
     const x = c * cell;
     const y = r * cell;
     const w = 7 * cell;
-    const inner = 3 * cell;
     const innerOff = 2 * cell;
-    out += `<path d="M ${x} ${y} h ${w} v ${w} h ${-w} Z M ${x + cell} ${y + cell} h ${5 * cell} v ${5 * cell} h ${-5 * cell} Z" fill="${color}" fill-rule="evenodd"/>`;
-    out += `<rect x="${x + innerOff}" y="${y + innerOff}" width="${inner}" height="${inner}" fill="${color}"/>`;
+    const innerSize = 3 * cell;
+    out += frameBodyAny(fStyle, x, y, w, frameColor);
+    out += pupilBody(pupilStyle, x + innerOff, y + innerOff, innerSize, pupilColor);
   }
   return out;
+}
+
+function mirrorFrame(style, position) {
+  if (style === 'leaf-tl') {
+    if (position === 'tr') return 'leaf-tr';
+    if (position === 'bl') return 'leaf-bl';
+  }
+  if (style === 'leaf-br') {
+    if (position === 'tr') return 'leaf-bl';
+    if (position === 'bl') return 'leaf-tr';
+  }
+  return style;
+}
+
+function frameBodyAny(style, x, y, w, color) {
+  if (style === 'leaf-tr') {
+    const r = w * 0.45;
+    const iw = 5 * w / 7;
+    const ir = iw * 0.45;
+    const ix = x + w / 7;
+    const iy = y + w / 7;
+    return `<path d="
+      M ${x} ${y} h ${w - r} a ${r} ${r} 0 0 1 ${r} ${r} v ${w - r} h -${w} v -${w - r} a ${r} ${r} 0 0 1 ${r} -${r} Z
+      M ${ix} ${iy} h ${iw - ir} a ${ir} ${ir} 0 0 1 ${ir} ${ir} v ${iw - ir} h -${iw} v -${iw - ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} Z
+    " fill="${color}" fill-rule="evenodd"/>`;
+  }
+  if (style === 'leaf-bl') {
+    const r = w * 0.45;
+    const iw = 5 * w / 7;
+    const ir = iw * 0.45;
+    const ix = x + w / 7;
+    const iy = y + w / 7;
+    return `<path d="
+      M ${x + r} ${y} h ${w - r} v ${w} h -${w - r} a ${r} ${r} 0 0 1 -${r} -${r} v -${w - r} a ${r} ${r} 0 0 1 ${r} -${r} Z
+      M ${ix + ir} ${iy} h ${iw - ir} v ${iw} h -${iw - ir} a ${ir} ${ir} 0 0 1 -${ir} -${ir} v -${iw - ir} a ${ir} ${ir} 0 0 1 ${ir} -${ir} Z
+    " fill="${color}" fill-rule="evenodd"/>`;
+  }
+  return frameBody(style, x, y, w, color);
 }
 
 export async function renderCustomQR({
@@ -117,6 +277,10 @@ export async function renderCustomQR({
   logoDataUrl,
   logoSize = 0.35,
   hideBgDots = true,
+  frameStyle = 'extra-rounded',
+  pupilStyle = 'dot',
+  frameColor,
+  pupilColor,
 }) {
   const qr = QRCode.create(data || ' ', { errorCorrectionLevel: errorLevel || 'H' });
   const size = qr.modules.size;
@@ -155,7 +319,9 @@ export async function renderCustomQR({
   }
 
   const finderOffsetX = margin * cellSize;
-  const finderG = `<g transform="translate(${finderOffsetX}, ${finderOffsetX})">${finderPaths(size, cellSize, fillRef)}</g>`;
+  const finalFrameColor = frameColor || fillColor;
+  const finalPupilColor = pupilColor || frameColor || fillColor;
+  const finderG = `<g transform="translate(${finderOffsetX}, ${finderOffsetX})">${finderPaths(size, cellSize, finalFrameColor, finalPupilColor, frameStyle, pupilStyle)}</g>`;
 
   const gradientDef = useGradient
     ? `<defs><linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%">

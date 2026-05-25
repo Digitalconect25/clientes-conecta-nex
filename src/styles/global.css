@@ -239,6 +239,39 @@ table tr:hover td { background: var(--gris-1); }
 .modal-body { padding: 20px; }
 .modal-footer { padding: 15px 20px; border-top: 1px solid var(--gris-3); display: flex; justify-content: flex-end; gap: 8px; background: var(--gris-1); border-radius: 0 0 8px 8px; }
 
+.qr-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.qr-template-btn {
+  background: var(--gris-1);
+  color: var(--gris-7);
+  border: 1px solid var(--gris-3);
+  border-radius: 16px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.qr-template-btn:hover {
+  background: var(--verde-claro);
+  border-color: var(--verde);
+  color: var(--verde-oscuro);
+}
+.qr-template-surprise {
+  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  color: #fff;
+  border-color: transparent;
+}
+.qr-template-surprise:hover {
+  background: linear-gradient(135deg, #6b21a8 0%, #db2777 100%);
+  color: #fff;
+  border-color: transparent;
+}
+
 .qr-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

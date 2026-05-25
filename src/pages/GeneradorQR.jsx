@@ -20,6 +20,11 @@ const LETTER_FONTS = [
   { value: 'Georgia, serif', label: 'Georgia (serif)' },
   { value: '"Courier New", monospace', label: 'Courier (monoespaciada)' },
   { value: '-apple-system, BlinkMacSystemFont, sans-serif', label: 'Sistema' },
+  { value: '"Bebas Neue", sans-serif', label: 'Bebas Neue (display alta)' },
+  { value: 'Anton, sans-serif', label: 'Anton (deportiva)' },
+  { value: '"Montserrat", sans-serif', label: 'Montserrat Black (moderna)' },
+  { value: '"Playfair Display", serif', label: 'Playfair (elegante)' },
+  { value: 'Pacifico, cursive', label: 'Pacifico (manuscrita)' },
 ];
 
 const CORNER_SQUARE_STYLES = [
@@ -64,6 +69,62 @@ const ERROR_LEVELS = [
   { value: 'M', label: 'Media (15%)' },
   { value: 'Q', label: 'Alta (25%)' },
   { value: 'H', label: 'Muy alta (30%) - recomendada con logo' },
+];
+
+// Plantillas rapidas: aplican colores + forma + esquinas + silueta de una vez.
+// Mantenemos url, logo y texto del usuario.
+const TEMPLATES = [
+  {
+    id: 'gastronomia',
+    label: 'Gastronomia',
+    config: { dotStyle: 'classy-rounded', dotColor: '#7f1d1d', bgColor: '#fef3c7', cornerColor: '#7f1d1d', cornerPupilColor: '#b91c1c', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'wineglass', silhouetteFill: '' },
+  },
+  {
+    id: 'belleza',
+    label: 'Belleza & Estetica',
+    config: { dotStyle: 'rounded', dotColor: '#831843', bgColor: '#fdf2f8', cornerColor: '#9d174d', cornerPupilColor: '#ec4899', useGradient: true, dotColor2: '#ec4899', silhouetteMode: 'none' },
+  },
+  {
+    id: 'inmobiliaria',
+    label: 'Inmobiliaria',
+    config: { dotStyle: 'square', dotColor: '#1e3a8a', bgColor: '#ffffff', cornerColor: '#1e3a8a', cornerPupilColor: '#fbbf24', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'house', silhouetteFill: '' },
+  },
+  {
+    id: 'fitness',
+    label: 'Fitness & Deporte',
+    config: { dotStyle: 'extra-rounded', dotColor: '#111827', bgColor: '#ffffff', cornerColor: '#111827', cornerPupilColor: '#dc2626', useGradient: false, silhouetteMode: 'none' },
+  },
+  {
+    id: 'tech',
+    label: 'Tech / Startup',
+    config: { dotStyle: 'dots', dotColor: '#1e40af', bgColor: '#f8fafc', cornerColor: '#1e40af', cornerPupilColor: '#06b6d4', useGradient: true, dotColor2: '#06b6d4', silhouetteMode: 'gallery', silhouetteId: 'hexagon', silhouetteFill: '#1e40af' },
+  },
+  {
+    id: 'boda',
+    label: 'Boda elegante',
+    config: { dotStyle: 'classy', dotColor: '#1f2937', bgColor: '#fffbeb', cornerColor: '#1f2937', cornerPupilColor: '#b45309', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'heart', silhouetteFill: '#b45309' },
+  },
+  {
+    id: 'cafeteria',
+    label: 'Cafeteria',
+    config: { dotStyle: 'rounded', dotColor: '#78350f', bgColor: '#fef3c7', cornerColor: '#78350f', cornerPupilColor: '#a16207', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'coffee', silhouetteFill: '' },
+  },
+  {
+    id: 'veterinaria',
+    label: 'Veterinaria',
+    config: { dotStyle: 'extra-rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#f59e0b', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'bone', silhouetteFill: '' },
+  },
+  {
+    id: 'salud',
+    label: 'Salud / Clinica',
+    config: { dotStyle: 'rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#dc2626', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'shield', silhouetteFill: '#0f766e' },
+  },
+];
+
+const RANDOM_PALETTES = [
+  ['#1f2937', '#06b6d4'], ['#7c3aed', '#ec4899'], ['#047857', '#fbbf24'],
+  ['#1e40af', '#06b6d4'], ['#dc2626', '#f59e0b'], ['#0f766e', '#84cc16'],
+  ['#9d174d', '#fbbf24'], ['#111827', '#dc2626'], ['#0c4a6e', '#ec4899'],
 ];
 
 const DEFAULT_STATE = {
@@ -246,6 +307,59 @@ export default function GeneradorQR() {
     };
   }
 
+  function applyTemplate(tplId) {
+    const tpl = TEMPLATES.find((t) => t.id === tplId);
+    if (!tpl) return;
+    setS((x) => {
+      const next = { ...x, ...tpl.config };
+      // Resincroniza esquinas automaticas segun el nuevo dotStyle
+      if (tpl.config.dotStyle) {
+        if (isCreativeShape(tpl.config.dotStyle)) {
+          const def = CREATIVE_DEFAULT_CORNERS[tpl.config.dotStyle];
+          if (def) { next.frameStyle = def.frame; next.pupilStyle = def.pupil; }
+        } else {
+          const def = STD_AUTO_CORNERS[tpl.config.dotStyle];
+          if (def) { next.cornerSquareStyle = def.sq; next.cornerDotStyle = def.dot; }
+        }
+      }
+      return next;
+    });
+  }
+
+  function surpriseMe() {
+    const allDotStyles = [...STANDARD_DOT_STYLES, ...CREATIVE_SHAPES.filter((c) => c.value !== 'letter')];
+    const pickedDot = allDotStyles[Math.floor(Math.random() * allDotStyles.length)].value;
+    const palette = RANDOM_PALETTES[Math.floor(Math.random() * RANDOM_PALETTES.length)];
+    const useGrad = Math.random() < 0.4;
+    const useSil = Math.random() < 0.5;
+    const silIds = SILHOUETTES.map((s) => s.id);
+    const silId = silIds[Math.floor(Math.random() * silIds.length)];
+    const samePupilColor = Math.random() < 0.5;
+
+    setS((x) => {
+      const next = {
+        ...x,
+        dotStyle: pickedDot,
+        dotColor: palette[0],
+        dotColor2: palette[1],
+        cornerColor: palette[0],
+        cornerPupilColor: samePupilColor ? '' : palette[1],
+        useGradient: useGrad,
+        silhouetteMode: useSil ? 'gallery' : 'none',
+        silhouetteId: useSil ? silId : x.silhouetteId,
+        silhouetteFill: '',
+      };
+      if (isCreativeShape(pickedDot)) {
+        const def = CREATIVE_DEFAULT_CORNERS[pickedDot];
+        if (def) { next.frameStyle = def.frame; next.pupilStyle = def.pupil; }
+      } else {
+        const def = STD_AUTO_CORNERS[pickedDot];
+        if (def) { next.cornerSquareStyle = def.sq; next.cornerDotStyle = def.dot; }
+      }
+      return next;
+    });
+  }
+
   function onLogo(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -423,7 +537,20 @@ export default function GeneradorQR() {
 
       <div className="qr-layout">
         <div className="card qr-form">
-          <h2>Contenido</h2>
+          <h2>Plantillas rapidas</h2>
+          <p style={{ fontSize: 12, color: 'var(--gris-5)', marginTop: -8, marginBottom: 8 }}>
+            Un click aplica colores, formas y silueta tematica. Tu URL, logo y texto se mantienen.
+          </p>
+          <div className="qr-templates">
+            {TEMPLATES.map((t) => (
+              <button key={t.id} type="button" className="qr-template-btn"
+                onClick={() => applyTemplate(t.id)}>{t.label}</button>
+            ))}
+            <button type="button" className="qr-template-btn qr-template-surprise"
+              onClick={surpriseMe}>Sorprendeme</button>
+          </div>
+
+          <h2 style={{ marginTop: 20 }}>Contenido</h2>
           <label>URL o texto a codificar *</label>
           <input
             value={s.url}

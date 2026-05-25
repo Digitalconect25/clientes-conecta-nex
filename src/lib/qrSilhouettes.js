@@ -6,15 +6,16 @@
 // El QR siempre se renderiza dentro del qrBox con un cuadrado blanco
 // detras como "zona segura" para garantizar escaneo.
 
-// qrBox calculado para que el QR ocupe el maximo posible dentro de cada
-// silueta sin salirse. El QR es el protagonista; la silueta lo enmarca.
+// Cada silueta es una pieza solida (path). El composer le recorta un
+// agujero rectangular del tamano exacto del qrBox para incrustar el QR
+// sin marcos blancos visibles ni espacios duplicados.
 export const SILHOUETTES = [
   {
     id: 'triangle',
     label: 'Triangulo (Dorito)',
     viewBox: '0 0 600 600',
     path: 'M 300 30 L 580 540 L 20 540 Z',
-    qrBox: { x: 175, y: 260, size: 260 },
+    qrBox: { x: 170, y: 270, size: 260 },
     defaultFill: '#e85d2f',
   },
   {
@@ -38,7 +39,7 @@ export const SILHOUETTES = [
     label: 'Estrella',
     viewBox: '0 0 600 600',
     path: starPath(300, 320, 280, 130, 5),
-    qrBox: { x: 175, y: 195, size: 250 },
+    qrBox: { x: 175, y: 200, size: 250 },
     defaultFill: '#f59e0b',
   },
   {
@@ -46,7 +47,7 @@ export const SILHOUETTES = [
     label: 'Corazon',
     viewBox: '0 0 600 600',
     path: 'M 300 555 C 60 405, 30 195, 165 105 C 240 60, 300 105, 300 195 C 300 105, 360 60, 435 105 C 570 195, 540 405, 300 555 Z',
-    qrBox: { x: 140, y: 170, size: 320 },
+    qrBox: { x: 140, y: 175, size: 320 },
     defaultFill: '#dc2626',
   },
   {
@@ -78,7 +79,7 @@ export const SILHOUETTES = [
     label: 'Nube',
     viewBox: '0 0 600 600',
     path: 'M 165 195 C 90 195, 60 270, 90 330 C 30 360, 30 450, 105 480 L 495 480 C 570 450, 570 360, 510 330 C 540 270, 510 195, 435 195 C 420 120, 330 90, 270 135 C 225 105, 180 135, 165 195 Z',
-    qrBox: { x: 140, y: 195, size: 320 },
+    qrBox: { x: 140, y: 200, size: 320 },
     defaultFill: '#3b82f6',
   },
   {

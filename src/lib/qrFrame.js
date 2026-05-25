@@ -1,7 +1,9 @@
-// Compone un SVG final: silueta solida CON UN AGUJERO rectangular del
-// tamano exacto del qrBox + QR incrustado en ese agujero. Asi el QR
-// ocupa todo el centro de la silueta sin marcos blancos visibles ni
-// shape doble.
+// Compone un SVG final: silueta solida (rellena al 100%, sin recortes)
+// con el QR superpuesto encima. El QR puede ir CON o SIN su zona blanca
+// de seguridad - por defecto sin ella para que se vea como UNA SOLA
+// figura integrada (modulos del QR directamente sobre el color de la
+// silueta). Si el usuario activa 'safeZone', se anade un rectangulo
+// blanco detras del QR para maxima legibilidad sobre fondos oscuros.
 
 export function composeQrInSilhouette({
   qrSvgText,
@@ -11,6 +13,7 @@ export function composeQrInSilhouette({
   customQrBox,
   bgColor,
   outputSize = 1200,
+  safeZone = false,
 }) {
   const fill = silhouetteFill || silhouette.defaultFill || '#000';
 
@@ -25,33 +28,28 @@ export function composeQrInSilhouette({
     const parsed = parseCustomSvg(customSvgText);
     viewBox = parsed.viewBox;
     qrBox = customQrBox || defaultQrBoxForViewBox(parsed.viewBox);
-    // En custom SVG no podemos recortar el contenido del usuario; lo dejamos completo.
     backgroundShape = parsed.body;
   } else if (silhouette.isText) {
     viewBox = silhouette.viewBox;
     qrBox = silhouette.qrBox;
-    const [vbX0, vbY0, vbW, vbH] = parseViewBox(viewBox);
+    const [, , vbW, vbH] = parseViewBox(viewBox);
     const fontScale = silhouette.fontScale || 1.0;
     const fontSize = vbH * fontScale;
-    backgroundShape = `
-      <defs>
-        <mask id="letterMask">
-          <rect x="${vbX0}" y="${vbY0}" width="${vbW}" height="${vbH}" fill="white"/>
-          <rect x="${qrBox.x}" y="${qrBox.y}" width="${qrBox.size}" height="${qrBox.size}" fill="black"/>
-        </mask>
-      </defs>
-      <text x="${vbW / 2}" y="${vbH / 2}" font-family="${silhouette.font}" font-weight="900" font-size="${fontSize}" fill="${fill}" text-anchor="middle" dominant-baseline="central" mask="url(#letterMask)">${escapeXml(silhouette.text)}</text>`;
+    backgroundShape = `<text x="${vbW / 2}" y="${vbH / 2}" font-family="${silhouette.font}" font-weight="900" font-size="${fontSize}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(silhouette.text)}</text>`;
   } else {
     viewBox = silhouette.viewBox;
     qrBox = silhouette.qrBox;
-    // Anadimos un sub-path rectangular al final del path original. Con
-    // fill-rule="evenodd" el rectangulo queda RECORTADO de la silueta.
-    const cutout = `M ${qrBox.x} ${qrBox.y} L ${qrBox.x + qrBox.size} ${qrBox.y} L ${qrBox.x + qrBox.size} ${qrBox.y + qrBox.size} L ${qrBox.x} ${qrBox.y + qrBox.size} Z`;
-    backgroundShape = `<path d="${silhouette.path} ${cutout}" fill="${fill}" fill-rule="evenodd"/>`;
+    backgroundShape = `<path d="${silhouette.path}" fill="${fill}" fill-rule="evenodd"/>`;
   }
 
   const [vbX, vbY, vbW, vbH] = parseViewBox(viewBox);
+
+  const safetyRect = safeZone
+    ? `<rect x="${qrBox.x}" y="${qrBox.y}" width="${qrBox.size}" height="${qrBox.size}" fill="#ffffff"/>`
+    : '';
+
   const qrPlacement = `
+    ${safetyRect}
     <g transform="translate(${qrBox.x}, ${qrBox.y}) scale(${qrBox.size / qrInner.size})">
       ${qrInner.body}
     </g>`;

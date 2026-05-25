@@ -281,6 +281,7 @@ export async function renderCustomQR({
   pupilStyle = 'dot',
   frameColor,
   pupilColor,
+  transparentBg = false,
 }) {
   const qr = QRCode.create(data || ' ', { errorCorrectionLevel: errorLevel || 'H' });
   const size = qr.modules.size;
@@ -343,9 +344,10 @@ export async function renderCustomQR({
 
   paths = gradientDef + finderG + modulePaths + logoTag;
 
+  const bgRect = transparentBg ? '' : `<rect width="100%" height="100%" fill="${bgColor}"/>`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${px} ${px}">
-  <rect width="100%" height="100%" fill="${bgColor}"/>
+  ${bgRect}
   ${paths}
 </svg>`;
 

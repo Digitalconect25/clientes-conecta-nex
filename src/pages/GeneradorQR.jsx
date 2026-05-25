@@ -154,6 +154,7 @@ const DEFAULT_STATE = {
   silhouetteMode: 'none',
   silhouetteId: 'triangle',
   silhouetteFill: '',
+  silhouetteSafeZone: false,
   silhouetteLetter: 'A',
   silhouetteLetterFont: 'Arial Black, sans-serif',
   customSilhouetteSvg: '',
@@ -219,6 +220,7 @@ export default function GeneradorQR() {
         silhouette: sil,
         silhouetteFill: s.silhouetteFill || sil.defaultFill,
         bgColor: s.bgColor,
+        safeZone: s.silhouetteSafeZone,
       });
     }
     if (s.silhouetteMode === 'letter') {
@@ -228,6 +230,7 @@ export default function GeneradorQR() {
         silhouette: sil,
         silhouetteFill: s.silhouetteFill || sil.defaultFill,
         bgColor: s.bgColor,
+        safeZone: s.silhouetteSafeZone,
       });
     }
     if (s.silhouetteMode === 'custom') {
@@ -243,6 +246,7 @@ export default function GeneradorQR() {
         customSvgText: s.customSilhouetteSvg,
         customQrBox: { x: cx - side / 2, y: cy - side / 2, size: side },
         bgColor: s.bgColor,
+        safeZone: s.silhouetteSafeZone,
       });
     }
     return qrSvgText;
@@ -274,6 +278,7 @@ export default function GeneradorQR() {
       pupilStyle: state.pupilStyle,
       frameColor: state.cornerColor,
       pupilColor: state.cornerPupilColor || state.cornerColor,
+      transparentBg: state.silhouetteMode !== 'none' && !state.silhouetteSafeZone,
     };
   }
 
@@ -292,6 +297,12 @@ export default function GeneradorQR() {
         }
       : { type: state.dotStyle, color: state.dotColor };
 
+    // Con silueta y sin zona segura, el QR va transparente para fundirse
+    // con el color de la silueta. En modo normal mantiene su fondo.
+    const usingSilhouette = state.silhouetteMode !== 'none';
+    const wantsTransparent = usingSilhouette && !state.silhouetteSafeZone;
+    const qrBg = wantsTransparent ? 'transparent' : state.bgColor;
+
     return {
       width: state.size,
       height: state.size,
@@ -309,7 +320,7 @@ export default function GeneradorQR() {
       dotsOptions,
       cornersSquareOptions: { type: state.cornerSquareStyle, color: state.cornerColor },
       cornersDotOptions: { type: state.cornerDotStyle, color: state.cornerPupilColor || state.cornerColor },
-      backgroundOptions: { color: state.bgColor },
+      backgroundOptions: { color: qrBg },
     };
   }
 
@@ -908,9 +919,22 @@ export default function GeneradorQR() {
           )}
 
           {useSilhouette && (
-            <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
-              <strong>Silueta activa.</strong> El QR escaneable queda incrustado dentro con un fondo blanco de seguridad. Imprime el QR a buen tamano (minimo 3 cm de lado para el cuadrado interior) y prueba antes de tirar miles.
-            </div>
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12 }}>
+                <input type="checkbox" style={{ width: 'auto' }}
+                  checked={s.silhouetteSafeZone}
+                  onChange={(e) => set('silhouetteSafeZone', e.target.checked)} />
+                Anadir zona blanca de seguridad detras del QR
+              </label>
+              <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 4, marginBottom: 0 }}>
+                {s.silhouetteSafeZone
+                  ? 'Hay un rectangulo blanco entre la silueta y el QR. Mejor para siluetas oscuras o de poco contraste.'
+                  : 'El QR se integra directamente sobre la silueta (una sola figura). Ideal con siluetas claras o cuando el contraste de los modulos con el color de la silueta es suficiente.'}
+              </p>
+              <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
+                <strong>Prueba siempre el escaneo</strong> antes de imprimir en serie. Para siluetas de colores oscuros o gradientes complejos, activa la zona blanca de seguridad.
+              </div>
+            </>
           )}
 
           <h2 style={{ marginTop: 20 }}>Imagen de fondo</h2>

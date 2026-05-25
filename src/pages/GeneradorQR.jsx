@@ -160,6 +160,10 @@ const DEFAULT_STATE = {
   customQrScale: 0.45,
   customQrOffsetX: 0,
   customQrOffsetY: 0,
+  bgImageDataUrl: '',
+  bgImageOpacity: 0.5,
+  animateGradient: false,
+  animationSpeed: 4,
 };
 
 export default function GeneradorQR() {
@@ -408,6 +412,20 @@ export default function GeneradorQR() {
     reader.readAsText(file);
   }
 
+  function onBgImage(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => set('bgImageDataUrl', String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
+  function clearBgImage() {
+    set('bgImageDataUrl', '');
+    const input = document.getElementById('qr-bg-image-input');
+    if (input) input.value = '';
+  }
+
   function safeName() {
     try {
       const u = new URL(s.url);
@@ -416,10 +434,10 @@ export default function GeneradorQR() {
   }
 
   async function getQrPngBlob() {
-    if (useSilhouette) {
-      const qrSvg = await getRawQrSvg();
-      const composed = composeWithSilhouette(qrSvg);
-      return svgToPngBlob(composed, s.size);
+    // Si hay imagen de fondo, animacion o silueta, vamos siempre por la ruta SVG -> PNG.
+    if (useSilhouette || s.bgImageDataUrl) {
+      const finalSvg = await getQrSvgText();
+      return svgToPngBlob(finalSvg, s.size);
     }
     if (creative) {
       const { svg, size } = await renderCustomQR(creativeOpts(s));
@@ -441,11 +459,46 @@ export default function GeneradorQR() {
 
   async function getQrSvgText() {
     const raw = await getRawQrSvg();
-    return useSilhouette ? composeWithSilhouette(raw) : raw;
+    const composed = useSilhouette ? composeWithSilhouette(raw) : raw;
+    let withBg = composed;
+    if (s.bgImageDataUrl) withBg = wrapWithBgImage(withBg, s);
+    if (s.animateGradient && s.useGradient) withBg = wrapWithAnimation(withBg, s);
+    return withBg;
+  }
+
+  function wrapWithBgImage(svg, st) {
+    const vbMatch = svg.match(/viewBox\s*=\s*"([^"]+)"/i);
+    if (!vbMatch) return svg;
+    const [vx, vy, vw, vh] = vbMatch[1].trim().split(/\s+/).map(Number);
+    const imageTag = `<image href="${st.bgImageDataUrl}" x="${vx}" y="${vy}" width="${vw}" height="${vh}" preserveAspectRatio="xMidYMid slice" opacity="${st.bgImageOpacity}"/>`;
+    // Insertamos la imagen justo despues del rect de fondo (o despues del <svg> si no hay rect).
+    if (/<rect\s[^>]*fill="[^"]*"[^>]*\/>/i.test(svg)) {
+      return svg.replace(/(<rect\s[^>]*fill="[^"]*"[^>]*\/>)/i, `$1\n  ${imageTag}`);
+    }
+    return svg.replace(/(<svg[^>]*>)/i, `$1\n  ${imageTag}`);
+  }
+
+  function wrapWithAnimation(svg, st) {
+    // Inyecta <animate> en los dos stop del primer linearGradient encontrado.
+    const dur = `${st.animationSpeed}s`;
+    const c1 = st.dotColor;
+    const c2 = st.dotColor2;
+    let injected = false;
+    return svg.replace(/<stop\b([^/>]*)\/>/gi, (full, attrs) => {
+      if (injected && full.includes('animate')) return full;
+      const colorMatch = attrs.match(/stop-color\s*=\s*"([^"]+)"/i);
+      const offsetMatch = attrs.match(/offset\s*=\s*"([^"]+)"/i);
+      if (!colorMatch) return full;
+      const offset = offsetMatch ? offsetMatch[1] : '0%';
+      const isFirst = offset === '0' || offset === '0%';
+      const values = isFirst ? `${c1};${c2};${c1}` : `${c2};${c1};${c2}`;
+      injected = true;
+      return `<stop${attrs}><animate attributeName="stop-color" values="${values}" dur="${dur}" repeatCount="indefinite"/></stop>`;
+    });
   }
 
   async function exportPNG() {
-    if (!s.texto.trim() && !creative) {
+    if (!s.texto.trim() && !creative && !useSilhouette && !s.bgImageDataUrl) {
       const png = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
       png.download({ name: safeName(), extension: 'png' });
       return;
@@ -857,6 +910,49 @@ export default function GeneradorQR() {
           {useSilhouette && (
             <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
               <strong>Silueta activa.</strong> El QR escaneable queda incrustado dentro con un fondo blanco de seguridad. Imprime el QR a buen tamano (minimo 3 cm de lado para el cuadrado interior) y prueba antes de tirar miles.
+            </div>
+          )}
+
+          <h2 style={{ marginTop: 20 }}>Imagen de fondo</h2>
+          <p style={{ fontSize: 12, color: 'var(--gris-5)', marginTop: -8, marginBottom: 8 }}>
+            Sube una foto del local, producto o evento. Aparecera detras del QR como cartel completo.
+          </p>
+          <input id="qr-bg-image-input" type="file" accept="image/*" onChange={onBgImage} />
+          {s.bgImageDataUrl && (
+            <>
+              <div style={{ marginTop: 10 }}>
+                <label>Opacidad de la imagen ({Math.round(s.bgImageOpacity * 100)}%)</label>
+                <input type="range" min="0.1" max="1" step="0.05" value={s.bgImageOpacity}
+                  onChange={(e) => set('bgImageOpacity', parseFloat(e.target.value))} />
+              </div>
+              <button className="btn-outline btn-sm" style={{ marginTop: 10 }} onClick={clearBgImage}>
+                Quitar imagen
+              </button>
+              <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
+                <strong>Importante:</strong> el QR sigue teniendo su fondo blanco (color de fondo del QR) para garantizar escaneo. La foto se ve alrededor. Baja la opacidad si quieres que la foto sea mas sutil.
+              </div>
+            </>
+          )}
+
+          <h2 style={{ marginTop: 20 }}>Animacion (pantallas digitales)</h2>
+          <p style={{ fontSize: 12, color: 'var(--gris-5)', marginTop: -8, marginBottom: 8 }}>
+            Solo funciona con gradiente activo. La animacion se conserva al exportar SVG, no en PNG/PDF (esos son fotogramas estaticos).
+          </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" style={{ width: 'auto' }}
+              checked={s.animateGradient}
+              disabled={!s.useGradient}
+              onChange={(e) => set('animateGradient', e.target.checked)} />
+            Animar gradiente {!s.useGradient && <em style={{ color: 'var(--gris-4)', fontSize: 11 }}>(activa el gradiente arriba primero)</em>}
+          </label>
+          {s.animateGradient && s.useGradient && (
+            <div style={{ marginTop: 10 }}>
+              <label>Velocidad del ciclo ({s.animationSpeed}s por vuelta)</label>
+              <input type="range" min="1" max="15" step="0.5" value={s.animationSpeed}
+                onChange={(e) => set('animationSpeed', parseFloat(e.target.value))} />
+              <div className="alerta alerta-ok" style={{ marginTop: 8 }}>
+                <strong>QR animado.</strong> Exporta SVG y subelo a una pantalla digital, web, signage TPV. Los colores cicleran automaticamente entre el principal y el secundario.
+              </div>
             </div>
           )}
         </div>

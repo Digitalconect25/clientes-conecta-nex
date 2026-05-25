@@ -247,6 +247,7 @@ export default function GeneradorQR() {
       const { svg } = await renderCustomQR(creativeOpts(s));
       return svg;
     }
+    qrRef.current.update(buildOptions(s));
     const blob = await qrRef.current.getRawData('svg');
     return blob.text();
   }

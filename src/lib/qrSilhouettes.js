@@ -108,8 +108,11 @@ export const SILHOUETTES = [
   },
 ];
 
-// Genera una silueta dinamica con una letra grande. El QR domina el
-// centro (78% del viewBox) y la letra asoma por detras como marco.
+// Genera una silueta dinamica con una letra grande. La letra se renderiza
+// MAS GRANDE que el viewBox (font-size 130%) para que sus trazos asomen
+// claramente por todos los lados alrededor del QR (que ocupa el 60% del
+// centro). Si el QR fuera demasiado grande, la letra entera quedaria
+// dentro del agujero y desapareceria.
 export function letterSilhouette(letter, font) {
   const safeLetter = (letter || 'A').slice(0, 2);
   return {
@@ -119,7 +122,8 @@ export function letterSilhouette(letter, font) {
     isText: true,
     text: safeLetter,
     font: font || 'Arial Black, sans-serif',
-    qrBox: { x: 66, y: 66, size: 468 },
+    qrBox: { x: 120, y: 120, size: 360 },
+    fontScale: 1.3,
     defaultFill: '#1f2937',
   };
 }

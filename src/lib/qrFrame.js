@@ -30,16 +30,17 @@ export function composeQrInSilhouette({
   } else if (silhouette.isText) {
     viewBox = silhouette.viewBox;
     qrBox = silhouette.qrBox;
-    const [, , vbW, vbH] = parseViewBox(viewBox);
-    // Para letras usamos una mascara: la letra rellena, menos el rectangulo del QR.
+    const [vbX0, vbY0, vbW, vbH] = parseViewBox(viewBox);
+    const fontScale = silhouette.fontScale || 1.0;
+    const fontSize = vbH * fontScale;
     backgroundShape = `
       <defs>
         <mask id="letterMask">
-          <rect x="${parseViewBox(viewBox)[0]}" y="${parseViewBox(viewBox)[1]}" width="${vbW}" height="${vbH}" fill="white"/>
+          <rect x="${vbX0}" y="${vbY0}" width="${vbW}" height="${vbH}" fill="white"/>
           <rect x="${qrBox.x}" y="${qrBox.y}" width="${qrBox.size}" height="${qrBox.size}" fill="black"/>
         </mask>
       </defs>
-      <text x="${vbW / 2}" y="${vbH / 2}" font-family="${silhouette.font}" font-weight="900" font-size="${vbH * 0.95}" fill="${fill}" text-anchor="middle" dominant-baseline="central" mask="url(#letterMask)">${escapeXml(silhouette.text)}</text>`;
+      <text x="${vbW / 2}" y="${vbH / 2}" font-family="${silhouette.font}" font-weight="900" font-size="${fontSize}" fill="${fill}" text-anchor="middle" dominant-baseline="central" mask="url(#letterMask)">${escapeXml(silhouette.text)}</text>`;
   } else {
     viewBox = silhouette.viewBox;
     qrBox = silhouette.qrBox;

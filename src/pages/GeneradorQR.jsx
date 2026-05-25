@@ -4,6 +4,7 @@ import html2pdf from 'html2pdf.js';
 import { CREATIVE_SHAPES, FRAME_STYLES, PUPIL_STYLES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
 import { SILHOUETTES, letterSilhouette } from '../lib/qrSilhouettes.js';
 import { composeQrInSilhouette } from '../lib/qrFrame.js';
+import { extractPalette } from '../lib/colorExtractor.js';
 
 const STANDARD_DOT_STYLES = [
   { value: 'square', label: 'Cuadrado clasico' },
@@ -167,6 +168,7 @@ export default function GeneradorQR() {
   const qrContainer = useRef(null);
   const exportableRef = useRef(null);
   const lastCreativeSvgRef = useRef('');
+  const [logoPalette, setLogoPalette] = useState([]);
 
   const creative = isCreativeShape(s.dotStyle);
   const useSilhouette = s.silhouetteMode !== 'none';
@@ -364,14 +366,38 @@ export default function GeneradorQR() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => set('logoDataUrl', reader.result);
+    reader.onload = async () => {
+      const dataUrl = reader.result;
+      set('logoDataUrl', dataUrl);
+      try {
+        const palette = await extractPalette(dataUrl, 4);
+        setLogoPalette(palette);
+      } catch (err) {
+        console.warn('No se pudo extraer la paleta del logo:', err);
+        setLogoPalette([]);
+      }
+    };
     reader.readAsDataURL(file);
   }
 
   function clearLogo() {
     set('logoDataUrl', '');
+    setLogoPalette([]);
     const input = document.getElementById('qr-logo-input');
     if (input) input.value = '';
+  }
+
+  function applyPalette() {
+    if (!logoPalette.length) return;
+    setS((x) => {
+      const next = { ...x, dotColor: logoPalette[0], cornerColor: logoPalette[0] };
+      if (logoPalette[1]) {
+        next.dotColor2 = logoPalette[1];
+        next.useGradient = true;
+        next.cornerPupilColor = logoPalette[1];
+      }
+      return next;
+    });
   }
 
   function onCustomSilhouette(e) {
@@ -699,6 +725,29 @@ export default function GeneradorQR() {
           <input id="qr-logo-input" type="file" accept="image/*" onChange={onLogo} />
           {s.logoDataUrl && (
             <>
+              {logoPalette.length > 0 && (
+                <div className="qr-palette-box" style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ margin: 0 }}>Paleta detectada del logo</label>
+                    <button className="btn-primary btn-sm" type="button" onClick={applyPalette}>
+                      Aplicar al QR
+                    </button>
+                  </div>
+                  <div className="qr-swatches">
+                    {logoPalette.map((c) => (
+                      <button key={c} type="button" className="qr-swatch"
+                        style={{ background: c }}
+                        title={`Click: usar ${c} como color principal`}
+                        onClick={() => set('dotColor', c)}>
+                        <span>{c}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 6, marginBottom: 0 }}>
+                    Click en un color = lo asigna como principal. <strong>Aplicar al QR</strong> = paleta completa con gradiente y pupila.
+                  </p>
+                </div>
+              )}
               <div style={{ marginTop: 10 }}>
                 <label>Tamano logo ({Math.round(s.logoSize * 100)}%)</label>
                 <input type="range" min="0.1" max="0.5" step="0.05" value={s.logoSize}

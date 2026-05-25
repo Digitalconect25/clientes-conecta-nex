@@ -272,6 +272,47 @@ table tr:hover td { background: var(--gris-1); }
   border-color: transparent;
 }
 
+.qr-palette-box {
+  background: var(--gris-1);
+  border: 1px solid var(--gris-3);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.qr-swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.qr-swatch {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  transition: transform 0.1s;
+}
+.qr-swatch:hover {
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.qr-swatch span {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  font-family: monospace;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0,0,0,0.55);
+  padding: 1px 0;
+  line-height: 1;
+}
+
 .qr-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

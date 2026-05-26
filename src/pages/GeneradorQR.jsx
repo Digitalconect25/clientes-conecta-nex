@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import html2pdf from 'html2pdf.js';
-import { CREATIVE_SHAPES, FRAME_STYLES, PUPIL_STYLES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
-import { SILHOUETTES, letterSilhouette } from '../lib/qrSilhouettes.js';
-import { composeQrInSilhouette } from '../lib/qrFrame.js';
+import { CREATIVE_SHAPES, FRAME_STYLES as CORNER_FRAME_STYLES, PUPIL_STYLES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
+import { ICONS, ICON_BY_ID } from '../lib/qrIcons.js';
 import { extractPalette } from '../lib/colorExtractor.js';
 
 const STANDARD_DOT_STYLES = [
@@ -72,54 +71,61 @@ const ERROR_LEVELS = [
   { value: 'H', label: 'Muy alta (30%) - recomendada con logo' },
 ];
 
-// Plantillas rapidas: aplican colores + forma + esquinas + silueta de una vez.
+// Plantillas rapidas: aplican colores + forma + esquinas + marco/cartel.
 // Mantenemos url, logo y texto del usuario.
 const TEMPLATES = [
   {
     id: 'gastronomia',
     label: 'Gastronomia',
-    config: { dotStyle: 'classy-rounded', dotColor: '#7f1d1d', bgColor: '#fef3c7', cornerColor: '#7f1d1d', cornerPupilColor: '#b91c1c', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'wineglass', silhouetteFill: '' },
+    config: { dotStyle: 'classy-rounded', dotColor: '#7f1d1d', bgColor: '#ffffff', cornerColor: '#7f1d1d', cornerPupilColor: '#b91c1c', useGradient: false, frameMode: 'rounded', frameColor: '#fef3c7', headlineText: 'MENU DIGITAL', headlineColor: '#7f1d1d', cornerIcon: 'wineglass', cornerIconColor: '#b91c1c' },
   },
   {
     id: 'belleza',
     label: 'Belleza & Estetica',
-    config: { dotStyle: 'rounded', dotColor: '#831843', bgColor: '#fdf2f8', cornerColor: '#9d174d', cornerPupilColor: '#ec4899', useGradient: true, dotColor2: '#ec4899', silhouetteMode: 'none' },
+    config: { dotStyle: 'rounded', dotColor: '#831843', bgColor: '#ffffff', cornerColor: '#9d174d', cornerPupilColor: '#ec4899', useGradient: true, dotColor2: '#ec4899', frameMode: 'card', frameColor: '#fdf2f8', headlineText: 'RESERVA TU CITA', headlineColor: '#831843', cornerIcon: 'heart', cornerIconColor: '#ec4899' },
   },
   {
     id: 'inmobiliaria',
     label: 'Inmobiliaria',
-    config: { dotStyle: 'square', dotColor: '#1e3a8a', bgColor: '#ffffff', cornerColor: '#1e3a8a', cornerPupilColor: '#fbbf24', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'house', silhouetteFill: '' },
+    config: { dotStyle: 'square', dotColor: '#1e3a8a', bgColor: '#ffffff', cornerColor: '#1e3a8a', cornerPupilColor: '#fbbf24', useGradient: false, frameMode: 'rounded', frameColor: '#eff6ff', headlineText: 'VER PROPIEDAD', headlineColor: '#1e3a8a', cornerIcon: 'house', cornerIconColor: '#fbbf24' },
   },
   {
     id: 'fitness',
     label: 'Fitness & Deporte',
-    config: { dotStyle: 'extra-rounded', dotColor: '#111827', bgColor: '#ffffff', cornerColor: '#111827', cornerPupilColor: '#dc2626', useGradient: false, silhouetteMode: 'none' },
+    config: { dotStyle: 'extra-rounded', dotColor: '#111827', bgColor: '#ffffff', cornerColor: '#111827', cornerPupilColor: '#dc2626', useGradient: false, frameMode: 'card', frameColor: '#0a0a0a', headlineText: 'ENTRENA YA', headlineColor: '#ffffff', cornerIcon: 'star', cornerIconColor: '#dc2626' },
   },
   {
     id: 'tech',
     label: 'Tech / Startup',
-    config: { dotStyle: 'dots', dotColor: '#1e40af', bgColor: '#f8fafc', cornerColor: '#1e40af', cornerPupilColor: '#06b6d4', useGradient: true, dotColor2: '#06b6d4', silhouetteMode: 'gallery', silhouetteId: 'hexagon', silhouetteFill: '#1e40af' },
+    config: { dotStyle: 'dots', dotColor: '#1e40af', bgColor: '#ffffff', cornerColor: '#1e40af', cornerPupilColor: '#06b6d4', useGradient: true, dotColor2: '#06b6d4', frameMode: 'rounded', frameColor: '#f0f9ff', headlineText: 'VISITA LA WEB', headlineColor: '#1e40af', cornerIcon: 'wifi', cornerIconColor: '#06b6d4' },
   },
   {
     id: 'boda',
     label: 'Boda elegante',
-    config: { dotStyle: 'classy', dotColor: '#1f2937', bgColor: '#fffbeb', cornerColor: '#1f2937', cornerPupilColor: '#b45309', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'heart', silhouetteFill: '#b45309' },
+    config: { dotStyle: 'classy', dotColor: '#1f2937', bgColor: '#ffffff', cornerColor: '#1f2937', cornerPupilColor: '#b45309', useGradient: false, frameMode: 'card', frameColor: '#fffbeb', headlineText: 'NUESTRA BODA', headlineColor: '#b45309', cornerIcon: 'heart', cornerIconColor: '#b45309' },
   },
   {
     id: 'cafeteria',
     label: 'Cafeteria',
-    config: { dotStyle: 'rounded', dotColor: '#78350f', bgColor: '#fef3c7', cornerColor: '#78350f', cornerPupilColor: '#a16207', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'coffee', silhouetteFill: '' },
+    config: { dotStyle: 'rounded', dotColor: '#78350f', bgColor: '#ffffff', cornerColor: '#78350f', cornerPupilColor: '#a16207', useGradient: false, frameMode: 'rounded', frameColor: '#fef3c7', headlineText: 'LA CARTA', headlineColor: '#78350f', cornerIcon: 'coffee', cornerIconColor: '#78350f' },
   },
   {
     id: 'veterinaria',
     label: 'Veterinaria',
-    config: { dotStyle: 'extra-rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#f59e0b', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'bone', silhouetteFill: '' },
+    config: { dotStyle: 'extra-rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#f59e0b', useGradient: false, frameMode: 'rounded', frameColor: '#f0fdfa', headlineText: 'PIDE CITA', headlineColor: '#0f766e', cornerIcon: 'bone', cornerIconColor: '#f59e0b' },
   },
   {
     id: 'salud',
     label: 'Salud / Clinica',
-    config: { dotStyle: 'rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#dc2626', useGradient: false, silhouetteMode: 'gallery', silhouetteId: 'shield', silhouetteFill: '#0f766e' },
+    config: { dotStyle: 'rounded', dotColor: '#0f766e', bgColor: '#ffffff', cornerColor: '#0f766e', cornerPupilColor: '#dc2626', useGradient: false, frameMode: 'card', frameColor: '#ffffff', headlineText: 'RESERVA CITA', headlineColor: '#0f766e', cornerIcon: 'shield', cornerIconColor: '#0f766e' },
   },
+];
+
+const FRAME_MODES = [
+  { value: 'none', label: 'Sin marco (QR pelado)' },
+  { value: 'rect', label: 'Marco rectangular' },
+  { value: 'rounded', label: 'Marco redondeado' },
+  { value: 'card', label: 'Tarjeta con sombra' },
 ];
 
 const RANDOM_PALETTES = [
@@ -151,16 +157,14 @@ const DEFAULT_STATE = {
   textoColor: '#1f2937',
   letra: 'A',
   letterFont: 'Arial Black, sans-serif',
-  silhouetteMode: 'none',
-  silhouetteId: 'triangle',
-  silhouetteFill: '',
-  silhouetteSafeZone: false,
-  silhouetteLetter: 'A',
-  silhouetteLetterFont: 'Arial Black, sans-serif',
-  customSilhouetteSvg: '',
-  customQrScale: 0.45,
-  customQrOffsetX: 0,
-  customQrOffsetY: 0,
+  frameMode: 'none',
+  frameColor: '#f3f4f6',
+  framePadding: 60,
+  headlineText: '',
+  headlineSize: 32,
+  headlineColor: '#1f2937',
+  cornerIcon: 'none',
+  cornerIconColor: '#1f2937',
   bgImageDataUrl: '',
   bgImageOpacity: 0.5,
   animateGradient: false,
@@ -176,7 +180,7 @@ export default function GeneradorQR() {
   const [logoPalette, setLogoPalette] = useState([]);
 
   const creative = isCreativeShape(s.dotStyle);
-  const useSilhouette = s.silhouetteMode !== 'none';
+  const useFrame = s.frameMode !== 'none';
 
   function set(k, v) {
     setS((x) => {
@@ -202,61 +206,14 @@ export default function GeneradorQR() {
     if (!qrContainer.current) return;
     let cancelled = false;
     async function render() {
-      const qrSvg = await getQrSvgText();
-      const finalSvg = useSilhouette ? composeWithSilhouette(qrSvg) : qrSvg;
+      const finalSvg = await getQrSvgText();
       if (!cancelled && qrContainer.current) {
         qrContainer.current.innerHTML = finalSvg;
       }
     }
     render().catch(console.error);
     return () => { cancelled = true; };
-  }, [s, creative, useSilhouette]);
-
-  function composeWithSilhouette(qrSvgText) {
-    if (s.silhouetteMode === 'gallery') {
-      const sil = SILHOUETTES.find((x) => x.id === s.silhouetteId) || SILHOUETTES[0];
-      return composeQrInSilhouette({
-        qrSvgText,
-        silhouette: sil,
-        silhouetteFill: s.silhouetteFill || sil.defaultFill,
-        bgColor: s.bgColor,
-        safeZone: s.silhouetteSafeZone,
-      });
-    }
-    if (s.silhouetteMode === 'letter') {
-      const sil = letterSilhouette(s.silhouetteLetter, s.silhouetteLetterFont);
-      return composeQrInSilhouette({
-        qrSvgText,
-        silhouette: sil,
-        silhouetteFill: s.silhouetteFill || sil.defaultFill,
-        bgColor: s.bgColor,
-        safeZone: s.silhouetteSafeZone,
-      });
-    }
-    if (s.silhouetteMode === 'custom') {
-      if (!s.customSilhouetteSvg) return qrSvgText;
-      const parsedViewBox = extractViewBoxQuick(s.customSilhouetteSvg);
-      const [, , w, h] = parsedViewBox;
-      const side = Math.min(w, h) * s.customQrScale;
-      const cx = w / 2 + s.customQrOffsetX;
-      const cy = h / 2 + s.customQrOffsetY;
-      return composeQrInSilhouette({
-        qrSvgText,
-        silhouette: { defaultFill: '#000' },
-        customSvgText: s.customSilhouetteSvg,
-        customQrBox: { x: cx - side / 2, y: cy - side / 2, size: side },
-        bgColor: s.bgColor,
-        safeZone: s.silhouetteSafeZone,
-      });
-    }
-    return qrSvgText;
-  }
-
-  function extractViewBoxQuick(svg) {
-    const m = svg.match(/viewBox\s*=\s*"([^"]+)"/i);
-    if (m) return m[1].trim().split(/\s+/).map(Number);
-    return [0, 0, 600, 600];
-  }
+  }, [s, creative, useFrame]);
 
   function creativeOpts(state) {
     return {
@@ -278,7 +235,6 @@ export default function GeneradorQR() {
       pupilStyle: state.pupilStyle,
       frameColor: state.cornerColor,
       pupilColor: state.cornerPupilColor || state.cornerColor,
-      transparentBg: state.silhouetteMode !== 'none' && !state.silhouetteSafeZone,
     };
   }
 
@@ -297,12 +253,6 @@ export default function GeneradorQR() {
         }
       : { type: state.dotStyle, color: state.dotColor };
 
-    // Con silueta y sin zona segura, el QR va transparente para fundirse
-    // con el color de la silueta. En modo normal mantiene su fondo.
-    const usingSilhouette = state.silhouetteMode !== 'none';
-    const wantsTransparent = usingSilhouette && !state.silhouetteSafeZone;
-    const qrBg = wantsTransparent ? 'transparent' : state.bgColor;
-
     return {
       width: state.size,
       height: state.size,
@@ -320,7 +270,7 @@ export default function GeneradorQR() {
       dotsOptions,
       cornersSquareOptions: { type: state.cornerSquareStyle, color: state.cornerColor },
       cornersDotOptions: { type: state.cornerDotStyle, color: state.cornerPupilColor || state.cornerColor },
-      backgroundOptions: { color: qrBg },
+      backgroundOptions: { color: state.bgColor },
     };
   }
 
@@ -348,10 +298,13 @@ export default function GeneradorQR() {
     const pickedDot = allDotStyles[Math.floor(Math.random() * allDotStyles.length)].value;
     const palette = RANDOM_PALETTES[Math.floor(Math.random() * RANDOM_PALETTES.length)];
     const useGrad = Math.random() < 0.4;
-    const useSil = Math.random() < 0.5;
-    const silIds = SILHOUETTES.map((s) => s.id);
-    const silId = silIds[Math.floor(Math.random() * silIds.length)];
     const samePupilColor = Math.random() < 0.5;
+    const frameModes = ['none', 'rect', 'rounded', 'card'];
+    const pickedFrame = frameModes[Math.floor(Math.random() * frameModes.length)];
+    const iconIds = ICONS.filter((i) => i.id !== 'none').map((i) => i.id);
+    const pickedIcon = pickedFrame !== 'none' && Math.random() < 0.6
+      ? iconIds[Math.floor(Math.random() * iconIds.length)]
+      : 'none';
 
     setS((x) => {
       const next = {
@@ -362,9 +315,10 @@ export default function GeneradorQR() {
         cornerColor: palette[0],
         cornerPupilColor: samePupilColor ? '' : palette[1],
         useGradient: useGrad,
-        silhouetteMode: useSil ? 'gallery' : 'none',
-        silhouetteId: useSil ? silId : x.silhouetteId,
-        silhouetteFill: '',
+        frameMode: pickedFrame,
+        frameColor: pickedFrame === 'none' ? x.frameColor : '#ffffff',
+        cornerIcon: pickedIcon,
+        cornerIconColor: palette[1],
       };
       if (isCreativeShape(pickedDot)) {
         const def = CREATIVE_DEFAULT_CORNERS[pickedDot];
@@ -415,14 +369,6 @@ export default function GeneradorQR() {
     });
   }
 
-  function onCustomSilhouette(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => set('customSilhouetteSvg', String(reader.result));
-    reader.readAsText(file);
-  }
-
   function onBgImage(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -445,14 +391,12 @@ export default function GeneradorQR() {
   }
 
   async function getQrPngBlob() {
-    // Si hay imagen de fondo, animacion o silueta, vamos siempre por la ruta SVG -> PNG.
-    if (useSilhouette || s.bgImageDataUrl) {
+    // Si hay marco, imagen de fondo o creativo, vamos por SVG -> PNG.
+    if (useFrame || s.bgImageDataUrl || creative) {
       const finalSvg = await getQrSvgText();
-      return svgToPngBlob(finalSvg, s.size);
-    }
-    if (creative) {
-      const { svg, size } = await renderCustomQR(creativeOpts(s));
-      return svgToPngBlob(svg, Math.max(s.size, size));
+      // Si hay marco, el SVG final es mas grande que s.size (incluye padding y headline).
+      const outSize = useFrame ? s.size * 1.4 : s.size;
+      return svgToPngBlob(finalSvg, outSize);
     }
     const inst = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
     return inst.getRawData('png');
@@ -470,11 +414,85 @@ export default function GeneradorQR() {
 
   async function getQrSvgText() {
     const raw = await getRawQrSvg();
-    const composed = useSilhouette ? composeWithSilhouette(raw) : raw;
-    let withBg = composed;
-    if (s.bgImageDataUrl) withBg = wrapWithBgImage(withBg, s);
-    if (s.animateGradient && s.useGradient) withBg = wrapWithAnimation(withBg, s);
-    return withBg;
+    let result = raw;
+    if (s.bgImageDataUrl) result = wrapWithBgImage(result, s);
+    if (s.animateGradient && s.useGradient) result = wrapWithAnimation(result, s);
+    if (useFrame) result = wrapWithFrame(result, s);
+    return result;
+  }
+
+  function wrapWithFrame(qrSvg, st) {
+    const vbMatch = qrSvg.match(/viewBox\s*=\s*"([^"]+)"/i);
+    if (!vbMatch) return qrSvg;
+    const [vx, vy, qrW, qrH] = vbMatch[1].trim().split(/\s+/).map(Number);
+    const qrInner = qrSvg
+      .replace(/<\?xml[^?]*\?>/g, '')
+      .replace(/<svg[^>]*>/i, '')
+      .replace(/<\/svg>\s*$/i, '')
+      .trim();
+
+    const pad = st.framePadding;
+    const headlineH = st.headlineText ? st.headlineSize * 1.8 : 0;
+    const footerSize = st.textoTamano * 1.6;
+    const footerH = st.texto.trim() ? footerSize * 1.6 : 0;
+    const totalW = qrW + pad * 2;
+    const totalH = qrH + pad * 2 + headlineH + footerH;
+
+    let frameShape = '';
+    const radius = st.frameMode === 'rounded' ? 30 : st.frameMode === 'card' ? 24 : 0;
+    if (st.frameMode === 'card') {
+      frameShape = `
+        <defs>
+          <filter id="qrCardShadow" x="-5%" y="-5%" width="115%" height="115%">
+            <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="rgba(0,0,0,0.18)"/>
+          </filter>
+        </defs>
+        <rect x="0" y="0" width="${totalW}" height="${totalH}" rx="${radius}" fill="${st.frameColor}" filter="url(#qrCardShadow)"/>`;
+    } else {
+      frameShape = `<rect x="0" y="0" width="${totalW}" height="${totalH}" rx="${radius}" fill="${st.frameColor}"/>`;
+    }
+
+    let headlineEl = '';
+    if (st.headlineText) {
+      const hy = pad * 0.5 + headlineH * 0.5;
+      headlineEl = `<text x="${totalW / 2}" y="${hy}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="${st.headlineSize}" fill="${st.headlineColor}" text-anchor="middle" dominant-baseline="central" letter-spacing="2">${escapeXml(st.headlineText)}</text>`;
+    }
+
+    let iconEl = '';
+    const icon = ICON_BY_ID[st.cornerIcon];
+    if (icon && icon.path) {
+      const iconSize = 70;
+      const ix = totalW - iconSize - pad * 0.35;
+      const iy = pad * 0.35;
+      const iconScale = iconSize / 600;
+      iconEl = `<g transform="translate(${ix}, ${iy}) scale(${iconScale})"><path d="${icon.path}" fill="${st.cornerIconColor}"/></g>`;
+    }
+
+    const qrX = pad;
+    const qrY = pad + headlineH;
+
+    let footerEl = '';
+    if (st.texto.trim()) {
+      const fy = qrY + qrH + footerH * 0.55;
+      footerEl = `<text x="${totalW / 2}" y="${fy}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="600" font-size="${footerSize}" fill="${st.textoColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(st.texto)}</text>`;
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">
+  ${frameShape}
+  ${headlineEl}
+  ${iconEl}
+  <g transform="translate(${qrX}, ${qrY})">
+    <svg x="0" y="0" width="${qrW}" height="${qrH}" viewBox="${vx} ${vy} ${qrW} ${qrH}">
+      ${qrInner}
+    </svg>
+  </g>
+  ${footerEl}
+</svg>`;
+  }
+
+  function escapeXml(str) {
+    return String(str).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
   }
 
   function wrapWithBgImage(svg, st) {
@@ -509,7 +527,7 @@ export default function GeneradorQR() {
   }
 
   async function exportPNG() {
-    if (!s.texto.trim() && !creative && !useSilhouette && !s.bgImageDataUrl) {
+    if (!s.texto.trim() && !creative && !useFrame && !s.bgImageDataUrl) {
       const png = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
       png.download({ name: safeName(), extension: 'png' });
       return;
@@ -519,7 +537,8 @@ export default function GeneradorQR() {
 
   async function exportSVG() {
     const qrSvgText = await getQrSvgText();
-    if (!s.texto.trim()) {
+    // Con marco, el footer ya esta dentro del SVG y no anadimos wrap externo.
+    if (!s.texto.trim() || useFrame) {
       triggerDownload(new Blob([qrSvgText], { type: 'image/svg+xml' }), safeName() + '.svg');
       return;
     }
@@ -541,6 +560,11 @@ export default function GeneradorQR() {
 
   async function exportComposed() {
     const blob = await getQrPngBlob();
+    // Si hay marco, el PNG ya viene completo (con headline + footer + icono). No anadimos nada.
+    if (useFrame) {
+      triggerDownload(blob, safeName() + '.png');
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const img = await loadImg(url);
 
@@ -761,7 +785,7 @@ export default function GeneradorQR() {
                 <div>
                   <label>Marco de las esquinas</label>
                   <select value={s.frameStyle} onChange={(e) => set('frameStyle', e.target.value)}>
-                    {FRAME_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {CORNER_FRAME_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -832,107 +856,64 @@ export default function GeneradorQR() {
             <strong>Consejo:</strong> si vas a poner logo central, usa correccion <strong>Alta</strong> o <strong>Muy alta</strong> para que el QR siga siendo legible.
           </div>
 
-          <h2 style={{ marginTop: 20 }}>Silueta del QR</h2>
+          <h2 style={{ marginTop: 20 }}>Marco / Cartel</h2>
           <p style={{ fontSize: 12, color: 'var(--gris-5)', marginTop: -8, marginBottom: 8 }}>
-            El QR escaneable se incrusta dentro de una forma decorativa. La forma rodea, el QR funciona.
+            El QR sigue cuadrado y escaneable al 100%. Le anades un marco con color de marca, titular y un icono opcional en la esquina.
           </p>
-          <label>Modo</label>
-          <select value={s.silhouetteMode} onChange={(e) => set('silhouetteMode', e.target.value)}>
-            <option value="none">Ninguna (QR cuadrado normal)</option>
-            <option value="gallery">Galeria predefinida</option>
-            <option value="letter">Letra grande como silueta</option>
-            <option value="custom">Subir mi propio SVG</option>
-          </select>
-
-          {s.silhouetteMode === 'gallery' && (
-            <div className="grid" style={{ marginTop: 10 }}>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label>Silueta</label>
-                <select value={s.silhouetteId} onChange={(e) => set('silhouetteId', e.target.value)}>
-                  {SILHOUETTES.map((sil) => <option key={sil.id} value={sil.id}>{sil.label}</option>)}
-                </select>
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label>Color silueta (vacio = color de la marca)</label>
-                <input type="color" value={s.silhouetteFill || (SILHOUETTES.find((x) => x.id === s.silhouetteId)?.defaultFill || '#000000')}
-                  onChange={(e) => set('silhouetteFill', e.target.value)} />
-                <button className="btn-outline btn-sm" style={{ marginTop: 6 }} onClick={() => set('silhouetteFill', '')}>
-                  Usar color por defecto
-                </button>
-              </div>
+          <div className="grid">
+            <div style={{ gridColumn: 'span 2' }}>
+              <label>Tipo de marco</label>
+              <select value={s.frameMode} onChange={(e) => set('frameMode', e.target.value)}>
+                {FRAME_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
             </div>
-          )}
+          </div>
 
-          {s.silhouetteMode === 'letter' && (
-            <div className="grid" style={{ marginTop: 10 }}>
-              <div>
-                <label>Letra (1-2 caracteres)</label>
-                <input value={s.silhouetteLetter} maxLength={2}
-                  onChange={(e) => set('silhouetteLetter', e.target.value)} placeholder="M" />
-              </div>
-              <div>
-                <label>Fuente</label>
-                <select value={s.silhouetteLetterFont} onChange={(e) => set('silhouetteLetterFont', e.target.value)}>
-                  {LETTER_FONTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label>Color letra</label>
-                <input type="color" value={s.silhouetteFill || '#1f2937'}
-                  onChange={(e) => set('silhouetteFill', e.target.value)} />
-              </div>
-            </div>
-          )}
-
-          {s.silhouetteMode === 'custom' && (
-            <div style={{ marginTop: 10 }}>
-              <label>Sube un SVG (logo, mascota, forma…)</label>
-              <input type="file" accept=".svg,image/svg+xml" onChange={onCustomSilhouette} />
-              {s.customSilhouetteSvg && (
-                <>
-                  <div className="grid" style={{ marginTop: 10 }}>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <label>Tamano del QR ({Math.round(s.customQrScale * 100)}%)</label>
-                      <input type="range" min="0.2" max="0.85" step="0.05" value={s.customQrScale}
-                        onChange={(e) => set('customQrScale', parseFloat(e.target.value))} />
-                    </div>
-                    <div>
-                      <label>Desplazamiento X ({s.customQrOffsetX})</label>
-                      <input type="range" min="-200" max="200" step="5" value={s.customQrOffsetX}
-                        onChange={(e) => set('customQrOffsetX', parseInt(e.target.value))} />
-                    </div>
-                    <div>
-                      <label>Desplazamiento Y ({s.customQrOffsetY})</label>
-                      <input type="range" min="-200" max="200" step="5" value={s.customQrOffsetY}
-                        onChange={(e) => set('customQrOffsetY', parseInt(e.target.value))} />
-                    </div>
-                  </div>
-                  <button className="btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => set('customSilhouetteSvg', '')}>
-                    Quitar SVG
-                  </button>
-                </>
-              )}
-              <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 6 }}>
-                Tip: usa un SVG con relleno solido en una sola pieza (logo, mascota, letra). Los SVG con muchas capas o texto pueden no escalar bien.
-              </p>
-            </div>
-          )}
-
-          {useSilhouette && (
+          {useFrame && (
             <>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12 }}>
-                <input type="checkbox" style={{ width: 'auto' }}
-                  checked={s.silhouetteSafeZone}
-                  onChange={(e) => set('silhouetteSafeZone', e.target.checked)} />
-                Anadir zona blanca de seguridad detras del QR
-              </label>
-              <p style={{ fontSize: 11, color: 'var(--gris-5)', marginTop: 4, marginBottom: 0 }}>
-                {s.silhouetteSafeZone
-                  ? 'Hay un rectangulo blanco entre la silueta y el QR. Mejor para siluetas oscuras o de poco contraste.'
-                  : 'El QR se integra directamente sobre la silueta (una sola figura). Ideal con siluetas claras o cuando el contraste de los modulos con el color de la silueta es suficiente.'}
-              </p>
-              <div className="alerta alerta-aviso" style={{ marginTop: 12 }}>
-                <strong>Prueba siempre el escaneo</strong> antes de imprimir en serie. Para siluetas de colores oscuros o gradientes complejos, activa la zona blanca de seguridad.
+              <div className="grid" style={{ marginTop: 10 }}>
+                <div>
+                  <label>Color del marco</label>
+                  <input type="color" value={s.frameColor}
+                    onChange={(e) => set('frameColor', e.target.value)} />
+                </div>
+                <div>
+                  <label>Padding ({s.framePadding}px)</label>
+                  <input type="range" min="20" max="120" step="5" value={s.framePadding}
+                    onChange={(e) => set('framePadding', parseInt(e.target.value))} />
+                </div>
+              </div>
+
+              <h3 style={{ marginTop: 16 }}>Titular (encima del QR)</h3>
+              <input value={s.headlineText}
+                onChange={(e) => set('headlineText', e.target.value)}
+                placeholder="MENU DIGITAL, RESERVA TU CITA, VISITA LA WEB..." />
+              <div className="grid" style={{ marginTop: 10 }}>
+                <div>
+                  <label>Tamano ({s.headlineSize}px)</label>
+                  <input type="range" min="14" max="56" step="2" value={s.headlineSize}
+                    onChange={(e) => set('headlineSize', parseInt(e.target.value))} />
+                </div>
+                <div>
+                  <label>Color</label>
+                  <input type="color" value={s.headlineColor}
+                    onChange={(e) => set('headlineColor', e.target.value)} />
+                </div>
+              </div>
+
+              <h3 style={{ marginTop: 16 }}>Icono decorativo en esquina</h3>
+              <div className="grid">
+                <div>
+                  <label>Icono</label>
+                  <select value={s.cornerIcon} onChange={(e) => set('cornerIcon', e.target.value)}>
+                    {ICONS.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label>Color icono</label>
+                  <input type="color" value={s.cornerIconColor}
+                    onChange={(e) => set('cornerIconColor', e.target.value)} />
+                </div>
               </div>
             </>
           )}
@@ -985,7 +966,7 @@ export default function GeneradorQR() {
           <h2>Vista previa</h2>
           <div ref={exportableRef} className="qr-exportable" style={{ background: s.bgColor }}>
             <div ref={qrContainer} className="qr-preview" />
-            {s.texto.trim() && (
+            {!useFrame && s.texto.trim() && (
               <div
                 className="qr-text"
                 style={{ color: s.textoColor, fontSize: s.textoTamano }}

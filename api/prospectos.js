@@ -15,6 +15,18 @@ function pieLegal(em) {
   <p style="color:#888;font-size:12px">${ident}<br>Comunicacion comercial. Si no deseas recibir mas correos, responde con la palabra <b>BAJA</b> y te damos de baja de inmediato.</p>`;
 }
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
+const LOGO_URL = process.env.EMAIL_LOGO_URL || (BASE_URL + '/logo-conecta-nex.png');
+// Banner del pie del email (imagen). Pon la URL en EMAIL_BANNER_URL (o sube
+// public/banner-email.png y usa BASE_URL + '/banner-email.png'). Si esta vacio, no se muestra.
+const BANNER_URL = process.env.EMAIL_BANNER_URL || '';
+
+function cabeceraLogo() {
+  return `<div style="text-align:center;padding:6px 0 18px"><img src="${LOGO_URL}" alt="Conecta Nex" style="max-width:170px;height:auto"></div>`;
+}
+function bannerPie() {
+  if (!BANNER_URL) return '';
+  return `<div style="margin-top:18px;text-align:center"><img src="${BANNER_URL}" alt="Conecta Nex" style="max-width:100%;height:auto;border-radius:8px"></div>`;
+}
 
 // Botones de accion del email: agendar cita, llamar y responder.
 function botonesCTA(em, p) {
@@ -35,7 +47,7 @@ function emailHtml(cuerpo, em, p) {
   const body = tieneHtml
     ? raw
     : raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-  return `<div style="font-family:sans-serif;font-size:15px;line-height:1.6;color:#222">${body}${botonesCTA(em, p)}${pieLegal(em)}</div>`;
+  return `<div style="font-family:sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:600px;margin:0 auto">${cabeceraLogo()}${body}${botonesCTA(em, p)}${pieLegal(em)}${bannerPie()}</div>`;
 }
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;

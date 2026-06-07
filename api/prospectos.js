@@ -43,25 +43,27 @@ const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // ── Generacion del email en frio con IA (Groq) ──────────────────────────────
 async function generarFrio(p) {
   const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
-  const sys = `Eres el asistente de captacion de Conecta Nex, marca de Digital Conect, agencia digital de Alicante (Espana). El emisor es Lazaro Carrazana. Escribe un email de PRIMER CONTACTO EN FRIO a un negocio local, siguiendo ESTE GUION EN ORDEN:
-1) SALUDO breve y cordial (usa el nombre del contacto si lo hay; si no, "Hola").
-2) INTRODUCCION: explica que, buscando por internet y por la zona, has visto su negocio. Menciona sector y ciudad de forma natural.
-3) PANORAMICA: ${sin
-    ? 'di con tacto que apenas tienen presencia online (no aparecen bien en Google/Maps ni redes) y por que eso les hace perder clientes que les buscan, sin culpabilizar ni alarmar.'
-    : 'reconoce que ya tienen algo de presencia y describe brevemente como esta, senalando 1-2 mejoras concretas que les traerian mas clientes.'}
-4) COMO PODEMOS AYUDAR: presenta quienes somos en una linea (Conecta Nex, de Digital Conect: agencia digital en Alicante) y, segun su caso, como podriamos mejorar su presencia (ej.: ficha de Google, web sencilla, redes, QR, automatizaciones). Concreto y realista.
-5) CIERRE corto invitando a agendar una llamada, llamar o responder este email.
+  const sys = `Eres el asistente de captacion de Conecta Nex, marca de Digital Conect. El emisor es Lazaro Carrazana. Escribe un email de PRIMER CONTACTO EN FRIO a un negocio, calido y consultivo, que el lector lea entero. NO suena a venta ni a plantilla.
+GUION EN ORDEN (parrafos cortos, varios):
+1) SALUDO cordial (usa el nombre del contacto si lo hay; si no, "Hola, buenos dias" o similar).
+2) INTRODUCCION humana: explica que, buscando por internet, has dado con su negocio. Puedes mencionar su sector y su ciudad de forma natural (la del NEGOCIO, no la tuya).
+3) OBSERVACION: ${sin
+    ? 'comenta con tacto que apenas tienen presencia online y, sobre todo, que probablemente no tienen una forma de mantener el contacto con sus clientes para que vuelvan, sin culpabilizar ni alarmar.'
+    : 'reconoce que ya tienen algo de presencia, y enfoca en que captar clientes esta bien pero el mayor valor esta en mantenerlos y hacer que vuelvan.'}
+4) PROPUESTA DE VALOR (lo importante): explica con calma como les ayudamos a fidelizar y vender mas a sus clientes actuales con email marketing: boletines y newsletters con plantillas de diseno profesional, campanas automatizadas (felicitaciones, recordatorios, ofertas en el momento justo) y segmentos creados con inteligencia artificial para enviar el mensaje adecuado a cada tipo de cliente. Explica el beneficio en su negocio concreto, con ejemplos realistas.
+5) CIERRE suave, sin presion: ofrece ensenarselo en una llamada corta o resolver dudas, dejando la puerta abierta.
 REGLAS ESTRICTAS:
-- Espanol de Espana, profesional, cercano y humano. Tono consultivo, NADA agresivo.
+- Espanol de Espana, profesional, cercano y humano. Tono tranquilo y consultivo, NUNCA agresivo ni con prisa.
+- NO digas en que ciudad estamos nosotros ni te describas como "agencia de [ciudad]". Habla de lo que hacemos, no de donde estamos.
 - NUNCA uses guion largo (em-dash). Usa guion corto (-) o comas. NO uses emojis.
-- NO inventes datos que no tengas (nada de cifras, nombres de competidores o detalles falsos). NO hagas promesas que no se puedan cumplir ni afirmaciones irreales o garantias de resultados.
+- NO inventes datos (cifras, nombres de competidores, detalles falsos). NO prometas resultados garantizados ni afirmaciones irreales.
 - Nada de formulas vacias ("no dudes en contactarnos", "quedo a tu disposicion", "es un placer").
-- Maximo 150 palabras. NO menciones precios.
+- Extension: entre 150 y 220 palabras (ni telegrama ni testamento). NO menciones precios.
 - NO escribas tu los botones ni enlaces (se anaden aparte). Solo el texto.
 Devuelve EXACTAMENTE este formato:
-ASUNTO: <asunto corto, honesto, sin clickbait>
+ASUNTO: <asunto corto, honesto, sin clickbait, que invite a abrir>
 ---
-<cuerpo del email en HTML simple usando <p>>`;
+<cuerpo del email en HTML simple usando varios <p>>`;
   const user = `Negocio: ${p.empresa || p.nombre || '(sin nombre)'}. Sector: ${p.sector || '(no indicado)'}. Ciudad: ${p.ciudad || '(no indicada)'}.
 Presencia online: ${p.website ? p.website : 'no le hemos encontrado web ni redes'}.
 Situacion: ${sin ? 'sin presencia online' : 'presencia mejorable'}.
@@ -69,8 +71,8 @@ Observaciones del analisis: ${p.observaciones || '(ninguna)'}.
 Persona de contacto: ${p.nombre || '(desconocida)'}.`;
   const { texto } = await llamarIA({
     mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }],
-    temperatura: 0.6,
-    max_tokens: 600,
+    temperatura: 0.65,
+    max_tokens: 900,
   });
   let asunto = '', cuerpo = texto;
   const m = texto.match(/ASUNTO:\s*(.+)/i);

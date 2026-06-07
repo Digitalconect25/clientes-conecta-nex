@@ -7,6 +7,19 @@ export default function Catalogo() {
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState(null);
   const [nuevo, setNuevo] = useState(false);
+  const [copiado, setCopiado] = useState('');
+
+  const origen = typeof window !== 'undefined' ? window.location.origin : '';
+  const linkForm = origen + '/solicitud';
+  const linkAnuncio = origen + '/solicitud?origen=anuncio';
+  function copiar(url, etiqueta) {
+    navigator.clipboard.writeText(url).then(() => { setCopiado(etiqueta); setTimeout(() => setCopiado(''), 1800); }).catch(() => alert(url));
+  }
+  function enviarPorEmail() {
+    const asunto = 'Formulario de solicitud - Conecta Nex';
+    const cuerpo = 'Hola,\n\nDejame tus datos y los servicios que te interesan en este formulario y te preparo la propuesta:\n' + linkForm + '\n\nUn saludo.';
+    window.location.href = 'mailto:?subject=' + encodeURIComponent(asunto) + '&body=' + encodeURIComponent(cuerpo);
+  }
 
   useEffect(() => { cargar(); }, []);
 
@@ -41,6 +54,24 @@ export default function Catalogo() {
       <div className="main-header">
         <h1>Catalogo de servicios ({servicios.length})</h1>
         <button className="btn-primary" onClick={() => setNuevo(true)}>+ Nuevo servicio</button>
+      </div>
+
+      <div className="card" style={{ borderColor: '#cfe9d8', background: '#f8fdfa' }}>
+        <h2 style={{ marginTop: 0 }}>Formulario publico de solicitud</h2>
+        <p style={{ color: 'var(--gris-5)', marginTop: -4 }}>
+          Enlace para que el cliente elija servicios del catalogo y deje sus datos. Sirve para anuncios y para enviarselo tras la llamada. Las solicitudes te llegan a <b>Captacion en frio</b> y por email.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: '#fff', border: '1px solid #d7ddd9', borderRadius: 10, padding: '10px 12px' }}>
+          <code style={{ fontSize: 13, flex: 1, minWidth: 200, wordBreak: 'break-all' }}>{linkForm}</code>
+          <button className="btn-primary btn-sm" onClick={() => copiar(linkForm, 'form')}>{copiado === 'form' ? 'Copiado!' : 'Copiar enlace'}</button>
+          <a className="btn-outline btn-sm" href={linkForm} target="_blank" rel="noopener">Abrir</a>
+          <button className="btn-outline btn-sm" onClick={enviarPorEmail}>Enviar por email</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--gris-5)' }}>Para anuncios (marca el origen):</span>
+          <code style={{ fontSize: 12 }}>{linkAnuncio}</code>
+          <button className="btn-outline btn-sm" onClick={() => copiar(linkAnuncio, 'anuncio')}>{copiado === 'anuncio' ? 'Copiado!' : 'Copiar para anuncios'}</button>
+        </div>
       </div>
 
       {Object.entries(grupos).map(([cat, items]) => (

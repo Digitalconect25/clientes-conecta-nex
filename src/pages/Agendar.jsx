@@ -57,6 +57,7 @@ export default function Agendar() {
           <h2 style={{ margin: '6px 0' }}>Cita reservada</h2>
           <p style={{ color: '#67756c' }}>Te esperamos el <b>{fecha}</b> a las <b>{hora}</b>. Te lo confirmaremos en breve. Gracias.</p>
           <img src="/banner-email.png" alt="Conecta Nex" style={{ display: 'block', margin: '18px auto 0', maxWidth: '100%', height: 'auto', borderRadius: 10 }} />
+          <button onClick={() => { try { window.close(); } catch (_) {} window.location.href = 'https://conectanex.com'; }} style={{ marginTop: 16, padding: '11px 22px', borderRadius: 10, border: '1px solid #d7ddd9', background: '#fff', color: '#0f1c16', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Cerrar y salir</button>
         </div>
       </div>
     );

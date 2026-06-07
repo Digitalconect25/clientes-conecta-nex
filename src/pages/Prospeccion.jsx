@@ -80,6 +80,7 @@ export default function Prospeccion() {
   const [sel, setSel] = useState(null); // prospecto en edicion
   const [busy, setBusy] = useState(false);
   const [marcados, setMarcados] = useState(() => new Set());
+  const [emailPrueba, setEmailPrueba] = useState('');
 
   function toggleMarcado(id) {
     setMarcados((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -156,6 +157,13 @@ export default function Prospeccion() {
     catch (err) { alert('Error: ' + err.message); }
     finally { setBusy(false); }
   }
+  async function enviarPrueba() {
+    if (!emailOn) { alert('El envio no esta configurado (RESEND).'); return; }
+    setBusy(true);
+    try { const r = await api.prospectoEmailPrueba(emailPrueba); alert('Email de prueba enviado a ' + r.to + '. Revisa tu bandeja (y spam).'); }
+    catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
+  }
 
   const total = lista.length;
   const enviados = lista.filter((p) => p.estado === 'email_enviado' || p.enviado_en).length;
@@ -205,6 +213,11 @@ export default function Prospeccion() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={generarTodos} disabled={busy || !iaOn}>Generar emails IA para todos</button>
           <button onClick={enviarTodos} disabled={busy || !emailOn}>Enviar a todos</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTop: '1px solid #eef2f0' }}>
+          <span style={{ fontSize: 13, color: '#67756c' }}>Ver como queda el email:</span>
+          <input value={emailPrueba} onChange={(e) => setEmailPrueba(e.target.value)} placeholder="tu@correo.com" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #d7ddd9', fontSize: 14 }} />
+          <button onClick={enviarPrueba} disabled={busy || !emailOn}>Enviar email de prueba</button>
         </div>
         <p style={{ color: '#67756c', fontSize: 11.5, marginBottom: 0 }}>
           Por tandas (hasta 15 al generar y 40 al enviar por clic). Envia solo a negocios (B2B); cada email incluye tu identificacion y opcion de baja.

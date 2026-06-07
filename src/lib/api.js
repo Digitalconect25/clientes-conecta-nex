@@ -205,6 +205,12 @@ export const api = {
   prospectosBorrarVarios: (ids) => request('POST', '/api/prospectos', { accion: 'borrar_varios', ids }),
   prospectosVaciar: (estado) => request('POST', '/api/prospectos', { accion: 'vaciar', estado: estado || null }),
   prospectoConvertir: (id, datos) => request('POST', '/api/prospectos', { accion: 'convertir', id, ...datos }),
+  prospectoEmailPrueba: (email) => request('POST', '/api/prospectos', { accion: 'email_prueba', email }),
+
+  // Bandeja de entrada (respuestas)
+  mensajesList: () => request('GET', '/api/mensajes'),
+  mensajeLeido: (id, leido) => request('PUT', '/api/mensajes', { id, leido }),
+  mensajeDelete: (id) => request('DELETE', `/api/mensajes?id=${id}`),
 
   // Agenda de citas
   citasList: () => request('GET', '/api/citas'),

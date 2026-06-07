@@ -12,6 +12,7 @@ import Proyectos from './pages/Proyectos.jsx';
 import Emails from './pages/Emails.jsx';
 import Prospeccion from './pages/Prospeccion.jsx';
 import Agenda from './pages/Agenda.jsx';
+import Bandeja from './pages/Bandeja.jsx';
 import Agendar from './pages/Agendar.jsx';
 import Solicitud from './pages/Solicitud.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />
         <Route path="/agenda" element={<Agenda />} />
+        <Route path="/bandeja" element={<Bandeja />} />
         <Route path="/catalogo" element={<Catalogo />} />
         <Route path="/qr" element={<GeneradorQR />} />
         <Route path="/emisor" element={<Emisor />} />

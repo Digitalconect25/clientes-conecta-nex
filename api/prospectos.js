@@ -230,6 +230,19 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, { enviados: ok, total: pend.length });
       }
 
+      if (accion === 'email_prueba') {
+        if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Email no configurado (RESEND_API_KEY y RESEND_FROM_EMAIL).' });
+        const to = (b.email && RE_EMAIL.test(String(b.email))) ? String(b.email).trim() : (process.env.AGENCY_EMAIL || '');
+        if (!RE_EMAIL.test(to)) return jsonResponse(res, 400, { error: 'Indica un email de destino valido.' });
+        const em = await getEmisor();
+        const cuerpo = `<p>Hola, buenos dias:</p>
+<p>Este es un email de PRUEBA para que veas como se ve el correo que reciben los prospectos.</p>
+<p>Buscando por internet di con tu negocio y me llamo la atencion. En Conecta Nex, de Digital Conect, ayudamos a fidelizar a tus clientes con boletines de diseno profesional, campanas automatizadas y segmentos creados con inteligencia artificial, para que cada cliente reciba el mensaje adecuado y vuelva mas a menudo.</p>
+<p>Si te apetece, te lo enseno en una llamada corta y sin compromiso. Un saludo, Lazaro.</p>`;
+        await enviarEmail({ to, subject: '[PRUEBA] Asi se ve tu email de captacion - Conecta Nex', html: emailHtml(cuerpo, em, { id: 0 }) });
+        return jsonResponse(res, 200, { ok: true, to });
+      }
+
       if (accion === 'convertir') {
         if (!b.id) return jsonResponse(res, 400, { error: 'Falta id' });
         if (!b.nif || !String(b.nif).trim()) return jsonResponse(res, 400, { error: 'El NIF/CIF es obligatorio para crear el cliente.' });

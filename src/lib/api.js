@@ -205,6 +205,12 @@ export const api = {
   prospectosBorrarVarios: (ids) => request('POST', '/api/prospectos', { accion: 'borrar_varios', ids }),
   prospectosVaciar: (estado) => request('POST', '/api/prospectos', { accion: 'vaciar', estado: estado || null }),
   prospectoConvertir: (id, datos) => request('POST', '/api/prospectos', { accion: 'convertir', id, ...datos }),
+
+  // Agenda de citas
+  citasList: () => request('GET', '/api/citas'),
+  citaCrear: (data) => request('POST', '/api/citas', data),
+  citaUpdate: (data) => request('PUT', '/api/citas', data),
+  citaDelete: (id) => request('DELETE', `/api/citas?id=${id}`),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

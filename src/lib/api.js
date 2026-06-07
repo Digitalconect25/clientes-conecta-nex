@@ -202,6 +202,8 @@ export const api = {
   prospectosEnviarTodos: () => request('POST', '/api/prospectos', { accion: 'enviar_todos' }),
   prospectoActualizar: (data) => request('PUT', '/api/prospectos', data),
   prospectoBorrar: (id) => request('DELETE', `/api/prospectos?id=${id}`),
+  prospectosBorrarVarios: (ids) => request('POST', '/api/prospectos', { accion: 'borrar_varios', ids }),
+  prospectosVaciar: (estado) => request('POST', '/api/prospectos', { accion: 'vaciar', estado: estado || null }),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

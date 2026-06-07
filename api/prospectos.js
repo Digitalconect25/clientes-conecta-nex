@@ -173,6 +173,23 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, { enviados: ok, total: pend.length });
       }
 
+      if (accion === 'borrar_varios') {
+        const ids = (Array.isArray(b.ids) ? b.ids : []).map((x) => parseInt(x, 10)).filter(Boolean);
+        if (!ids.length) return jsonResponse(res, 400, { error: 'No hay ids que borrar' });
+        await sql`DELETE FROM prospectos WHERE id = ANY(${ids})`;
+        return jsonResponse(res, 200, { borrados: ids.length });
+      }
+
+      if (accion === 'vaciar') {
+        // Borra TODOS los prospectos, o solo los de un estado si se indica.
+        if (b.estado && ESTADOS.includes(b.estado)) {
+          const r = await sql`DELETE FROM prospectos WHERE estado = ${b.estado} RETURNING id`;
+          return jsonResponse(res, 200, { borrados: r.length });
+        }
+        const r = await sql`DELETE FROM prospectos RETURNING id`;
+        return jsonResponse(res, 200, { borrados: r.length });
+      }
+
       return jsonResponse(res, 400, { error: 'Accion no valida' });
     }
 

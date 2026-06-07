@@ -78,6 +78,30 @@ export default function Prospeccion() {
   const [pegar, setPegar] = useState('');
   const [sel, setSel] = useState(null); // prospecto en edicion
   const [busy, setBusy] = useState(false);
+  const [marcados, setMarcados] = useState(() => new Set());
+
+  function toggleMarcado(id) {
+    setMarcados((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleTodos() {
+    setMarcados((prev) => (prev.size === lista.length ? new Set() : new Set(lista.map((p) => p.id))));
+  }
+  async function borrarSeleccionados() {
+    if (!marcados.size) return;
+    if (!confirm(`Eliminar ${marcados.size} prospecto(s) seleccionado(s)?`)) return;
+    setBusy(true);
+    try { await api.prospectosBorrarVarios([...marcados]); setMarcados(new Set()); cargar(); }
+    catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
+  }
+  async function vaciarTodo() {
+    if (!lista.length) return;
+    if (!confirm(`Eliminar TODA la lista (${lista.length} prospectos)? Esto no se puede deshacer.`)) return;
+    setBusy(true);
+    try { const r = await api.prospectosVaciar(); alert(`${r.borrados} prospectos eliminados.`); setMarcados(new Set()); cargar(); }
+    catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
+  }
 
   useEffect(() => { cargar(); }, []);
 
@@ -225,17 +249,27 @@ export default function Prospeccion() {
 
       {/* Tabla */}
       <div style={{ ...card, overflowX: 'auto' }}>
-        <h3 style={{ marginTop: 0 }}>Prospectos</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Prospectos {lista.length ? `(${lista.length})` : ''}</h3>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={borrarSeleccionados} disabled={busy || !marcados.size} style={{ color: marcados.size ? '#c0392b' : undefined }}>
+              Eliminar seleccionados{marcados.size ? ` (${marcados.size})` : ''}
+            </button>
+            <button onClick={vaciarTodo} disabled={busy || !lista.length} style={{ color: '#c0392b' }}>Vaciar lista</button>
+          </div>
+        </div>
         {cargando ? <p>Cargando...</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginTop: 10 }}>
             <thead><tr style={{ textAlign: 'left', color: '#67756c', fontSize: 12, textTransform: 'uppercase' }}>
-              <th style={{ padding: 8 }}>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Estado</th><th></th>
+              <th style={{ padding: 8 }}><input type="checkbox" checked={lista.length > 0 && marcados.size === lista.length} onChange={toggleTodos} title="Seleccionar todos" /></th>
+              <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody>
               {lista.map((p) => {
                 const e = PESTADO[p.estado] || PESTADO.nuevo;
                 return (
-                  <tr key={p.id} style={{ borderTop: '1px solid #eef2f0' }}>
+                  <tr key={p.id} style={{ borderTop: '1px solid #eef2f0', background: marcados.has(p.id) ? '#fef4f4' : undefined }}>
+                    <td style={{ padding: 8 }}><input type="checkbox" checked={marcados.has(p.id)} onChange={() => toggleMarcado(p.id)} /></td>
                     <td style={{ padding: 8 }}><b>{p.empresa || p.nombre || '-'}</b><br /><span style={{ color: '#67756c' }}>{p.sector}{p.ciudad ? ' - ' + p.ciudad : ''}</span></td>
                     <td>{p.email || <span style={{ color: '#94a3b8' }}>sin email</span>}</td>
                     <td>{p.situacion === 'mejorable' ? 'Mejorable' : 'Sin presencia'}</td>
@@ -245,7 +279,7 @@ export default function Prospeccion() {
                   </tr>
                 );
               })}
-              {!lista.length && <tr><td colSpan={6} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Sube un CSV o anade uno arriba.</td></tr>}
+              {!lista.length && <tr><td colSpan={7} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Sube un CSV o anade uno arriba.</td></tr>}
             </tbody>
           </table>
         )}

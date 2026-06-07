@@ -6,7 +6,7 @@ export function emailHabilitado() {
   return !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 }
 
-export async function enviarEmail({ to, cc, subject, html, attachments }) {
+export async function enviarEmail({ to, cc, subject, html, attachments, replyTo }) {
   if (!emailHabilitado()) {
     throw new Error('Email no configurado. Anade RESEND_API_KEY y RESEND_FROM_EMAIL en Vercel.');
   }
@@ -16,6 +16,11 @@ export async function enviarEmail({ to, cc, subject, html, attachments }) {
     subject,
     html,
   };
+  // Reply-To: a donde van las RESPUESTAS (p.ej. tu Gmail). Por defecto, REPLY_TO_EMAIL.
+  const rt = replyTo || process.env.REPLY_TO_EMAIL;
+  if (rt) {
+    body.reply_to = Array.isArray(rt) ? rt : [rt];
+  }
   if (cc) {
     body.cc = Array.isArray(cc) ? cc : [cc];
   }

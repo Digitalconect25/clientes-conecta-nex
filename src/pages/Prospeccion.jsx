@@ -302,6 +302,7 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
     if (!confirm('Crear el cliente "' + (p.empresa || p.nombre || '') + '" en el sistema?')) return;
     setBusy(true);
     try {
+      await api.prospectoActualizar(p); // guarda las ediciones del modal antes de convertir
       const r = await api.prospectoConvertir(p.id, {
         nif, nombre: p.empresa || p.nombre, contacto: p.nombre || '',
         email: p.email || '', telefono: p.telefono || '', ciudad: p.ciudad || '',

@@ -6,6 +6,7 @@ import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
+import { obtenerIp, limitar } from './_publico.js';
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -48,11 +49,16 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const b = req.body || {};
-      // Recomendacion con IA (no guarda nada)
+      const ip = obtenerIp(req);
+      // Recomendacion con IA (consume cuota de Groq): limite mas estricto.
       if (b.accion === 'recomendar') {
+        if (!(await limitar(ip, 'recomendar', 8, 60))) return jsonResponse(res, 429, { error: 'Demasiadas peticiones. Espera un momento.' });
         const r = await recomendar(String(b.sector || ''), String(b.necesidad || b.mensaje || ''));
         return jsonResponse(res, 200, r);
       }
+      // Honeypot anti-bots: campo oculto relleno -> fingimos exito sin guardar.
+      if (b.website2) return jsonResponse(res, 200, { ok: true, id: 0 });
+      if (!(await limitar(ip, 'solicitud', 6, 60))) return jsonResponse(res, 429, { error: 'Demasiadas solicitudes. Intentalo en un momento.' });
       const nombre = String(b.nombre || '').trim();
       const email = String(b.email || '').trim();
       const telefono = String(b.telefono || '').trim();
@@ -97,6 +103,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: 'Method not allowed' });
   } catch (err) {
     console.error(err);
-    return jsonResponse(res, 500, { error: err.message });
+    return jsonResponse(res, 500, { error: 'No se pudo procesar la solicitud. Intentalo de nuevo.' });
   }
 }

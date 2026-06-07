@@ -43,6 +43,7 @@ export default function App() {
         <Route path="/acceso/:token" element={<AccesoActa />} />
         <Route path="/agendar" element={<Agendar />} />
         <Route path="/solicitud" element={<Solicitud />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
   }

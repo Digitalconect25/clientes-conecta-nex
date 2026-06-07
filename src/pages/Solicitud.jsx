@@ -9,6 +9,7 @@ export default function Solicitud() {
   const [categorias, setCategorias] = useState([]);
   const [sel, setSel] = useState(() => new Set());
   const [datos, setDatos] = useState({ nombre: '', empresa: '', email: '', telefono: '', sector: '', mensaje: '' });
+  const [hp, setHp] = useState('');
   const [reco, setReco] = useState('');
   const [recoIds, setRecoIds] = useState([]);
   const [recomendando, setRecomendando] = useState(false);
@@ -56,7 +57,7 @@ export default function Solicitud() {
     if (!datos.nombre.trim()) { setError('Falta tu nombre.'); return; }
     setEnviando(true);
     try {
-      const r = await fetch('/api/solicitud', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...datos, servicios: [...sel], origen }) });
+      const r = await fetch('/api/solicitud', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...datos, servicios: [...sel], origen, website2: hp }) });
       const j = await r.json();
       if (r.ok && j.ok) setHecho(true);
       else setError(j.error || 'No se pudo enviar.');
@@ -79,6 +80,7 @@ export default function Solicitud() {
         <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#eaf6ee', color: '#0f7a39', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, marginBottom: 8 }}>✓</div>
         <h2 style={{ margin: '6px 0' }}>Solicitud enviada</h2>
         <p style={{ color: '#67756c' }}>Gracias, {datos.nombre}. Hemos recibido tus datos y te contactaremos muy pronto.</p>
+        <img src="/banner-email.png" alt="Conecta Nex" style={{ display: 'block', margin: '18px auto 0', maxWidth: '100%', height: 'auto', borderRadius: 10 }} />
       </div></div>
     );
   }
@@ -90,6 +92,7 @@ export default function Solicitud() {
         <div style={{ color: '#67756c', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>Digital Conect</div>
       </div>
 
+      <input value={hp} onChange={(e) => setHp(e.target.value)} name="website2" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }} />
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {pasos.map((t, i) => (
           <div key={t} style={{ flex: 1, textAlign: 'center', fontSize: 11, textTransform: 'uppercase', letterSpacing: .4, fontWeight: 600, color: paso === i + 1 ? '#16a34a' : '#9aa6a0', paddingBottom: 8, borderBottom: '2px solid ' + (paso >= i + 1 ? '#16a34a' : '#e3e8e5') }}>{i + 1} {t}</div>

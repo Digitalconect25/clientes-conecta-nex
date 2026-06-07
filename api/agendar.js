@@ -4,6 +4,7 @@
 //   POST /api/agendar  { p, fecha, hora, nombre, email, telefono, nota } -> { ok }
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
+import { obtenerIp, limitar } from './_publico.js';
 
 // Horario de atencion (EDITA AQUI). diasLaborables: 1=lunes ... 5=viernes
 const DIAS_LABORABLES = [1, 2, 3, 4, 5];
@@ -35,6 +36,9 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const b = req.body || {};
+      // Honeypot: si un bot rellena el campo oculto, fingimos exito y no guardamos.
+      if (b.website2) return jsonResponse(res, 200, { ok: true });
+      if (!(await limitar(obtenerIp(req), 'agendar', 8, 60))) return jsonResponse(res, 429, { error: 'Demasiadas solicitudes. Intentalo en un momento.' });
       const fecha = String(b.fecha || ''), hora = String(b.hora || '');
       if (!RE_FECHA.test(fecha) || !HORAS.includes(hora)) return jsonResponse(res, 400, { error: 'Dia u hora no validos.' });
       if (!String(b.nombre || '').trim()) return jsonResponse(res, 400, { error: 'Falta tu nombre.' });
@@ -43,10 +47,17 @@ export default async function handler(req, res) {
       const { slots } = await slotsLibres(fecha);
       if (!slots.includes(hora)) return jsonResponse(res, 409, { error: 'Esa hora ya no esta disponible, elige otra.' });
       const pid = parseInt(b.p, 10) || null;
-      await sql`
-        INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen)
-        VALUES (${pid}, ${String(b.nombre).trim()}, ${String(b.email || '').trim()}, ${String(b.telefono || '').trim()},
-                ${fecha}, ${hora}, ${String(b.nota || '').trim()}, ${'pendiente'}, ${'frio'})`;
+      try {
+        await sql`
+          INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen)
+          VALUES (${pid}, ${String(b.nombre).trim()}, ${String(b.email || '').trim()}, ${String(b.telefono || '').trim()},
+                  ${fecha}, ${hora}, ${String(b.nota || '').trim()}, ${'pendiente'}, ${'frio'})`;
+      } catch (e) {
+        // Indice unico uq_citas_franja: dos reservas simultaneas a la misma hora.
+        if (String(e.message || '').includes('uq_citas_franja') || e.code === '23505')
+          return jsonResponse(res, 409, { error: 'Esa hora se acaba de ocupar, elige otra.' });
+        throw e;
+      }
       // Si viene de un prospecto, marcarlo como que respondio (mostro interes).
       if (pid) {
         try { await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${pid} AND estado IN ('nuevo','email_enviado')`; } catch { /* opcional */ }
@@ -57,6 +68,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: 'Method not allowed' });
   } catch (err) {
     console.error(err);
-    return jsonResponse(res, 500, { error: err.message });
+    return jsonResponse(res, 500, { error: 'No se pudo procesar la reserva. Intentalo de nuevo.' });
   }
 }

@@ -10,6 +10,7 @@ export default function Agendar() {
   const [hora, setHora] = useState('');
   const [cargandoSlots, setCargandoSlots] = useState(false);
   const [datos, setDatos] = useState({ nombre: '', email: '', telefono: '', nota: '' });
+  const [hp, setHp] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
   const [error, setError] = useState('');
@@ -35,7 +36,7 @@ export default function Agendar() {
       const r = await fetch('/api/agendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p, fecha, hora, ...datos }),
+        body: JSON.stringify({ p, fecha, hora, website2: hp, ...datos }),
       });
       const j = await r.json();
       if (r.ok && j.ok) setHecho(true);
@@ -55,6 +56,7 @@ export default function Agendar() {
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#eaf6ee', color: '#0f7a39', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, marginBottom: 8 }}>✓</div>
           <h2 style={{ margin: '6px 0' }}>Cita reservada</h2>
           <p style={{ color: '#67756c' }}>Te esperamos el <b>{fecha}</b> a las <b>{hora}</b>. Te lo confirmaremos en breve. Gracias.</p>
+          <img src="/banner-email.png" alt="Conecta Nex" style={{ display: 'block', margin: '18px auto 0', maxWidth: '100%', height: 'auto', borderRadius: 10 }} />
         </div>
       </div>
     );
@@ -66,6 +68,7 @@ export default function Agendar() {
         <div style={{ fontWeight: 800, fontSize: 18 }}>Conecta <span style={{ color: '#16a34a' }}>Nex</span></div>
         <div style={{ color: '#67756c', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>Digital Conect</div>
       </div>
+      <input value={hp} onChange={(e) => setHp(e.target.value)} name="website2" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }} />
       <div style={card}>
         <h2 style={{ marginTop: 0 }}>Agenda una llamada</h2>
         <p style={{ color: '#67756c', marginTop: -6 }}>Elige el dia y la hora que mejor te venga. Es una llamada breve, sin compromiso.</p>

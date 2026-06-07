@@ -12,6 +12,7 @@ export default function Layout({ children, onLogout }) {
           <NavLink to="/clientes">Clientes</NavLink>
           <NavLink to="/proyectos">Proyectos</NavLink>
           <NavLink to="/emails">Emails</NavLink>
+          <NavLink to="/prospeccion">Captacion en frio</NavLink>
           <NavLink to="/catalogo">Catalogo</NavLink>
           <NavLink to="/qr">Generador QR</NavLink>
           <NavLink to="/emisor">Mis datos</NavLink>

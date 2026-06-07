@@ -190,6 +190,18 @@ export const api = {
     cliente_id: clienteId,
     modo: modo || 'simular',
   }),
+
+  // Captacion en frio (prospeccion)
+  prospectosList: () => request('GET', '/api/prospectos'),
+  prospectoGet: (id) => request('GET', `/api/prospectos?id=${id}`),
+  prospectoCrear: (data) => request('POST', '/api/prospectos', { accion: 'crear', ...data }),
+  prospectoImportar: (filas) => request('POST', '/api/prospectos', { accion: 'importar', filas }),
+  prospectoGenerar: (id) => request('POST', '/api/prospectos', { accion: 'generar', id }),
+  prospectoEnviar: (id, data) => request('POST', '/api/prospectos', { accion: 'enviar', id, ...(data || {}) }),
+  prospectosGenerarTodos: () => request('POST', '/api/prospectos', { accion: 'generar_todos' }),
+  prospectosEnviarTodos: () => request('POST', '/api/prospectos', { accion: 'enviar_todos' }),
+  prospectoActualizar: (data) => request('PUT', '/api/prospectos', data),
+  prospectoBorrar: (id) => request('DELETE', `/api/prospectos?id=${id}`),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

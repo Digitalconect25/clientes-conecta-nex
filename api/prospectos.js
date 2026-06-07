@@ -15,10 +15,9 @@ function pieLegal(em) {
   <p style="color:#888;font-size:12px">${ident}<br>Comunicacion comercial. Si no deseas recibir mas correos, responde con la palabra <b>BAJA</b> y te damos de baja de inmediato.</p>`;
 }
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
-const LOGO_URL = process.env.EMAIL_LOGO_URL || (BASE_URL + '/logo-conecta-nex.png');
-// Banner del pie del email (imagen). Pon la URL en EMAIL_BANNER_URL (o sube
-// public/banner-email.png y usa BASE_URL + '/banner-email.png'). Si esta vacio, no se muestra.
-const BANNER_URL = process.env.EMAIL_BANNER_URL || '';
+const LOGO_URL = process.env.EMAIL_LOGO_URL || (BASE_URL + '/logo-email.png');
+// Banner del pie del email (imagen optimizada en public/banner-email.png).
+const BANNER_URL = process.env.EMAIL_BANNER_URL || (BASE_URL + '/banner-email.png');
 
 function cabeceraLogo() {
   return `<div style="text-align:center;padding:6px 0 18px"><img src="${LOGO_URL}" alt="Conecta Nex" style="max-width:170px;height:auto"></div>`;

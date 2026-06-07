@@ -10,6 +10,7 @@ export default function Solicitud() {
   const [sel, setSel] = useState(() => new Set());
   const [datos, setDatos] = useState({ nombre: '', empresa: '', email: '', telefono: '', sector: '', mensaje: '' });
   const [reco, setReco] = useState('');
+  const [recoIds, setRecoIds] = useState([]);
   const [recomendando, setRecomendando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
@@ -35,13 +36,19 @@ export default function Solicitud() {
   }
 
   async function recomendar() {
-    setRecomendando(true); setReco('Analizando tu negocio...');
+    setRecomendando(true); setReco('Analizando tu negocio...'); setRecoIds([]);
     try {
       const r = await fetch('/api/solicitud', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'recomendar', sector: datos.sector, necesidad: datos.mensaje }) });
       const j = await r.json();
       setReco(j.recomendacion || 'No se pudo generar la recomendacion.');
+      setRecoIds(Array.isArray(j.servicios) ? j.servicios : []);
     } catch { setReco('No se pudo conectar con la IA ahora mismo.'); }
     finally { setRecomendando(false); }
+  }
+  // Acepta lo que recomendo la IA: marca esos servicios y salta al resumen.
+  function usarRecomendacion() {
+    setSel(new Set(recoIds));
+    ir(4);
   }
 
   async function enviar() {
@@ -110,8 +117,15 @@ export default function Solicitud() {
             <label style={lbl}>Sector / actividad<input value={datos.sector} onChange={(e) => d('sector', e.target.value)} style={field} placeholder="Ej: restaurante, clinica, tienda, peluqueria..." /></label>
             <label style={lbl}>Que necesitas / que te gustaria conseguir<textarea value={datos.mensaje} onChange={(e) => d('mensaje', e.target.value)} style={{ ...field, minHeight: 90 }} placeholder="Ej: quiero mas clientes y fidelizar a los que ya tengo" /></label>
             <button onClick={recomendar} disabled={recomendando} style={{ ...btnG, marginTop: 12, borderColor: '#16a34a', color: '#0f7a39' }}>{recomendando ? 'Pensando...' : 'Recomiendame con IA'}</button>
-            {reco && <div style={{ background: '#f0faf3', border: '1px solid #cfe9d8', borderRadius: 12, padding: 14, marginTop: 12, whiteSpace: 'pre-wrap', fontSize: 14, color: '#1f2a24' }}>{reco}</div>}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}><button style={btnG} onClick={() => ir(1)}>Atras</button><button style={btnP} onClick={() => ir(3)}>Ver servicios</button></div>
+            {reco && (
+              <div style={{ background: '#f0faf3', border: '1px solid #cfe9d8', borderRadius: 12, padding: 14, marginTop: 12 }}>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, color: '#1f2a24' }}>{reco}</div>
+                {recoIds.length > 0 && (
+                  <button style={{ ...btnP, marginTop: 12 }} onClick={usarRecomendacion}>Me interesa lo que recomiendas - continuar</button>
+                )}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}><button style={btnG} onClick={() => ir(1)}>Atras</button><button style={btnP} onClick={() => ir(3)}>Prefiero elegir yo los servicios</button></div>
           </div>
         )}
 

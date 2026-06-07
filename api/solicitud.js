@@ -9,19 +9,27 @@ import { llamarIA, iaHabilitada } from './_groq.js';
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-// Recomendacion de servicios con IA segun sector + necesidad (texto, sin precios).
+// Recomendacion de servicios con IA: devuelve { recomendacion, servicios:[ids] }.
 async function recomendar(sector, necesidad) {
-  if (!iaHabilitada()) return 'La recomendacion automatica no esta disponible ahora mismo. Marca tu mismo los servicios que te interesen y nosotros te asesoramos.';
-  const rows = await sql`SELECT nombre, categoria, descripcion FROM servicios WHERE activo = TRUE ORDER BY categoria, nombre`;
-  const catalogo = rows.map((s) => `- ${s.nombre} [${s.categoria}]: ${s.descripcion || ''}`).join('\n');
-  const sys = `Eres asesor de Conecta Nex (de Digital Conect). Recomienda SOLO servicios del catalogo de abajo (nunca inventes servicios). NO menciones precios. Espanol de Espana, claro y breve (max 120 palabras): 2-4 servicios que encajen y por que, en frases cortas. NO uses guion largo (em-dash) ni emojis. No prometas resultados garantizados.
+  if (!iaHabilitada()) return { recomendacion: 'La recomendacion automatica no esta disponible ahora mismo. Marca tu mismo los servicios que te interesen y nosotros te asesoramos.', servicios: [] };
+  const rows = await sql`SELECT id, nombre, categoria, descripcion FROM servicios WHERE activo = TRUE ORDER BY categoria, nombre`;
+  const validos = new Set(rows.map((r) => r.id));
+  const catalogo = rows.map((s) => `- [${s.id}] ${s.nombre} [${s.categoria}]: ${s.descripcion || ''}`).join('\n');
+  const sys = `Eres asesor de Conecta Nex (de Digital Conect). Recomienda SOLO servicios del catalogo de abajo (nunca inventes servicios). NO menciones precios. Espanol de Espana, claro y breve (max 110 palabras): 2-4 servicios que encajen y por que, en frases cortas. NO uses guion largo (em-dash) ni emojis. No prometas resultados garantizados.
+Al FINAL del todo, en una linea aparte, escribe los IDs de los servicios que recomiendas con este formato exacto: IDS: 3, 5, 7
 Catalogo:\n${catalogo}`;
   const user = `Sector/actividad: ${sector || '(no indicado)'}. Lo que necesita: ${necesidad || '(no indicado)'}.`;
   try {
-    const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.5, max_tokens: 400 });
-    return texto;
+    const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.5, max_tokens: 420 });
+    let recomendacion = texto, servicios = [];
+    const m = texto.match(/IDS:\s*([0-9,\s]+)/i);
+    if (m) {
+      servicios = m[1].split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => n && validos.has(n));
+      recomendacion = texto.slice(0, texto.indexOf(m[0])).trim();
+    }
+    return { recomendacion, servicios };
   } catch {
-    return 'No se pudo generar la recomendacion ahora mismo. Marca los servicios que te interesen y te asesoramos.';
+    return { recomendacion: 'No se pudo generar la recomendacion ahora mismo. Marca los servicios que te interesen y te asesoramos.', servicios: [] };
   }
 }
 
@@ -42,8 +50,8 @@ export default async function handler(req, res) {
       const b = req.body || {};
       // Recomendacion con IA (no guarda nada)
       if (b.accion === 'recomendar') {
-        const texto = await recomendar(String(b.sector || ''), String(b.necesidad || b.mensaje || ''));
-        return jsonResponse(res, 200, { recomendacion: texto });
+        const r = await recomendar(String(b.sector || ''), String(b.necesidad || b.mensaje || ''));
+        return jsonResponse(res, 200, r);
       }
       const nombre = String(b.nombre || '').trim();
       const email = String(b.email || '').trim();

@@ -239,6 +239,7 @@ export default function Prospeccion() {
       {/* Editor del prospecto seleccionado */}
       {sel && (
         <EditorProspecto
+          key={sel.id}
           prospecto={sel}
           emailOn={emailOn}
           iaOn={iaOn}
@@ -327,8 +328,12 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
   }
 
   return (
-    <div style={{ ...card, borderColor: '#cfe9d8', background: '#f8fdfa' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,28,22,.5)', zIndex: 1000, overflowY: 'auto', padding: '24px 16px' }}
+    >
+      <div style={{ ...card, maxWidth: 760, margin: '0 auto', borderColor: '#cfe9d8', background: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', paddingBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Prospecto: {p.empresa || p.nombre || 'Sin nombre'}</h3>
         <button onClick={onClose} style={{ padding: '6px 12px' }}>Cerrar</button>
       </div>
@@ -375,6 +380,7 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
       <p style={{ color: '#67756c', fontSize: 11.5 }}>
         Al enviar se anade tu identificacion y una opcion de baja (obligatorio por la LSSI). Envia solo a negocios (B2B). "Abrir en mi correo" abre Gmail/Outlook con el mensaje ya escrito.
       </p>
+      </div>
     </div>
   );
 }

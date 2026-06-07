@@ -5,8 +5,25 @@
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import { llamarIA, iaHabilitada } from './_groq.js';
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Recomendacion de servicios con IA segun sector + necesidad (texto, sin precios).
+async function recomendar(sector, necesidad) {
+  if (!iaHabilitada()) return 'La recomendacion automatica no esta disponible ahora mismo. Marca tu mismo los servicios que te interesen y nosotros te asesoramos.';
+  const rows = await sql`SELECT nombre, categoria, descripcion FROM servicios WHERE activo = TRUE ORDER BY categoria, nombre`;
+  const catalogo = rows.map((s) => `- ${s.nombre} [${s.categoria}]: ${s.descripcion || ''}`).join('\n');
+  const sys = `Eres asesor de Conecta Nex (de Digital Conect). Recomienda SOLO servicios del catalogo de abajo (nunca inventes servicios). NO menciones precios. Espanol de Espana, claro y breve (max 120 palabras): 2-4 servicios que encajen y por que, en frases cortas. NO uses guion largo (em-dash) ni emojis. No prometas resultados garantizados.
+Catalogo:\n${catalogo}`;
+  const user = `Sector/actividad: ${sector || '(no indicado)'}. Lo que necesita: ${necesidad || '(no indicado)'}.`;
+  try {
+    const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.5, max_tokens: 400 });
+    return texto;
+  } catch {
+    return 'No se pudo generar la recomendacion ahora mismo. Marca los servicios que te interesen y te asesoramos.';
+  }
+}
 
 export default async function handler(req, res) {
   try {
@@ -23,6 +40,11 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const b = req.body || {};
+      // Recomendacion con IA (no guarda nada)
+      if (b.accion === 'recomendar') {
+        const texto = await recomendar(String(b.sector || ''), String(b.necesidad || b.mensaje || ''));
+        return jsonResponse(res, 200, { recomendacion: texto });
+      }
       const nombre = String(b.nombre || '').trim();
       const email = String(b.email || '').trim();
       const telefono = String(b.telefono || '').trim();

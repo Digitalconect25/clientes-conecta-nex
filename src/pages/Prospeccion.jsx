@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
 const PESTADO = {
@@ -292,7 +293,24 @@ export default function Prospeccion() {
 function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
   const [p, setP] = useState(prospecto);
   const [busy, setBusy] = useState(false);
+  const [nif, setNif] = useState('');
+  const navigate = useNavigate();
   const set = (k, v) => setP({ ...p, [k]: v });
+
+  async function convertir() {
+    if (!nif.trim()) { alert('El NIF/CIF es obligatorio para crear el cliente.'); return; }
+    if (!confirm('Crear el cliente "' + (p.empresa || p.nombre || '') + '" en el sistema?')) return;
+    setBusy(true);
+    try {
+      const r = await api.prospectoConvertir(p.id, {
+        nif, nombre: p.empresa || p.nombre, contacto: p.nombre || '',
+        email: p.email || '', telefono: p.telefono || '', ciudad: p.ciudad || '',
+      });
+      alert('Cliente creado: ' + r.numero_cliente);
+      navigate('/clientes/' + r.cliente_id);
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
+  }
 
   async function guardar() {
     setBusy(true);
@@ -362,6 +380,26 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
             {Object.keys(PESTADO).map((k) => <option key={k} value={k}>{PESTADO[k].l}</option>)}
           </select>
         </label>
+      </div>
+
+      {/* Convertir en cliente (cuando responde / se convierte) */}
+      <div style={{ background: '#f0faf3', border: '1px solid #cfe9d8', borderRadius: 10, padding: 14, marginTop: 14 }}>
+        {p.cliente_id ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <b>Ya es cliente en el sistema.</b>
+            <button onClick={() => navigate('/clientes/' + p.cliente_id)} style={{ background: '#16a34a', color: '#fff' }}>Abrir ficha del cliente</button>
+          </div>
+        ) : (
+          <div>
+            <b>Te ha respondido? Conviertelo en cliente</b>
+            <p style={{ color: '#67756c', fontSize: 13, margin: '4px 0 10px' }}>Crea el registro en Clientes con los datos del prospecto. El NIF/CIF es obligatorio.</p>
+            <div style={grid2}>
+              <label>NIF / CIF *<input value={nif} onChange={(e) => setNif(e.target.value)} placeholder="B12345678" /></label>
+              <label>Contacto<input value={p.nombre || ''} onChange={(e) => set('nombre', e.target.value)} placeholder="Persona de contacto" /></label>
+            </div>
+            <button onClick={convertir} disabled={busy} style={{ background: '#16a34a', color: '#fff' }}>Convertir en cliente</button>
+          </div>
+        )}
       </div>
 
       <hr style={{ border: 0, borderTop: '1px solid #e3e8e5', margin: '16px 0' }} />

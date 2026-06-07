@@ -72,6 +72,37 @@ Persona de contacto: ${p.nombre || '(desconocida)'}.`;
 const ESTADOS = ['nuevo', 'email_enviado', 'respondido', 'convertido', 'descartado'];
 const norm = (s) => (s === 'mejorable' ? 'mejorable' : 'sin_presencia');
 
+// Genera el siguiente numero de cliente (CL-AAAA-NNNN), igual que clientes.js.
+async function siguienteNumeroCliente() {
+  const anio = new Date().getFullYear();
+  const [row] = await sql`
+    INSERT INTO contadores (clave, valor) VALUES (${'cliente_' + anio}, 1)
+    ON CONFLICT (clave) DO UPDATE SET valor = contadores.valor + 1, actualizado_en = NOW()
+    RETURNING valor`;
+  return `CL-${anio}-${String(row.valor).padStart(4, '0')}`;
+}
+
+// Crea un cliente en el sistema a partir de un prospecto + datos del formulario.
+async function convertirEnCliente(p, b) {
+  const numero = await siguienteNumeroCliente();
+  const notas = `Captado en frio. ${p.sector ? 'Sector: ' + p.sector + '. ' : ''}${p.observaciones ? 'Notas prospeccion: ' + p.observaciones : ''}`.trim();
+  const [cli] = await sql`
+    INSERT INTO clientes (
+      numero_cliente, estado, tipo_persona, nombre, nif, contacto,
+      direccion, cp, ciudad, provincia, pais, email, telefono,
+      servicios_json, descripcion, plazo, forma_pago, iva,
+      base_imponible, iva_importe, total, notas, estado_proyecto, porcentaje_avance
+    ) VALUES (
+      ${numero}, ${'Pendiente firma'}, ${'Fisica'}, ${b.nombre || p.empresa || p.nombre || 'Cliente'},
+      ${(b.nif || '').toUpperCase()}, ${b.contacto || p.nombre || ''},
+      ${b.direccion || ''}, ${b.cp || ''}, ${b.ciudad || p.ciudad || ''}, ${'Alicante'}, ${'Espana'},
+      ${b.email || p.email || ''}, ${b.telefono || p.telefono || ''},
+      ${JSON.stringify([])}::jsonb, ${b.descripcion || ''}, ${''}, ${'50% al inicio, 50% a la entrega'}, ${21},
+      ${0}, ${0}, ${0}, ${notas}, ${'Sin iniciar'}, ${0}
+    ) RETURNING id, numero_cliente`;
+  return cli;
+}
+
 export default async function handler(req, res) {
   const auth = checkAuth(req);
   if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
@@ -171,6 +202,17 @@ export default async function handler(req, res) {
           } catch { /* sigue */ }
         }
         return jsonResponse(res, 200, { enviados: ok, total: pend.length });
+      }
+
+      if (accion === 'convertir') {
+        if (!b.id) return jsonResponse(res, 400, { error: 'Falta id' });
+        if (!b.nif || !String(b.nif).trim()) return jsonResponse(res, 400, { error: 'El NIF/CIF es obligatorio para crear el cliente.' });
+        const [p] = await sql`SELECT * FROM prospectos WHERE id = ${b.id}`;
+        if (!p) return jsonResponse(res, 404, { error: 'Prospecto no encontrado' });
+        if (p.cliente_id) return jsonResponse(res, 400, { error: 'Este prospecto ya es cliente.' });
+        const cli = await convertirEnCliente(p, b);
+        await sql`UPDATE prospectos SET estado = 'convertido', cliente_id = ${cli.id}, actualizado_en = NOW() WHERE id = ${b.id}`;
+        return jsonResponse(res, 200, { cliente_id: cli.id, numero_cliente: cli.numero_cliente });
       }
 
       if (accion === 'borrar_varios') {

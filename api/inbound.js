@@ -13,6 +13,19 @@ const soloEmail = (s) => {
   return m ? m[0].toLowerCase() : '';
 };
 
+// El webhook de Resend solo trae METADATOS (no el cuerpo). Hay que pedir el
+// contenido completo a la API de emails recibidos con el email_id.
+async function traerContenido(emailId) {
+  if (!emailId || !process.env.RESEND_API_KEY) return null;
+  try {
+    const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'Method not allowed' });
   const token = process.env.INBOUND_TOKEN;
@@ -22,12 +35,25 @@ export default async function handler(req, res) {
     // Resend envia { type:'email.received', data:{...} }. Ignora otros eventos.
     if (b.type && b.type !== 'email.received' && b.type !== 'inbound.email') return jsonResponse(res, 200, { ok: true, ignorado: b.type });
     const d = b.data || b;
-    const de = String(d.from?.address || d.from || d.sender || d.From || '').trim();
-    const toRaw = Array.isArray(d.to) ? (d.to[0]?.address || d.to[0]) : (d.to || d.To || d.recipient || '');
+    let de = String(d.from?.address || d.from || d.sender || d.From || '').trim();
+    let toRaw = Array.isArray(d.to) ? (d.to[0]?.address || d.to[0]) : (d.to || d.To || d.recipient || '');
+    let asunto = String(d.subject || d.Subject || '');
+    let texto = String(d.text || d['stripped-text'] || d['body-plain'] || '');
+    let html = String(d.html || d['body-html'] || '');
+
+    // Resend solo manda metadatos: si falta el cuerpo, lo pedimos a su API.
+    const emailId = d.email_id || d.id || null;
+    if (!texto && !html && emailId) {
+      const full = await traerContenido(emailId);
+      if (full) {
+        de = String(full.from || de).trim();
+        if (Array.isArray(full.to) && full.to[0]) toRaw = full.to[0];
+        asunto = String(full.subject || asunto);
+        texto = String(full.text || texto || '');
+        html = String(full.html || html || '');
+      }
+    }
     const para = String(toRaw || '').trim();
-    const asunto = String(d.subject || d.Subject || '');
-    const texto = String(d.text || d['stripped-text'] || d['body-plain'] || '');
-    const html = String(d.html || d['body-html'] || '');
 
     let prospecto_id = null, cliente_id = null;
     const correo = soloEmail(de);

@@ -6,6 +6,7 @@
 // Configura en tu proveedor la URL:  https://clientes.conectanex.com/api/inbound?token=XXXX
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
+import { enviarEmail, emailHabilitado } from './_email.js';
 
 const soloEmail = (s) => {
   const m = String(s || '').match(/[^\s<>"]+@[^\s<>"]+/);
@@ -18,7 +19,9 @@ export default async function handler(req, res) {
   if (token && req.query.token !== token) return jsonResponse(res, 401, { error: 'no auth' });
   try {
     const b = req.body || {};
-    const d = b.data || b; // Resend envuelve en { type, data }
+    // Resend envia { type:'email.received', data:{...} }. Ignora otros eventos.
+    if (b.type && b.type !== 'email.received' && b.type !== 'inbound.email') return jsonResponse(res, 200, { ok: true, ignorado: b.type });
+    const d = b.data || b;
     const de = String(d.from?.address || d.from || d.sender || d.From || '').trim();
     const toRaw = Array.isArray(d.to) ? (d.to[0]?.address || d.to[0]) : (d.to || d.To || d.recipient || '');
     const para = String(toRaw || '').trim();
@@ -37,8 +40,26 @@ export default async function handler(req, res) {
       const [c] = await sql`SELECT id FROM clientes WHERE lower(email) = ${correo} LIMIT 1`;
       if (c) cliente_id = c.id;
     }
+    // Si no parece un email real (sin remitente y sin asunto), no guardes basura.
+    if (!de && !asunto && !texto && !html) return jsonResponse(res, 200, { ok: true, vacio: true });
+
     await sql`INSERT INTO mensajes_recibidos (de, para, asunto, texto, html, prospecto_id, cliente_id)
       VALUES (${de}, ${para}, ${asunto}, ${texto}, ${html}, ${prospecto_id}, ${cliente_id})`;
+
+    // Ademas, reenvia una copia a tu Gmail (asi tambien la ves en tu correo).
+    try {
+      const [em] = await sql`SELECT email FROM emisor WHERE id = 1`;
+      const destino = process.env.AGENCY_EMAIL || em?.email;
+      if (destino && emailHabilitado()) {
+        const cuerpo = html || `<pre style="font-family:sans-serif;white-space:pre-wrap">${String(texto).replace(/</g, '&lt;')}</pre>`;
+        await enviarEmail({
+          to: destino,
+          subject: `Respuesta de ${de || 'un prospecto'}: ${asunto || '(sin asunto)'}`,
+          html: `<p style="color:#555">Nueva respuesta recibida de <b>${de}</b>. Tambien la tienes en la Bandeja del panel.</p><hr>${cuerpo}`,
+          replyTo: correo || undefined,
+        });
+      }
+    } catch { /* el reenvio es opcional */ }
     return jsonResponse(res, 200, { ok: true });
   } catch (err) {
     console.error('inbound error:', err);

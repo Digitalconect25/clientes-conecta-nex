@@ -19,12 +19,18 @@ const LOGO_URL = process.env.EMAIL_LOGO_URL || (BASE_URL + '/logo-email.png');
 // Banner del pie del email (imagen optimizada en public/banner-email.png).
 const BANNER_URL = process.env.EMAIL_BANNER_URL || (BASE_URL + '/banner-email.png');
 
+// Imagenes INCRUSTADAS (inline) via content_id: se ven aunque el cliente de
+// correo bloquee imagenes remotas. Resend las trae desde 'path' y las embebe.
+const ADJUNTOS_INLINE = [
+  { path: LOGO_URL, filename: 'conecta-nex-logo.png', content_id: 'logo' },
+  { path: BANNER_URL, filename: 'conecta-nex-banner.png', content_id: 'banner' },
+];
 function cabeceraLogo() {
-  return `<div style="text-align:center;padding:6px 0 18px"><img src="${LOGO_URL}" alt="Conecta Nex" style="max-width:170px;height:auto"></div>`;
+  return `<div style="text-align:center;padding:6px 0 18px"><img src="cid:logo" alt="Conecta Nex" style="max-width:170px;height:auto"></div>`;
 }
 function bannerPie() {
   if (!BANNER_URL) return '';
-  return `<div style="margin-top:18px;text-align:center"><img src="${BANNER_URL}" alt="Conecta Nex" style="max-width:100%;height:auto;border-radius:8px"></div>`;
+  return `<div style="margin-top:18px;text-align:center"><img src="cid:banner" alt="Conecta Nex" style="max-width:100%;height:auto;border-radius:8px"></div>`;
 }
 
 // Botones de accion del email: agendar cita, llamar y responder.
@@ -195,7 +201,7 @@ export default async function handler(req, res) {
         if (!RE_EMAIL.test(String(p.email || ''))) return jsonResponse(res, 400, { error: 'El prospecto no tiene un email valido.' });
         if (!cuerpo || !String(cuerpo).trim()) return jsonResponse(res, 400, { error: 'No hay email redactado. Genera o escribe el cuerpo primero.' });
         const em = await getEmisor();
-        await enviarEmail({ to: p.email, subject: asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(cuerpo, em, p), replyTo: process.env.REPLY_TO_EMAIL });
+        await enviarEmail({ to: p.email, subject: asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(cuerpo, em, p), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
         const [row] = await sql`UPDATE prospectos SET asunto = ${asunto || ''}, email_borrador = ${cuerpo}, estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
       }
@@ -222,7 +228,7 @@ export default async function handler(req, res) {
         for (const p of pend) {
           if (!RE_EMAIL.test(String(p.email || ''))) continue;
           try {
-            await enviarEmail({ to: p.email, subject: p.asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(p.email_borrador, em, p), replyTo: process.env.REPLY_TO_EMAIL });
+            await enviarEmail({ to: p.email, subject: p.asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(p.email_borrador, em, p), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
             await sql`UPDATE prospectos SET estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
             ok++;
           } catch { /* sigue */ }
@@ -239,7 +245,7 @@ export default async function handler(req, res) {
 <p>Este es un email de PRUEBA para que veas como se ve el correo que reciben los prospectos.</p>
 <p>Buscando por internet di con tu negocio y me llamo la atencion. En Conecta Nex, de Digital Conect, ayudamos a fidelizar a tus clientes con boletines de diseno profesional, campanas automatizadas y segmentos creados con inteligencia artificial, para que cada cliente reciba el mensaje adecuado y vuelva mas a menudo.</p>
 <p>Si te apetece, te lo enseno en una llamada corta y sin compromiso. Un saludo, Lazaro.</p>`;
-        await enviarEmail({ to, subject: '[PRUEBA] Asi se ve tu email de captacion - Conecta Nex', html: emailHtml(cuerpo, em, { id: 0 }), replyTo: process.env.REPLY_TO_EMAIL });
+        await enviarEmail({ to, subject: '[PRUEBA] Asi se ve tu email de captacion - Conecta Nex', html: emailHtml(cuerpo, em, { id: 0 }), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
         return jsonResponse(res, 200, { ok: true, to });
       }
 

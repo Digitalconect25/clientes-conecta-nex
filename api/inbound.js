@@ -32,6 +32,11 @@ export default async function handler(req, res) {
   if (token && req.query.token !== token) return jsonResponse(res, 401, { error: 'no auth' });
   try {
     const b = req.body || {};
+    // Diagnostico: registra CADA llamada al webhook (para confirmar que Resend nos llega).
+    try {
+      const ip = String(req.headers['x-forwarded-for'] || 'webhook').split(',')[0];
+      await sql`INSERT INTO peticiones_publicas (ip, ruta) VALUES (${ip}, ${'inbound:' + (b.type || 'sin-tipo')})`;
+    } catch { /* el log es opcional */ }
     // Resend envia { type:'email.received', data:{...} }. Ignora otros eventos.
     if (b.type && b.type !== 'email.received' && b.type !== 'inbound.email') return jsonResponse(res, 200, { ok: true, ignorado: b.type });
     const d = b.data || b;

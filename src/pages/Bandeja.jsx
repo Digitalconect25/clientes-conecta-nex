@@ -6,12 +6,17 @@ export default function Bandeja() {
   const [cargando, setCargando] = useState(true);
   const [abierto, setAbierto] = useState(null);
 
-  useEffect(() => { cargar(); }, []);
-  async function cargar() {
-    setCargando(true);
+  // Carga inicial + auto-refresco cada 15s (silencioso) para que entren los emails solos.
+  useEffect(() => {
+    cargar();
+    const t = setInterval(() => cargar(true), 15000);
+    return () => clearInterval(t);
+  }, []);
+  async function cargar(silencioso) {
+    if (!silencioso) setCargando(true);
     try { const r = await api.mensajesList(); setMensajes(r.mensajes || []); }
-    catch (err) { alert('Error: ' + err.message); }
-    finally { setCargando(false); }
+    catch (err) { if (!silencioso) alert('Error: ' + err.message); }
+    finally { if (!silencioso) setCargando(false); }
   }
   async function abrir(m) {
     setAbierto(abierto === m.id ? null : m.id);
@@ -28,8 +33,11 @@ export default function Bandeja() {
 
   return (
     <div>
-      <h1>Bandeja de entrada {noLeidos ? <span style={{ fontSize: 14, color: '#fff', background: '#16a34a', borderRadius: 999, padding: '2px 10px', verticalAlign: 'middle' }}>{noLeidos} sin leer</span> : null}</h1>
-      <p style={{ color: '#67756c', marginTop: -6 }}>Respuestas que llegan a tus emails de captacion. Si una respuesta es de un prospecto, este pasa a "respondio" automaticamente.</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <h1 style={{ margin: 0 }}>Bandeja de entrada {noLeidos ? <span style={{ fontSize: 14, color: '#fff', background: '#16a34a', borderRadius: 999, padding: '2px 10px', verticalAlign: 'middle' }}>{noLeidos} sin leer</span> : null}</h1>
+        <button onClick={() => cargar(false)}>Actualizar</button>
+      </div>
+      <p style={{ color: '#67756c', marginTop: 4 }}>Respuestas que llegan a tus emails de captacion (se actualiza sola cada 15s). Si una respuesta es de un prospecto, este pasa a "respondio" automaticamente.</p>
 
       {cargando ? <p>Cargando...</p> : !mensajes.length ? (
         <div style={card}>

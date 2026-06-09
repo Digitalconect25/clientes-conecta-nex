@@ -57,9 +57,18 @@ export default function Bandeja() {
           </div>
           {abierto === m.id && (
             <div style={{ marginTop: 12, borderTop: '1px solid #eef2f0', paddingTop: 12 }}>
-              {m.html ? <div style={{ fontSize: 14 }} dangerouslySetInnerHTML={{ __html: m.html }} /> : <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{m.texto || '(sin contenido)'}</div>}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              {m.html ? (
+                <div style={{ fontSize: 14 }} dangerouslySetInnerHTML={{ __html: m.html }} />
+              ) : m.texto ? (
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{m.texto}</div>
+              ) : (
+                <div style={{ fontSize: 13.5, color: '#67756c', background: '#f6f8f7', border: '1px solid #e3e8e5', borderRadius: 8, padding: '10px 12px' }}>
+                  El cuerpo completo de este mensaje no se muestra aqui. Abrelo en Resend con el boton de abajo, o responde directamente al remitente.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                 {m.de && <a className="btn-primary btn-sm" href={'mailto:' + (m.de.match(/[^\s<>]+@[^\s<>]+/) || [''])[0] + '?subject=RE: ' + encodeURIComponent(m.asunto || '')} style={{ textDecoration: 'none', padding: '7px 12px', background: '#16a34a', color: '#fff', borderRadius: 8 }}>Responder</a>}
+                <a href="https://resend.com/emails/receiving" target="_blank" rel="noreferrer" style={{ textDecoration: 'none', padding: '7px 12px', background: '#fff', color: '#1f2a24', border: '1px solid #cfd8d3', borderRadius: 8 }}>Ver email completo en Resend</a>
                 <button onClick={() => borrar(m.id)} style={{ color: '#c0392b', padding: '7px 12px' }}>Borrar</button>
               </div>
             </div>

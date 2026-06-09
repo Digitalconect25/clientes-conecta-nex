@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
 import { api } from '../lib/api.js';
+
+// Sanitiza el HTML de emails entrantes (origen no confiable) antes de mostrarlo.
+function limpiarHtml(html) {
+  return DOMPurify.sanitize(String(html || ''), {
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'meta', 'base'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'srcset', 'formaction'],
+    ALLOW_DATA_ATTR: false,
+  });
+}
 
 export default function Bandeja() {
   const [mensajes, setMensajes] = useState([]);
@@ -58,7 +68,7 @@ export default function Bandeja() {
           {abierto === m.id && (
             <div style={{ marginTop: 12, borderTop: '1px solid #eef2f0', paddingTop: 12 }}>
               {m.html ? (
-                <div style={{ fontSize: 14 }} dangerouslySetInnerHTML={{ __html: m.html }} />
+                <div style={{ fontSize: 14 }} dangerouslySetInnerHTML={{ __html: limpiarHtml(m.html) }} />
               ) : m.texto ? (
                 <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{m.texto}</div>
               ) : (

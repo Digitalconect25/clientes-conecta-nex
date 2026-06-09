@@ -15,6 +15,9 @@ const soloEmail = (s) => {
   return m ? m[0].toLowerCase() : '';
 };
 
+// Escapa texto no confiable antes de meterlo en el HTML del email reenviado.
+const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'Method not allowed' });
   const token = process.env.INBOUND_TOKEN;
@@ -72,11 +75,11 @@ export default async function handler(req, res) {
       const [em] = await sql`SELECT email FROM emisor WHERE id = 1`;
       const destino = process.env.AGENCY_EMAIL || em?.email;
       if (destino && emailHabilitado()) {
-        const cuerpo = html || (texto ? `<pre style="font-family:sans-serif;white-space:pre-wrap">${String(texto).replace(/</g, '&lt;')}</pre>` : '<p style="color:#777">Abre la Bandeja del panel para ver el contenido completo.</p>');
+        const cuerpo = html || (texto ? `<pre style="font-family:sans-serif;white-space:pre-wrap">${esc(texto)}</pre>` : '<p style="color:#777">Abre la Bandeja del panel para ver el contenido completo.</p>');
         await enviarEmail({
           to: destino,
           subject: `Respuesta de ${de || 'un prospecto'}: ${asunto || '(sin asunto)'}`,
-          html: `<p style="color:#555">Nueva respuesta de <b>${de}</b>. Tambien la tienes en la Bandeja del panel.</p><hr>${cuerpo}`,
+          html: `<p style="color:#555">Nueva respuesta de <b>${esc(de)}</b> (asunto: ${esc(asunto) || '(sin asunto)'}). Tambien la tienes en la Bandeja del panel.</p><hr>${cuerpo}`,
           replyTo: correo || undefined,
         });
       }

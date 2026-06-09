@@ -29,8 +29,9 @@ async function traerContenido(emailId) {
         if (i < 2) { await new Promise((s) => setTimeout(s, 1500)); continue; } // contenido aun no listo
         return { full: j, diag: 'vacio-200' };
       }
-      if ((r.status === 404 || r.status === 425) && i < 2) { await new Promise((s) => setTimeout(s, 1500)); continue; }
-      return { full: null, diag: 'http-' + r.status };
+      if ((r.status === 404 || r.status === 425) && i < 2) { await new Promise((s) => setTimeout(s, 1800)); continue; }
+      const errBody = await r.text().catch(() => '');
+      return { full: null, diag: 'http-' + r.status + ': ' + errBody.replace(/\s+/g, ' ').slice(0, 140) };
     } catch (e) { return { full: null, diag: 'err-' + String(e.message || '').slice(0, 30) }; }
   }
   return { full: null, diag: 'sin-contenido-tras-reintentos' };

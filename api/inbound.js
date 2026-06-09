@@ -16,14 +16,32 @@ const soloEmail = (s) => {
 // El webhook de Resend solo trae METADATOS (no el cuerpo). Hay que pedir el
 // contenido completo a la API de emails recibidos con el email_id.
 async function traerContenido(emailId) {
-  if (!emailId || !process.env.RESEND_API_KEY) return null;
-  try {
-    const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-    });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
+  if (!emailId) return { full: null, diag: 'sin-email-id' };
+  if (!process.env.RESEND_API_KEY) return { full: null, diag: 'sin-resend-key' };
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && (j.text || j.html)) return { full: j, diag: 'ok' };
+        if (i < 2) { await new Promise((s) => setTimeout(s, 1500)); continue; } // contenido aun no listo
+        return { full: j, diag: 'vacio-200' };
+      }
+      if ((r.status === 404 || r.status === 425) && i < 2) { await new Promise((s) => setTimeout(s, 1500)); continue; }
+      return { full: null, diag: 'http-' + r.status };
+    } catch (e) { return { full: null, diag: 'err-' + String(e.message || '').slice(0, 30) }; }
+  }
+  return { full: null, diag: 'sin-contenido-tras-reintentos' };
+}
+
+// Decodifica un valor que venga como data URI (data:text/html;base64,...).
+function decodeMaybe(s) {
+  const v = String(s || '');
+  const m = v.match(/^data:[^;,]*?(;base64)?,([\s\S]*)$/);
+  if (!m) return v;
+  try { return m[1] ? Buffer.from(m[2], 'base64').toString('utf8') : decodeURIComponent(m[2]); } catch { return v; }
 }
 
 export default async function handler(req, res) {
@@ -48,16 +66,21 @@ export default async function handler(req, res) {
 
     // Resend solo manda metadatos: si falta el cuerpo, lo pedimos a su API.
     const emailId = d.email_id || d.id || null;
+    let diag = '';
     if (!texto && !html && emailId) {
-      const full = await traerContenido(emailId);
+      const r2 = await traerContenido(emailId);
+      diag = r2.diag;
+      const full = r2.full;
       if (full) {
         de = String(full.from || de).trim();
         if (Array.isArray(full.to) && full.to[0]) toRaw = full.to[0];
         asunto = String(full.subject || asunto);
-        texto = String(full.text || texto || '');
-        html = String(full.html || html || '');
+        texto = decodeMaybe(full.text || texto || '');
+        html = decodeMaybe(full.html || html || '');
       }
     }
+    // Si aun no hay cuerpo, deja un diagnostico visible (para depurar).
+    if (!texto && !html) texto = `[sin cuerpo - diag: ${diag || 'n/a'} | email_id: ${emailId || 'n/a'}]`;
     const para = String(toRaw || '').trim();
 
     let prospecto_id = null, cliente_id = null;

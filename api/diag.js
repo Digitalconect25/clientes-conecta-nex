@@ -17,13 +17,16 @@ export default async function handler(req, res) {
     out.email_id = id;
     if (!id || !key) return jsonResponse(res, 200, out);
 
-    for (const fmt of ['data_uri', 'cid']) {
-      const r = await fetch(`https://api.resend.com/emails/receiving/${id}?html_format=${fmt}`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      const txt = await r.text();
-      out[`fmt_${fmt}`] = { status: r.status, body: txt.slice(0, 600) };
-    }
+    const probe = async (label, url) => {
+      try {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+        const txt = await r.text();
+        out[label] = { status: r.status, body: txt.slice(0, 500) };
+      } catch (e) { out[label] = { error: String(e) }; }
+    };
+    await probe('get_uno', `https://api.resend.com/emails/receiving/${id}`);
+    await probe('lista_recibidos', `https://api.resend.com/emails/receiving`);
+    await probe('dominios', `https://api.resend.com/domains`);
   } catch (e) {
     out.error = String(e);
   }

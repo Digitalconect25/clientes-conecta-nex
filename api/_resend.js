@@ -46,13 +46,21 @@ async function traerDesdeRaw(downloadUrl) {
   } catch { return null; }
 }
 
+// Clave para LEER emails recibidos. Puede ser distinta a la de envio: si la
+// recepcion esta en otra cuenta de Resend, pon RESEND_RECEIVING_API_KEY con la
+// clave de ESA cuenta y el envio seguira usando RESEND_API_KEY sin cambios.
+function claveRecepcion() {
+  return process.env.RESEND_RECEIVING_API_KEY || process.env.RESEND_API_KEY;
+}
+
 // Pide a Resend el email recibido por su id. Devuelve { from, to, subject, text, html } o null.
 export async function traerContenidoResend(emailId, reintentos = 1) {
-  if (!emailId || !process.env.RESEND_API_KEY) return null;
+  const key = claveRecepcion();
+  if (!emailId || !key) return null;
   for (let i = 0; i <= reintentos; i++) {
     try {
       const r = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
-        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+        headers: { Authorization: `Bearer ${key}` },
       });
       if (r.ok) {
         const j = await r.json();

@@ -41,7 +41,7 @@ export default function Bandeja() {
 
       {cargando ? <p>Cargando...</p> : !mensajes.length ? (
         <div style={card}>
-          <p style={{ margin: 0, color: '#67756c' }}>Aun no hay mensajes. Para recibir respuestas aqui, hay que conectar el correo entrante (ver instrucciones que te paso). Mientras, las respuestas siguen llegando a tu buzon normal.</p>
+          <p style={{ margin: 0, color: '#67756c' }}>Aun no hay mensajes. Cuando un cliente responda a tus emails (o escriba a tu dominio), su mensaje aparecera aqui automaticamente.</p>
         </div>
       ) : mensajes.map((m) => (
         <div key={m.id} style={{ ...card, marginBottom: 10, borderLeft: m.leido ? '1px solid #e3e8e5' : '3px solid #16a34a' }}>

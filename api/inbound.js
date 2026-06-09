@@ -8,7 +8,7 @@
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
-import { traerContenidoResend } from './_resend.js';
+import { traerContenidoResend, extraerCuerpoDeWebhook } from './_resend.js';
 
 const soloEmail = (s) => {
   const m = String(s || '').match(/[^\s<>"]+@[^\s<>"]+/);
@@ -35,8 +35,13 @@ export default async function handler(req, res) {
     let html = String(d.html || '');
     const emailId = d.email_id || d.id || null;
 
-    // Intenta traer el cuerpo ya (a veces esta listo enseguida). Si no, se
-    // completara al abrir la Bandeja gracias al email_id guardado.
+    // 1) Si el propio webhook trae el cuerpo (segun configuracion), lo usamos.
+    if (!texto && !html) {
+      const wb = extraerCuerpoDeWebhook(b);
+      if (wb) { texto = wb.text || ''; html = wb.html || ''; }
+    }
+    // 2) Si no, lo pedimos a la API (y, dentro, se intenta el email crudo).
+    //    Si la cuenta del webhook coincide con la de la clave, entra aqui.
     if (!texto && !html && emailId) {
       const full = await traerContenidoResend(emailId, 1);
       if (full) {

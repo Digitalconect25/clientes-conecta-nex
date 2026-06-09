@@ -25,6 +25,8 @@ export default async function handler(req, res) {
       const ip = String(req.headers['x-forwarded-for'] || 'webhook').split(',')[0];
       await sql`INSERT INTO peticiones_publicas (ip, ruta) VALUES (${ip}, ${'inbound:' + (b.type || 'sin-tipo')})`;
     } catch { /* log opcional */ }
+    // DEBUG temporal: guarda el payload crudo para ver que campos manda Resend.
+    try { await sql`INSERT INTO inbound_debug (payload) VALUES (${JSON.stringify(b)})`; } catch { /* debug opcional */ }
     if (b.type && b.type !== 'email.received' && b.type !== 'inbound.email') return jsonResponse(res, 200, { ok: true, ignorado: b.type });
 
     const d = b.data || b;

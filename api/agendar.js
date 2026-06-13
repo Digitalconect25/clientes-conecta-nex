@@ -1,10 +1,13 @@
 // Endpoint PUBLICO de reserva de citas (sin login de agencia).
-// Lo usa el prospecto/cliente desde el boton "Agendar cita" del email.
+// Lo usa el prospecto/cliente desde el boton "Agendar cita" del email,
+// el formulario de la web y el Agente Nex.
 //   GET  /api/agendar?fecha=YYYY-MM-DD  -> { slots: [...], motivo? }
 //   POST /api/agendar  { p, fecha, hora, nombre, email, telefono, nota } -> { ok }
+import crypto from 'node:crypto';
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
+import { enviarEmail, emailHabilitado } from './_email.js';
 
 // Horario de atencion (EDITA AQUI). diasLaborables: 1=lunes ... 5=viernes
 const DIAS_LABORABLES = [1, 2, 3, 4, 5];
@@ -14,6 +17,46 @@ const HORAS = [
 ];
 const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const DOWS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+// Firma del enlace de confirmacion (sin guardar token en BD).
+export function firmaCita(id) {
+  const secret = process.env.ACCESS_ENCRYPTION_KEY || process.env.APP_PASSWORD || 'cn-fallback-secret';
+  return crypto.createHmac('sha256', secret).update('cita:' + id).digest('hex').slice(0, 24);
+}
+
+function fechaLarga(fecha) {
+  try {
+    const d = new Date(fecha + 'T12:00:00');
+    return `${DOWS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`;
+  } catch { return fecha; }
+}
+
+function emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }) {
+  const cuando = `${fechaLarga(fecha)} a las ${hora} h`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
+    <div style="background:#5b3fa0;color:#fff;padding:22px 24px;border-radius:12px 12px 0 0">
+      <h2 style="margin:0">Conecta NEX</h2>
+      <p style="margin:6px 0 0;opacity:.9">Hemos recibido tu solicitud de cita</p>
+    </div>
+    <div style="border:1px solid #eee;border-top:0;padding:24px;border-radius:0 0 12px 12px">
+      <p>Hola ${nombre || ''},</p>
+      <p>Esta es tu cita propuesta. <b>Confírmala</b> pulsando el botón para que quede reservada en firme:</p>
+      <table style="width:100%;border-collapse:collapse;margin:14px 0">
+        <tr><td style="padding:7px 0;color:#888">Fecha</td><td style="padding:7px 0;font-weight:bold">${cuando}</td></tr>
+        ${nota ? `<tr><td style="padding:7px 0;color:#888">Nota</td><td style="padding:7px 0">${nota}</td></tr>` : ''}
+      </table>
+      <p style="text-align:center;margin:26px 0">
+        <a href="${urlConfirmar}" style="background:#16a34a;color:#fff;text-decoration:none;font-weight:700;padding:14px 26px;border-radius:10px;display:inline-block">Aceptar y confirmar la cita</a>
+      </p>
+      <p style="font-size:13px;color:#888">Si no reconoces esta solicitud, ignora este correo y no se reservará nada.</p>
+      <p style="margin-top:22px">Un saludo,<br><b>Equipo Conecta NEX</b><br>
+      <span style="color:#888;font-size:13px">Calle Alberola 24, Alicante · conectanex.es</span></p>
+    </div>
+  </div>`;
+}
 
 async function slotsLibres(fecha) {
   const d = new Date(fecha + 'T12:00:00');
@@ -47,11 +90,17 @@ export default async function handler(req, res) {
       const { slots } = await slotsLibres(fecha);
       if (!slots.includes(hora)) return jsonResponse(res, 409, { error: 'Esa hora ya no esta disponible, elige otra.' });
       const pid = parseInt(b.p, 10) || null;
+      const nombre = String(b.nombre).trim();
+      const email = String(b.email || '').trim();
+      const nota = String(b.nota || '').trim();
+      let nuevaId = null;
       try {
-        await sql`
+        const [row] = await sql`
           INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen)
-          VALUES (${pid}, ${String(b.nombre).trim()}, ${String(b.email || '').trim()}, ${String(b.telefono || '').trim()},
-                  ${fecha}, ${hora}, ${String(b.nota || '').trim()}, ${'pendiente'}, ${'frio'})`;
+          VALUES (${pid}, ${nombre}, ${email}, ${String(b.telefono || '').trim()},
+                  ${fecha}, ${hora}, ${nota}, ${'pendiente'}, ${'frio'})
+          RETURNING id`;
+        nuevaId = row?.id;
       } catch (e) {
         // Indice unico uq_citas_franja: dos reservas simultaneas a la misma hora.
         if (String(e.message || '').includes('uq_citas_franja') || e.code === '23505')
@@ -61,6 +110,17 @@ export default async function handler(req, res) {
       // Si viene de un prospecto, marcarlo como que respondio (mostro interes).
       if (pid) {
         try { await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${pid} AND estado IN ('nuevo','email_enviado')`; } catch { /* opcional */ }
+      }
+      // Email de confirmacion con boton "Aceptar y confirmar" (doble opt-in).
+      if (nuevaId && email && emailHabilitado()) {
+        try {
+          const urlConfirmar = `${BASE}/api/confirmar-cita?c=${nuevaId}&s=${firmaCita(nuevaId)}`;
+          await enviarEmail({
+            to: email,
+            subject: `Confirma tu cita con Conecta NEX — ${fecha} ${hora} h`,
+            html: emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }),
+          });
+        } catch (e) { console.error('Email cita no enviado:', e.message); }
       }
       return jsonResponse(res, 200, { ok: true });
     }

@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 //  1) Tus datos  2) Tu negocio + recomendacion IA  3) Servicios  4) Resumen/enviar
 // ?origen=anuncio marca de donde viene. Sirve para anuncios y para enviar por email.
 export default function Solicitud() {
-  const origen = new URLSearchParams(window.location.search).get('origen') || 'formulario';
+  const _params = new URLSearchParams(window.location.search);
+  const origen = _params.get('origen') || 'formulario';
+  const pid = _params.get('p') || ''; // id del prospecto (lead en frío) si viene del email
   const [paso, setPaso] = useState(1);
   const [categorias, setCategorias] = useState([]);
   const [sel, setSel] = useState(() => new Set());
@@ -57,7 +59,7 @@ export default function Solicitud() {
     if (!datos.nombre.trim()) { setError('Falta tu nombre.'); return; }
     setEnviando(true);
     try {
-      const r = await fetch('/api/solicitud', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...datos, servicios: [...sel], origen, website2: hp }) });
+      const r = await fetch('/api/solicitud', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...datos, servicios: [...sel], origen, p: pid, website2: hp }) });
       const j = await r.json();
       if (r.ok && j.ok) setHecho(true);
       else setError(j.error || 'No se pudo enviar.');

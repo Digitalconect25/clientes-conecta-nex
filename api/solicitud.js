@@ -34,6 +34,19 @@ Catalogo:\n${catalogo}`;
   }
 }
 
+// Evaluación breve del negocio con IA (diagnóstico + servicios que encajan + prioridad).
+async function evaluarNegocio({ empresa, sector, necesidad, servicios }) {
+  if (!iaHabilitada()) return '';
+  const rows = await sql`SELECT nombre, categoria FROM servicios WHERE activo = TRUE ORDER BY categoria, nombre`;
+  const catalogo = rows.map((s) => `- ${s.nombre} [${s.categoria}]`).join('\n');
+  const sys = `Eres analista de Conecta Nex. A partir de lo que un negocio ha enviado por el formulario, escribe una evaluacion BREVE para que el equipo prepare el contacto. Espanol de Espana, maximo 90 palabras, sin emojis, sin guion largo, sin prometer resultados. Tres lineas: 1) Diagnostico de su situacion/necesidad. 2) Que servicios NUESTROS encajan (solo del catalogo de abajo, no inventes). 3) Prioridad de contacto: Alta, Media o Baja, con un motivo corto.\nCatalogo:\n${catalogo}`;
+  const user = `Negocio: ${empresa || '(sin nombre)'}. Sector: ${sector || '(no indicado)'}. Necesidad: ${necesidad || '(no indicada)'}. Servicios marcados: ${servicios || '(ninguno)'}.`;
+  try {
+    const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.4, max_tokens: 300 });
+    return (texto || '').trim();
+  } catch { return ''; }
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
@@ -73,27 +86,55 @@ export default async function handler(req, res) {
         serviciosSel = await sql`SELECT id, nombre, categoria FROM servicios WHERE id = ANY(${ids})`;
       }
       const listaTxt = serviciosSel.map((s) => s.nombre).join(', ');
+
+      // Evaluacion del negocio con IA (diagnostico + servicios que encajan + prioridad).
+      const evaluacion = await evaluarNegocio({ empresa: b.empresa, sector: b.sector, necesidad: b.mensaje, servicios: listaTxt });
+
       const obs = `Solicitud desde formulario${b.origen === 'anuncio' ? ' (anuncio)' : ''}.` +
-        (listaTxt ? ` Servicios: ${listaTxt}.` : '') + (b.mensaje ? ` Mensaje: ${String(b.mensaje).trim()}` : '');
+        (listaTxt ? ` Servicios: ${listaTxt}.` : '') + (b.mensaje ? ` Mensaje: ${String(b.mensaje).trim()}` : '') +
+        (evaluacion ? `\n\n[Evaluacion IA] ${evaluacion}` : '');
 
-      const [row] = await sql`
-        INSERT INTO prospectos (empresa, nombre, email, telefono, sector, website, situacion, observaciones, estado, origen, servicios_json)
-        VALUES (${String(b.empresa || '').trim()}, ${nombre}, ${email}, ${telefono}, ${String(b.sector || '').trim()},
-                ${''}, ${'mejorable'}, ${obs}, ${'respondido'}, ${b.origen === 'anuncio' ? 'anuncio' : 'formulario'},
-                ${JSON.stringify(serviciosSel)}::jsonb)
-        RETURNING id`;
+      // Si viene de un lead en frio (?p=ID), actualizamos ESE prospecto; si no, creamos uno nuevo.
+      const pid = parseInt(b.p, 10) || null;
+      let row = null;
+      if (pid) {
+        const [prev] = await sql`SELECT id, observaciones FROM prospectos WHERE id = ${pid}`;
+        if (prev) {
+          const obsPrev = prev.observaciones ? prev.observaciones + '\n\n' : '';
+          [row] = await sql`
+            UPDATE prospectos SET
+              empresa = COALESCE(NULLIF(${String(b.empresa || '').trim()}, ''), empresa),
+              nombre = COALESCE(NULLIF(${nombre}, ''), nombre),
+              email = COALESCE(NULLIF(${email}, ''), email),
+              telefono = COALESCE(NULLIF(${telefono}, ''), telefono),
+              sector = COALESCE(NULLIF(${String(b.sector || '').trim()}, ''), sector),
+              observaciones = ${obsPrev + obs},
+              servicios_json = ${JSON.stringify(serviciosSel)}::jsonb,
+              estado = 'respondido', actualizado_en = NOW()
+            WHERE id = ${pid} RETURNING id`;
+        }
+      }
+      if (!row) {
+        [row] = await sql`
+          INSERT INTO prospectos (empresa, nombre, email, telefono, sector, website, situacion, observaciones, estado, origen, servicios_json)
+          VALUES (${String(b.empresa || '').trim()}, ${nombre}, ${email}, ${telefono}, ${String(b.sector || '').trim()},
+                  ${''}, ${'mejorable'}, ${obs}, ${'respondido'}, ${b.origen === 'anuncio' ? 'anuncio' : 'formulario'},
+                  ${JSON.stringify(serviciosSel)}::jsonb)
+          RETURNING id`;
+      }
 
-      // Aviso a la agencia (si el email esta configurado)
+      // Aviso a la agencia con el diagnostico de la IA
       if (emailHabilitado() && process.env.AGENCY_EMAIL) {
         try {
           await enviarEmail({
             to: process.env.AGENCY_EMAIL,
-            subject: `Nueva solicitud: ${b.empresa || nombre}`,
-            html: `<div style="font-family:sans-serif"><h2>Nueva solicitud desde el formulario</h2>
+            subject: `Nuevo lead evaluado: ${b.empresa || nombre}`,
+            html: `<div style="font-family:sans-serif"><h2>Nuevo lead desde el formulario</h2>
               <p><b>${nombre}</b>${b.empresa ? ' - ' + b.empresa : ''}<br>${email || ''} ${telefono || ''}</p>
               <p>Sector: ${b.sector || '-'}</p>
               <p>Servicios pedidos: ${listaTxt || '-'}</p>
-              <p>Mensaje: ${b.mensaje || '-'}</p></div>`,
+              <p>Mensaje: ${b.mensaje || '-'}</p>
+              ${evaluacion ? `<p style="background:#f0fdf4;border:1px solid #cfe9d8;border-radius:8px;padding:10px"><b>Evaluacion IA:</b><br>${String(evaluacion).replace(/\n/g, '<br>')}</p>` : ''}</div>`,
           });
         } catch { /* no bloquea */ }
       }

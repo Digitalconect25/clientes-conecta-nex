@@ -35,10 +35,13 @@ function bannerPie() {
 
 // Botones de accion del email: agendar cita, llamar y responder.
 function botonesCTA(em, p) {
-  const link = `${BASE_URL}/agendar?p=${p && p.id ? p.id : ''}`;
+  const pid = p && p.id ? p.id : '';
+  const link = `${BASE_URL}/agendar?p=${pid}`;
+  const form = `${BASE_URL}/solicitud?p=${pid}`;
   const tel = String(em.telefono || '').replace(/\s+/g, '');
   const btn = (href, txt, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;margin:4px 8px 4px 0">${txt}</a>`;
   return `<div style="margin:20px 0 6px">
+    ${btn(form, 'Cuéntanos tu negocio (2 min)', '#5b3fa0')}
     ${btn(link, 'Agendar una llamada', '#16a34a')}
     ${tel ? btn('tel:' + tel, 'Llamar ahora', '#0f7a39') : ''}
   </div>

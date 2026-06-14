@@ -41,8 +41,11 @@ export default function Agenda() {
   const [diaSel, setDiaSel] = useState(hoyStr);
   const [nueva, setNueva] = useState(null);
   const [guardando, setGuardando] = useState(false);
-  const [detalle, setDetalle] = useState(null); // cita abierta (ficha)
+  const [detalle, setDetalle] = useState(null);
   const [notaEdit, setNotaEdit] = useState('');
+  const [notaInt, setNotaInt] = useState('');
+  const [repro, setRepro] = useState(null);  // { fecha, hora }
+  const [mail, setMail] = useState(null);     // { asunto, mensaje, enviando }
 
   useEffect(() => { cargar(); }, []);
   async function cargar() {
@@ -53,7 +56,7 @@ export default function Agenda() {
     } catch (err) { alert('Error: ' + err.message); }
     finally { setCargando(false); }
   }
-  function abrirFicha(c) { setDetalle(c); setNotaEdit(c.nota || ''); }
+  function abrirFicha(c) { setDetalle(c); setNotaEdit(c.nota || ''); setNotaInt(c.nota_interna || ''); setRepro(null); setMail(null); }
   async function cambiarEstado(c, estado) {
     setCitas((xs) => xs.map((x) => x.id === c.id ? { ...x, estado } : x));
     setDetalle((d) => d && d.id === c.id ? { ...d, estado } : d);
@@ -64,8 +67,35 @@ export default function Agenda() {
     if ((c.nota || '') === (nota || '')) return;
     setCitas((xs) => xs.map((x) => x.id === c.id ? { ...x, nota } : x));
     setDetalle((d) => d && d.id === c.id ? { ...d, nota } : d);
-    try { await api.citaUpdate({ id: c.id, estado: c.estado, nota }); }
+    try { await api.citaUpdate({ id: c.id, nota }); }
     catch (err) { alert('Error: ' + err.message); }
+  }
+  async function guardarNotaInterna() {
+    try {
+      await api.citaUpdate({ id: detalle.id, nota_interna: notaInt });
+      setCitas((xs) => xs.map((x) => x.id === detalle.id ? { ...x, nota_interna: notaInt } : x));
+      setDetalle((d) => ({ ...d, nota_interna: notaInt }));
+      alert('Nota interna guardada ✓');
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+  async function reprogramar() {
+    if (!repro?.fecha || !repro?.hora) { alert('Elige el nuevo día y hora.'); return; }
+    try {
+      await api.citaUpdate({ id: detalle.id, fecha: repro.fecha, hora: repro.hora });
+      setDetalle((d) => ({ ...d, fecha: repro.fecha, hora: repro.hora }));
+      setRepro(null); await cargar();
+      alert('Cita reprogramada ✓');
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+  async function enviarMail() {
+    if (!detalle.email) { alert('Esta cita no tiene email.'); return; }
+    if (!mail?.asunto?.trim() || !mail?.mensaje?.trim()) { alert('Pon asunto y mensaje.'); return; }
+    setMail((m) => ({ ...m, enviando: true }));
+    try {
+      const html = mail.mensaje.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+      await api.emailEnviar({ destinatario: detalle.email, asunto: mail.asunto.trim(), cuerpo_html: html });
+      setMail(null); alert('Email enviado ✓');
+    } catch (err) { alert('Error: ' + err.message); setMail((m) => ({ ...m, enviando: false })); }
   }
   async function borrar(id) {
     if (!confirm('¿Borrar esta cita?')) return;
@@ -236,10 +266,11 @@ export default function Agenda() {
         const e = EST[detalle.estado] || EST.pendiente;
         const row = { display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid #f1f5f0', fontSize: 14 };
         const lab = { minWidth: 92, color: '#8a8276', fontSize: 13 };
+        const inp = { width: '100%', border: '1px solid #e3e8e5', borderRadius: 10, padding: 10, fontSize: 14 };
         return (
           <div onClick={() => setDetalle(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
-            <div onClick={(ev) => ev.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '90vh', overflowY: 'auto' }}>
-              <div style={{ background: e.color, color: '#fff', padding: '18px 22px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div onClick={(ev) => ev.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto' }}>
+              <div style={{ background: e.color, color: '#fff', padding: '18px 22px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0 }}>
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 800 }}>{detalle.nombre || detalle.prospecto_empresa || 'Cita'}</div>
                   <div style={{ opacity: .9, fontSize: 13, marginTop: 2 }}>{e.label}</div>
@@ -256,10 +287,15 @@ export default function Agenda() {
                 {detalle.creado_en && <div style={row}><span style={lab}>Creada</span><span>{soloFecha(detalle.creado_en).split('-').reverse().join('/')}</span></div>}
 
                 <div style={{ marginTop: 14 }}>
-                  <div style={{ ...lab, marginBottom: 6 }}>Qué quiere el cliente / notas para preparar la reunión</div>
-                  <textarea value={notaEdit} onChange={(ev) => setNotaEdit(ev.target.value)} rows={4}
-                    style={{ width: '100%', border: '1px solid #e3e8e5', borderRadius: 10, padding: 10, fontSize: 14, resize: 'vertical' }} />
-                  <button onClick={() => guardarNota(detalle, notaEdit)} style={{ ...btn, marginTop: 8, fontSize: 13, padding: '6px 12px' }}>Guardar nota</button>
+                  <div style={{ ...lab, marginBottom: 6 }}>Qué quiere el cliente (para preparar la reunión)</div>
+                  <textarea value={notaEdit} onChange={(ev) => setNotaEdit(ev.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} />
+                  <button onClick={() => guardarNota(detalle, notaEdit)} style={{ ...btn, marginTop: 8, fontSize: 13, padding: '6px 12px' }}>Guardar</button>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ ...lab, marginBottom: 6 }}>Notas internas del equipo (privadas)</div>
+                  <textarea value={notaInt} onChange={(ev) => setNotaInt(ev.target.value)} rows={3} placeholder="Solo para el equipo: contexto, preparación, seguimiento…" style={{ ...inp, resize: 'vertical', background: '#fbfaf7' }} />
+                  <button onClick={guardarNotaInterna} style={{ ...btn, marginTop: 8, fontSize: 13, padding: '6px 12px' }}>Guardar nota interna</button>
                 </div>
 
                 <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -267,7 +303,50 @@ export default function Agenda() {
                   <select value={detalle.estado} onChange={(ev) => cambiarEstado(detalle, ev.target.value)} style={{ color: e.color, fontWeight: 700, border: `1px solid ${e.color}55`, borderRadius: 8, padding: '6px 8px' }}>
                     {ORDEN_EST.map((s) => <option key={s} value={s}>{EST[s].label}</option>)}
                   </select>
-                  <button onClick={() => borrar(detalle.id)} style={{ marginLeft: 'auto', color: '#c0392b', border: '1px solid #f3c0b8', background: '#fff', borderRadius: 10, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>Borrar cita</button>
+                </div>
+
+                {/* Reprogramar */}
+                <div style={{ marginTop: 16, borderTop: '1px solid #f1f5f0', paddingTop: 14 }}>
+                  {!repro ? (
+                    <button onClick={() => setRepro({ fecha: detalle.fecha, hora: detalle.hora })} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>🗓️ Reprogramar</button>
+                  ) : (
+                    <div>
+                      <div style={{ ...lab, marginBottom: 6 }}>Nuevo día y hora</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <input type="date" min={hoyStr} value={repro.fecha} onChange={(ev) => setRepro({ ...repro, fecha: ev.target.value })} style={{ ...inp, width: 'auto' }} />
+                        <select value={repro.hora} onChange={(ev) => setRepro({ ...repro, hora: ev.target.value })} style={{ ...inp, width: 'auto' }}>
+                          {HORAS.map((h) => <option key={h} value={h}>{h}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button onClick={reprogramar} style={{ ...btn, background: '#16a34a', color: '#fff', border: 'none', fontSize: 13, padding: '7px 12px' }}>Mover cita</button>
+                        <button onClick={() => setRepro(null)} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Enviar email */}
+                {detalle.email && (
+                  <div style={{ marginTop: 14, borderTop: '1px solid #f1f5f0', paddingTop: 14 }}>
+                    {!mail ? (
+                      <button onClick={() => setMail({ asunto: `Tu cita con Conecta NEX — ${detalle.fecha.split('-').reverse().join('/')} ${detalle.hora} h`, mensaje: `Hola ${detalle.nombre || ''},\n\n`, enviando: false })} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>✉️ Enviar email al cliente</button>
+                    ) : (
+                      <div>
+                        <div style={{ ...lab, marginBottom: 6 }}>Email a {detalle.email}</div>
+                        <input value={mail.asunto} onChange={(ev) => setMail({ ...mail, asunto: ev.target.value })} placeholder="Asunto" style={{ ...inp, marginBottom: 8 }} />
+                        <textarea value={mail.mensaje} onChange={(ev) => setMail({ ...mail, mensaje: ev.target.value })} rows={5} placeholder="Mensaje" style={{ ...inp, resize: 'vertical' }} />
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button onClick={enviarMail} disabled={mail.enviando} style={{ ...btn, background: '#5b3fa0', color: '#fff', border: 'none', fontSize: 13, padding: '7px 12px' }}>{mail.enviando ? 'Enviando…' : 'Enviar email'}</button>
+                          <button onClick={() => setMail(null)} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 18, textAlign: 'right' }}>
+                  <button onClick={() => borrar(detalle.id)} style={{ color: '#c0392b', border: '1px solid #f3c0b8', background: '#fff', borderRadius: 10, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>Borrar cita</button>
                 </div>
               </div>
             </div>

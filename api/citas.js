@@ -9,8 +9,13 @@ export default async function handler(req, res) {
   if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
   try {
     if (req.method === 'GET') {
+      // fecha SIEMPRE como texto YYYY-MM-DD (Neon devuelve DATE como timestamp ISO,
+      // lo que rompia el calendario y mostraba "undefined NaN de undefined de NaN").
       const rows = await sql`
-        SELECT c.*, p.empresa AS prospecto_empresa
+        SELECT c.id, c.prospecto_id, c.cliente_id, c.nombre, c.email, c.telefono,
+               to_char(c.fecha, 'YYYY-MM-DD') AS fecha, c.hora, c.nota, c.estado, c.origen,
+               to_char(c.creado_en, 'YYYY-MM-DD"T"HH24:MI:SS') AS creado_en,
+               p.empresa AS prospecto_empresa
         FROM citas c LEFT JOIN prospectos p ON p.id = c.prospecto_id
         ORDER BY c.fecha ASC, c.hora ASC`;
       return jsonResponse(res, 200, rows);

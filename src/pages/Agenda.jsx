@@ -82,10 +82,46 @@ export default function Agenda() {
     if (!repro?.fecha || !repro?.hora) { alert('Elige el nuevo día y hora.'); return; }
     try {
       await api.citaUpdate({ id: detalle.id, fecha: repro.fecha, hora: repro.hora });
+      // Avisar al cliente del cambio por email (si tiene email y no se desmarcó)
+      const avisado = repro.avisar !== false && !!detalle.email;
+      if (avisado) {
+        const cuando = fechaLarga(repro.fecha) + ' a las ' + repro.hora + ' h';
+        const html = `<p>Hola ${detalle.nombre || ''},</p>`
+          + `<p>Te escribimos para avisarte de que tu cita con Conecta NEX se ha <b>cambiado de fecha</b>.</p>`
+          + `<p><b>Nueva cita:</b> ${cuando}${detalle.modalidad ? ' (' + detalle.modalidad + ')' : ''}.</p>`
+          + `<p>Si esta nueva fecha no te viene bien, responde a este correo y buscamos otro hueco. ¡Gracias!</p>`;
+        try { await api.emailEnviar({ destinatario: detalle.email, asunto: 'Tu cita con Conecta NEX se ha cambiado de fecha', cuerpo_html: html }); } catch { /* no bloquea el cambio */ }
+      }
       setDetalle((d) => ({ ...d, fecha: repro.fecha, hora: repro.hora }));
       setRepro(null); await cargar();
-      alert('Cita reprogramada ✓');
+      alert('Cita reprogramada ✓' + (avisado ? ' — cliente avisado por email' : ''));
     } catch (err) { alert('Error: ' + err.message); }
+  }
+  // Plantillas de email listas para usar en la ficha de cita
+  function plantillaMail(tipo) {
+    const nombre = detalle?.nombre || '';
+    const cuando = detalle ? (fechaLarga(detalle.fecha) + ' a las ' + detalle.hora + ' h') : '';
+    const firma = '\n\nUn saludo,\nEquipo Conecta NEX';
+    const T = {
+      confirmar: {
+        asunto: 'Confirmación de tu cita con Conecta NEX',
+        mensaje: `Hola ${nombre},\n\nTe confirmamos tu cita para el ${cuando}. Si necesitas cambiarla, responde a este correo y lo ajustamos.${firma}`,
+      },
+      recordatorio: {
+        asunto: 'Recordatorio de tu cita con Conecta NEX',
+        mensaje: `Hola ${nombre},\n\nSolo un recordatorio de tu cita: ${cuando}. Si te surge cualquier cosa, escríbenos. ¡Te esperamos!${firma}`,
+      },
+      seguimiento: {
+        asunto: 'Seguimiento — Conecta NEX',
+        mensaje: `Hola ${nombre},\n\nUn placer hablar contigo. ¿Pudiste valorar lo que comentamos? Quedamos a tu disposición para dar el siguiente paso cuando quieras.${firma}`,
+      },
+      gracias: {
+        asunto: 'Gracias por tu tiempo — Conecta NEX',
+        mensaje: `Hola ${nombre},\n\nGracias por atendernos. Te enviaremos un resumen de la propuesta. Cualquier duda, aquí estamos.${firma}`,
+      },
+    };
+    const t = T[tipo] || T.confirmar;
+    setMail({ asunto: t.asunto, mensaje: t.mensaje, enviando: false });
   }
   async function enviarMail() {
     if (!detalle.email) { alert('Esta cita no tiene email.'); return; }
@@ -308,7 +344,7 @@ export default function Agenda() {
                 {/* Reprogramar */}
                 <div style={{ marginTop: 16, borderTop: '1px solid #f1f5f0', paddingTop: 14 }}>
                   {!repro ? (
-                    <button onClick={() => setRepro({ fecha: detalle.fecha, hora: detalle.hora })} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>🗓️ Reprogramar</button>
+                    <button onClick={() => setRepro({ fecha: detalle.fecha, hora: detalle.hora, avisar: true })} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>🗓️ Reprogramar cita</button>
                   ) : (
                     <div>
                       <div style={{ ...lab, marginBottom: 6 }}>Nuevo día y hora</div>
@@ -318,6 +354,12 @@ export default function Agenda() {
                           {HORAS.map((h) => <option key={h} value={h}>{h}</option>)}
                         </select>
                       </div>
+                      {detalle.email && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 13, color: '#475569' }}>
+                          <input type="checkbox" checked={repro.avisar !== false} onChange={(ev) => setRepro({ ...repro, avisar: ev.target.checked })} />
+                          Avisar al cliente por email del cambio
+                        </label>
+                      )}
                       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                         <button onClick={reprogramar} style={{ ...btn, background: '#16a34a', color: '#fff', border: 'none', fontSize: 13, padding: '7px 12px' }}>Mover cita</button>
                         <button onClick={() => setRepro(null)} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>Cancelar</button>
@@ -330,16 +372,22 @@ export default function Agenda() {
                 {detalle.email && (
                   <div style={{ marginTop: 14, borderTop: '1px solid #f1f5f0', paddingTop: 14 }}>
                     {!mail ? (
-                      <button onClick={() => setMail({ asunto: `Tu cita con Conecta NEX — ${detalle.fecha.split('-').reverse().join('/')} ${detalle.hora} h`, mensaje: `Hola ${detalle.nombre || ''},\n\n`, enviando: false })} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>✉️ Enviar email al cliente</button>
+                      <button onClick={() => plantillaMail('confirmar')} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>✉️ Enviar email al cliente</button>
                     ) : (
                       <div>
                         <div style={{ ...lab, marginBottom: 6 }}>Email a {detalle.email}</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                          {[['confirmar', 'Confirmar cita'], ['recordatorio', 'Recordatorio'], ['seguimiento', 'Seguimiento'], ['gracias', 'Gracias']].map(([k, t]) => (
+                            <button key={k} onClick={() => plantillaMail(k)} style={{ ...btn, fontSize: 12, padding: '4px 10px' }}>{t}</button>
+                          ))}
+                        </div>
                         <input value={mail.asunto} onChange={(ev) => setMail({ ...mail, asunto: ev.target.value })} placeholder="Asunto" style={{ ...inp, marginBottom: 8 }} />
-                        <textarea value={mail.mensaje} onChange={(ev) => setMail({ ...mail, mensaje: ev.target.value })} rows={5} placeholder="Mensaje" style={{ ...inp, resize: 'vertical' }} />
+                        <textarea value={mail.mensaje} onChange={(ev) => setMail({ ...mail, mensaje: ev.target.value })} rows={7} placeholder="Mensaje" style={{ ...inp, resize: 'vertical' }} />
                         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                           <button onClick={enviarMail} disabled={mail.enviando} style={{ ...btn, background: '#5b3fa0', color: '#fff', border: 'none', fontSize: 13, padding: '7px 12px' }}>{mail.enviando ? 'Enviando…' : 'Enviar email'}</button>
                           <button onClick={() => setMail(null)} style={{ ...btn, fontSize: 13, padding: '7px 12px' }}>Cancelar</button>
                         </div>
+                        <p style={{ fontSize: 11, color: '#9aa6a0', marginTop: 6 }}>Elige una plantilla arriba o escribe tu propio mensaje. Se envía con la firma y el diseño de Conecta NEX.</p>
                       </div>
                     )}
                   </div>

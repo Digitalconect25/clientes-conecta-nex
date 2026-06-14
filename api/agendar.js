@@ -37,9 +37,12 @@ function fechaLarga(fecha) {
 function emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }) {
   const cuando = `${fechaLarga(fecha)} a las ${hora} h`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
-    <div style="background:#5b3fa0;color:#fff;padding:22px 24px;border-radius:12px 12px 0 0">
-      <h2 style="margin:0">Conecta NEX</h2>
-      <p style="margin:6px 0 0;opacity:.9">Hemos recibido tu solicitud de cita</p>
+    <div style="text-align:center;padding:14px 0 6px">
+      <img src="https://clientes.conectanex.com/logo-email.png" alt="Conecta NEX" width="150" style="max-width:150px;height:auto;display:inline-block">
+      <div style="font-size:18px;font-weight:800;color:#5b3fa0;margin-top:4px">Conecta NEX</div>
+    </div>
+    <div style="background:#5b3fa0;color:#fff;padding:18px 24px;border-radius:12px 12px 0 0">
+      <h2 style="margin:0;color:#fff">Hemos recibido tu solicitud de cita</h2>
     </div>
     <div style="border:1px solid #eee;border-top:0;padding:24px;border-radius:0 0 12px 12px">
       <p>Hola ${nombre || ''},</p>

@@ -159,9 +159,41 @@ async function convertirEnCliente(p, b) {
   return cli;
 }
 
+// Descubre negocios locales con Bright Data SERP (pack local de Google: nombre/teléfono/web).
+async function descubrirBrightData(nicho, zona, limite) {
+  const key = process.env.BRIGHTDATA_KEY;
+  if (!key) throw new Error('Falta BRIGHTDATA_KEY en el servidor (Vercel).');
+  const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
+  const q = encodeURIComponent(`${nicho} en ${zona}`);
+  const url = `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`;
+  const r = await fetch('https://api.brightdata.com/request', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zone, url, format: 'raw' }),
+  });
+  if (!r.ok) throw new Error('Bright Data HTTP ' + r.status);
+  let data = await r.json().catch(() => null);
+  if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
+  const sp = data && Array.isArray(data.snack_pack) ? data.snack_pack : [];
+  const out = [];
+  for (const b of sp) {
+    const empresa = String(b.name || '').trim();
+    if (!empresa) continue;
+    out.push({
+      empresa,
+      telefono: String(b.phone || '').replace(/[^\d+ ]/g, '').trim(),
+      website: String(b.site || '').trim(),
+    });
+    if (out.length >= limite) break;
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   const auth = checkAuth(req);
-  if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
+  // La automatización (n8n/cron) se autentica con CRON_SECRET en el body, sin el login de la app.
+  const cronOk = !!(process.env.CRON_SECRET && req.body && req.body.secret === process.env.CRON_SECRET);
+  if (!auth.ok && !cronOk) return jsonResponse(res, 401, { error: auth.error });
 
   try {
     await ensureP();
@@ -178,6 +210,49 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const b = req.body || {};
       const accion = b.accion || 'crear';
+
+      if (accion === 'descubrir') {
+        const nicho = String(b.nicho || '').trim();
+        const zona = String(b.zona || '').trim();
+        if (!nicho || !zona) return jsonResponse(res, 400, { error: 'Faltan nicho y zona' });
+        const limite = Math.min(parseInt(b.limite, 10) || 12, 20);
+        let negocios;
+        try { negocios = await descubrirBrightData(nicho, zona, limite); }
+        catch (e) { return jsonResponse(res, 502, { error: e.message }); }
+        let insertados = 0, duplicados = 0; const nuevosIds = [];
+        for (const n of negocios) {
+          const existe = await sql`
+            SELECT 1 FROM prospectos
+            WHERE (website <> '' AND lower(website) = ${n.website.toLowerCase()})
+               OR (lower(empresa) = ${n.empresa.toLowerCase()} AND lower(ciudad) = ${zona.toLowerCase()})
+            LIMIT 1`;
+          if (existe.length) { duplicados++; continue; }
+          const [row] = await sql`
+            INSERT INTO prospectos (empresa, nombre, email, telefono, sector, ciudad, website, situacion, observaciones, estado, origen)
+            VALUES (${n.empresa}, ${''}, ${''}, ${n.telefono}, ${nicho}, ${zona}, ${n.website},
+                    ${n.website ? 'mejorable' : 'sin_presencia'}, ${'Descubierto automaticamente (Bright Data).'}, ${'nuevo'}, ${'descubierto'})
+            RETURNING id`;
+          insertados++; nuevosIds.push(row.id);
+        }
+        // Auto-puntuar los nuevos (en paralelo, acotado) salvo que se pida puntuar:false
+        let puntuados = 0;
+        if (b.puntuar !== false && iaHabilitada() && nuevosIds.length) {
+          const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
+          const out = await Promise.allSettled(filas.map((p) => puntuarLead(p)));
+          for (let i = 0; i < filas.length; i++) {
+            const rr = out[i];
+            if (rr.status === 'fulfilled' && rr.value) {
+              try {
+                await sql`UPDATE prospectos SET prioridad = ${rr.value.prioridad},
+                  observaciones = ${(filas[i].observaciones ? filas[i].observaciones + '\n' : '') + '[Prioridad IA: ' + rr.value.prioridad + '] ' + rr.value.motivo}
+                  WHERE id = ${filas[i].id}`;
+                puntuados++;
+              } catch { /* sigue */ }
+            }
+          }
+        }
+        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, puntuados });
+      }
 
       if (accion === 'crear') {
         const [row] = await sql`

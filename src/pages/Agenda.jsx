@@ -173,7 +173,7 @@ export default function Agenda() {
   const citaEnHora = (h) => citasDia.find((c) => c.hora === h && c.estado !== 'cancelada');
   const extra = citasDia.filter((c) => !HORAS.includes(c.hora));
 
-  const btn = { cursor: 'pointer', border: '1px solid #e3e8e5', background: '#fff', borderRadius: 10, padding: '8px 12px', fontWeight: 600 };
+  const btn = { cursor: 'pointer', border: '1px solid #e3e8e5', background: '#fff', color: '#0f1c16', borderRadius: 10, padding: '8px 12px', fontWeight: 600 };
 
   return (
     <div>

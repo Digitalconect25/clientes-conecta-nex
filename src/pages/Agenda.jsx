@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 
-// Tramos horarios (mismos que /api/agendar)
 const HORAS = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
   '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'];
 const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -14,6 +13,7 @@ const EST = {
   cancelada: { label: 'Cancelada', color: '#c0392b', bg: '#fef2f2' },
 };
 const ORDEN_EST = ['pendiente', 'confirmada', 'hecha', 'cancelada'];
+const ORIGEN = { agente: 'Agente Nex (web)', frio: 'Captación / formulario', cliente: 'Cliente', manual: 'Alta manual' };
 const FILTROS = [
   { k: 'todas', label: 'Todas' },
   { k: 'pendiente', label: 'Pendientes' },
@@ -25,9 +25,7 @@ const FILTROS = [
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function soloFecha(s) {
-  return String(s || '').slice(0, 10); // tolera 'YYYY-MM-DD' o timestamps ISO
-}
+function soloFecha(s) { return String(s || '').slice(0, 10); }
 function fechaLarga(s) {
   const d = new Date(soloFecha(s) + 'T00:00:00');
   if (isNaN(d.getTime())) return String(s || '');
@@ -43,31 +41,35 @@ export default function Agenda() {
   const [diaSel, setDiaSel] = useState(hoyStr);
   const [nueva, setNueva] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [detalle, setDetalle] = useState(null); // cita abierta (ficha)
+  const [notaEdit, setNotaEdit] = useState('');
 
   useEffect(() => { cargar(); }, []);
   async function cargar() {
     setCargando(true);
     try {
       const data = await api.citasList();
-      // Normaliza la fecha SIEMPRE a YYYY-MM-DD (clave del calendario).
       setCitas((data || []).map((c) => ({ ...c, fecha: soloFecha(c.fecha), hora: String(c.hora || '').slice(0, 5) })));
     } catch (err) { alert('Error: ' + err.message); }
     finally { setCargando(false); }
   }
+  function abrirFicha(c) { setDetalle(c); setNotaEdit(c.nota || ''); }
   async function cambiarEstado(c, estado) {
     setCitas((xs) => xs.map((x) => x.id === c.id ? { ...x, estado } : x));
+    setDetalle((d) => d && d.id === c.id ? { ...d, estado } : d);
     try { await api.citaUpdate({ id: c.id, estado, nota: c.nota || '' }); }
     catch (err) { alert('Error: ' + err.message); cargar(); }
   }
   async function guardarNota(c, nota) {
     if ((c.nota || '') === (nota || '')) return;
     setCitas((xs) => xs.map((x) => x.id === c.id ? { ...x, nota } : x));
+    setDetalle((d) => d && d.id === c.id ? { ...d, nota } : d);
     try { await api.citaUpdate({ id: c.id, estado: c.estado, nota }); }
     catch (err) { alert('Error: ' + err.message); }
   }
   async function borrar(id) {
     if (!confirm('¿Borrar esta cita?')) return;
-    try { await api.citaDelete(id); setCitas((xs) => xs.filter((x) => x.id !== id)); }
+    try { await api.citaDelete(id); setCitas((xs) => xs.filter((x) => x.id !== id)); setDetalle(null); }
     catch (err) { alert('Error: ' + err.message); }
   }
   async function crearManual() {
@@ -110,7 +112,7 @@ export default function Agenda() {
   return (
     <div>
       <h1>Agenda</h1>
-      <p style={{ color: '#67756c', marginTop: -6 }}>Calendario de citas. Las reservas del Agente Nex y del formulario entran aquí automáticamente.</p>
+      <p style={{ color: '#67756c', marginTop: -6 }}>Calendario de citas. Pulsa una cita para ver toda su información. Las reservas del Agente Nex y del formulario entran aquí automáticamente.</p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {FILTROS.map((f) => {
@@ -188,31 +190,21 @@ export default function Agenda() {
               }
               const e = EST[c.estado] || EST.pendiente;
               return (
-                <div key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px', border: `1px solid ${e.color}33`, background: e.bg, borderRadius: 10 }}>
-                  <div style={{ minWidth: 54, fontWeight: 800, color: '#1f2937' }}>{h}</div>
+                <button key={h} onClick={() => abrirFicha(c)} style={{ textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '10px', border: `1px solid ${e.color}33`, background: e.bg, borderRadius: 10 }}>
+                  <div style={{ minWidth: 54, fontWeight: 800, color: '#1f2937' }}>{c.hora}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700 }}>{c.nombre || c.prospecto_empresa || 'Sin nombre'}
-                      {c.origen === 'agente' ? <span style={{ color: '#5b3fa0', fontSize: 11 }}> · Agente Nex</span> : c.origen === 'frio' ? <span style={{ color: '#16a34a', fontSize: 11 }}> · captación</span> : c.origen === 'manual' ? <span style={{ color: '#64748b', fontSize: 11 }}> · manual</span> : null}
-                    </div>
-                    <div style={{ fontSize: 13, color: '#67756c', margin: '2px 0' }}>{[c.email, c.telefono].filter(Boolean).join(' · ') || 'Sin contacto'}</div>
-                    <input defaultValue={c.nota || ''} placeholder="Qué quiere el cliente / nota para preparar la reunión…" onBlur={(ev) => guardarNota(c, ev.target.value)}
-                      style={{ width: '100%', maxWidth: 420, fontSize: 13, border: '1px solid #e3e8e5', borderRadius: 8, padding: '5px 8px', marginTop: 2 }} />
+                    <div style={{ fontWeight: 700 }}>{c.nombre || c.prospecto_empresa || 'Sin nombre'}</div>
+                    <div style={{ fontSize: 13, color: '#67756c', marginTop: 2 }}>{c.nota || [c.email, c.telefono].filter(Boolean).join(' · ') || 'Sin nota'}</div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                    <select value={c.estado} onChange={(ev) => cambiarEstado(c, ev.target.value)} style={{ color: e.color, fontWeight: 700, border: `1px solid ${e.color}55`, borderRadius: 8, padding: '4px 6px' }}>
-                      {ORDEN_EST.map((s) => <option key={s} value={s}>{EST[s].label}</option>)}
-                    </select>
-                    <button onClick={() => borrar(c.id)} style={{ color: '#c0392b', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer' }}>Borrar</button>
-                  </div>
-                </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: e.color, border: `1px solid ${e.color}55`, borderRadius: 20, padding: '2px 10px', whiteSpace: 'nowrap' }}>{e.label}</span>
+                </button>
               );
             })}
             {extra.map((c) => (
-              <div key={c.id} style={{ display: 'flex', gap: 12, padding: '10px', border: '1px solid #e3e8e5', borderRadius: 10 }}>
+              <button key={c.id} onClick={() => abrirFicha(c)} style={{ textAlign: 'left', cursor: 'pointer', display: 'flex', gap: 12, padding: '10px', border: '1px solid #e3e8e5', borderRadius: 10 }}>
                 <div style={{ minWidth: 54, fontWeight: 800 }}>{c.hora}</div>
                 <div style={{ flex: 1 }}>{c.nombre} <span style={{ color: '#67756c', fontSize: 13 }}>{c.nota ? '· ' + c.nota : ''}</span></div>
-                <button onClick={() => borrar(c.id)} style={{ color: '#c0392b', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer' }}>Borrar</button>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -227,18 +219,63 @@ export default function Agenda() {
             {proximas.slice().sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)).slice(0, 40).map((c) => {
               const e = EST[c.estado] || EST.pendiente;
               return (
-                <div key={c.id} onClick={() => { const [y, m] = c.fecha.split('-'); setCursor(new Date(+y, +m - 1, 1)); setDiaSel(c.fecha); }}
-                  style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 10px', border: '1px solid #eef2f0', borderRadius: 10, cursor: 'pointer' }}>
+                <button key={c.id} onClick={() => abrirFicha(c)}
+                  style={{ textAlign: 'left', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center', padding: '8px 10px', border: '1px solid #eef2f0', borderRadius: 10, background: '#fff' }}>
                   <div style={{ minWidth: 98, fontWeight: 700 }}>{c.fecha.split('-').reverse().slice(0, 2).join('/')} · {c.hora}</div>
                   <div style={{ flex: 1 }}>{c.nombre || c.prospecto_empresa || '-'} <span style={{ color: '#67756c', fontSize: 13 }}>{c.nota ? '· ' + c.nota : ''}</span></div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: e.color, borderRadius: 20, padding: '2px 10px' }}>{e.label}</span>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
 
+      {/* Ficha de cita */}
+      {detalle && (() => {
+        const e = EST[detalle.estado] || EST.pendiente;
+        const row = { display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid #f1f5f0', fontSize: 14 };
+        const lab = { minWidth: 92, color: '#8a8276', fontSize: 13 };
+        return (
+          <div onClick={() => setDetalle(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+            <div onClick={(ev) => ev.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ background: e.color, color: '#fff', padding: '18px 22px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{detalle.nombre || detalle.prospecto_empresa || 'Cita'}</div>
+                  <div style={{ opacity: .9, fontSize: 13, marginTop: 2 }}>{e.label}</div>
+                </div>
+                <button onClick={() => setDetalle(null)} style={{ background: 'transparent', border: 0, color: '#fff', fontSize: 22, cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ padding: 22 }}>
+                <div style={row}><span style={lab}>Día</span><b style={{ textTransform: 'capitalize' }}>{fechaLarga(detalle.fecha)}</b></div>
+                <div style={row}><span style={lab}>Hora</span><b>{detalle.hora} h</b></div>
+                <div style={row}><span style={lab}>Email</span>{detalle.email ? <a href={`mailto:${detalle.email}`}>{detalle.email}</a> : <span style={{ color: '#b9b1a3' }}>—</span>}</div>
+                <div style={row}><span style={lab}>Teléfono</span>{detalle.telefono ? <a href={`tel:${detalle.telefono}`}>{detalle.telefono}</a> : <span style={{ color: '#b9b1a3' }}>—</span>}</div>
+                {detalle.prospecto_empresa && <div style={row}><span style={lab}>Empresa</span><span>{detalle.prospecto_empresa}</span></div>}
+                <div style={row}><span style={lab}>Origen</span><span>{ORIGEN[detalle.origen] || detalle.origen || '—'}</span></div>
+                {detalle.creado_en && <div style={row}><span style={lab}>Creada</span><span>{soloFecha(detalle.creado_en).split('-').reverse().join('/')}</span></div>}
+
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ ...lab, marginBottom: 6 }}>Qué quiere el cliente / notas para preparar la reunión</div>
+                  <textarea value={notaEdit} onChange={(ev) => setNotaEdit(ev.target.value)} rows={4}
+                    style={{ width: '100%', border: '1px solid #e3e8e5', borderRadius: 10, padding: 10, fontSize: 14, resize: 'vertical' }} />
+                  <button onClick={() => guardarNota(detalle, notaEdit)} style={{ ...btn, marginTop: 8, fontSize: 13, padding: '6px 12px' }}>Guardar nota</button>
+                </div>
+
+                <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={lab}>Estado</span>
+                  <select value={detalle.estado} onChange={(ev) => cambiarEstado(detalle, ev.target.value)} style={{ color: e.color, fontWeight: 700, border: `1px solid ${e.color}55`, borderRadius: 8, padding: '6px 8px' }}>
+                    {ORDEN_EST.map((s) => <option key={s} value={s}>{EST[s].label}</option>)}
+                  </select>
+                  <button onClick={() => borrar(detalle.id)} style={{ marginLeft: 'auto', color: '#c0392b', border: '1px solid #f3c0b8', background: '#fff', borderRadius: 10, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>Borrar cita</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Alta manual */}
       {nueva && (
         <div onClick={() => setNueva(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 420 }}>

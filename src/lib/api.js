@@ -199,6 +199,7 @@ export const api = {
   prospectoGenerar: (id) => request('POST', '/api/prospectos', { accion: 'generar', id }),
   prospectoEnviar: (id, data) => request('POST', '/api/prospectos', { accion: 'enviar', id, ...(data || {}) }),
   prospectosGenerarTodos: () => request('POST', '/api/prospectos', { accion: 'generar_todos' }),
+  prospectosPuntuar: () => request('POST', '/api/prospectos', { accion: 'puntuar_todos' }),
   prospectosEnviarTodos: () => request('POST', '/api/prospectos', { accion: 'enviar_todos' }),
   prospectoActualizar: (data) => request('PUT', '/api/prospectos', data),
   prospectoBorrar: (id) => request('DELETE', `/api/prospectos?id=${id}`),

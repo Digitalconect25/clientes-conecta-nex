@@ -107,6 +107,27 @@ Persona de contacto: ${p.nombre || '(desconocida)'}.`;
 const ESTADOS = ['nuevo', 'email_enviado', 'respondido', 'convertido', 'descartado'];
 const norm = (s) => (s === 'mejorable' ? 'mejorable' : 'sin_presencia');
 
+// Auto-migracion: columna de prioridad (idempotente, una vez por instancia).
+let _migP = false;
+async function ensureP() {
+  if (_migP) return;
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { /* noop */ }
+  _migP = true;
+}
+
+// La IA puntua la prioridad de contactar a un lead en frio.
+async function puntuarLead(p) {
+  if (!iaHabilitada()) return null;
+  const sys = `Eres analista de captacion de Conecta Nex (marketing para negocios locales). Puntua la PRIORIDAD de contactar a este negocio en frio. Responde EXACTAMENTE en una linea: "PRIORIDAD: Alta|Media|Baja - <motivo en menos de 12 palabras>". Alta = encaja muy bien y hay oportunidad clara; Media = encaje razonable; Baja = poco encaje o faltan datos. Sin emojis ni guion largo.`;
+  const user = `Negocio: ${p.empresa || p.nombre || '(s/n)'}. Sector: ${p.sector || '(no indicado)'}. Ciudad: ${p.ciudad || '(no indicada)'}. Presencia: ${p.website ? ('web: ' + p.website) : 'sin web'}. Situacion: ${p.situacion}. Observaciones: ${p.observaciones || '-'}.`;
+  try {
+    const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.3, max_tokens: 60 });
+    const m = String(texto).match(/PRIORIDAD:\s*(Alta|Media|Baja)\s*[-:]?\s*(.*)/i);
+    if (m) return { prioridad: m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), motivo: (m[2] || '').trim().slice(0, 120) };
+    return { prioridad: 'Media', motivo: String(texto).trim().slice(0, 80) };
+  } catch { return null; }
+}
+
 // Genera el siguiente numero de cliente (CL-AAAA-NNNN), igual que clientes.js.
 async function siguienteNumeroCliente() {
   const anio = new Date().getFullYear();
@@ -143,6 +164,7 @@ export default async function handler(req, res) {
   if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
 
   try {
+    await ensureP();
     if (req.method === 'GET') {
       if (req.query.id) {
         const [row] = await sql`SELECT * FROM prospectos WHERE id = ${req.query.id}`;
@@ -207,6 +229,23 @@ export default async function handler(req, res) {
         await enviarEmail({ to: p.email, subject: asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(cuerpo, em, p), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
         const [row] = await sql`UPDATE prospectos SET asunto = ${asunto || ''}, email_borrador = ${cuerpo}, estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
+      }
+
+      if (accion === 'puntuar_todos') {
+        if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada (GROQ_API_KEY).' });
+        const pend = await sql`SELECT * FROM prospectos WHERE (prioridad IS NULL OR prioridad = '') ORDER BY creado_en DESC LIMIT 20`;
+        let n = 0;
+        for (const p of pend) {
+          try {
+            const r = await puntuarLead(p);
+            if (r) {
+              const obs = p.observaciones ? p.observaciones + '\n' : '';
+              await sql`UPDATE prospectos SET prioridad = ${r.prioridad}, observaciones = ${obs + '[Prioridad IA: ' + r.prioridad + '] ' + r.motivo}, actualizado_en = NOW() WHERE id = ${p.id}`;
+              n++;
+            }
+          } catch { /* sigue */ }
+        }
+        return jsonResponse(res, 200, { puntuados: n });
       }
 
       if (accion === 'generar_todos') {

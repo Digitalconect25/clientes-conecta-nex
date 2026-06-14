@@ -157,6 +157,13 @@ export default function Prospeccion() {
     catch (err) { alert('Error: ' + err.message); }
     finally { setBusy(false); }
   }
+  async function puntuar() {
+    if (!iaOn) { alert('La IA no esta configurada (GROQ_API_KEY).'); return; }
+    setBusy(true);
+    try { const r = await api.prospectosPuntuar(); alert(`${r.puntuados} leads priorizados por la IA.`); cargar(); }
+    catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
+  }
   async function enviarPrueba() {
     if (!emailOn) { alert('El envio no esta configurado (RESEND).'); return; }
     setBusy(true);
@@ -165,6 +172,8 @@ export default function Prospeccion() {
     finally { setBusy(false); }
   }
 
+  const PRIO = { Alta: '#16a34a', Media: '#b8860b', Baja: '#94a3b8' };
+  const ordP = (x) => ({ Alta: 3, Media: 2, Baja: 1 }[x] || 0);
   const total = lista.length;
   const enviados = lista.filter((p) => p.estado === 'email_enviado' || p.enviado_en).length;
   const respond = lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length;
@@ -270,6 +279,7 @@ export default function Prospeccion() {
             <button onClick={borrarSeleccionados} disabled={busy || !marcados.size} style={{ color: marcados.size ? '#c0392b' : undefined }}>
               Eliminar seleccionados{marcados.size ? ` (${marcados.size})` : ''}
             </button>
+            <button onClick={puntuar} disabled={busy || !lista.length} title="La IA prioriza a quién contactar primero">⭐ Puntuar leads (IA)</button>
             <button onClick={vaciarTodo} disabled={busy || !lista.length} style={{ color: '#c0392b' }}>Vaciar lista</button>
           </div>
         </div>
@@ -280,12 +290,12 @@ export default function Prospeccion() {
               <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody>
-              {lista.map((p) => {
+              {[...lista].sort((a, b) => ordP(b.prioridad) - ordP(a.prioridad)).map((p) => {
                 const e = PESTADO[p.estado] || PESTADO.nuevo;
                 return (
                   <tr key={p.id} style={{ borderTop: '1px solid #eef2f0', background: marcados.has(p.id) ? '#fef4f4' : undefined }}>
                     <td style={{ padding: 8 }}><input type="checkbox" checked={marcados.has(p.id)} onChange={() => toggleMarcado(p.id)} /></td>
-                    <td style={{ padding: 8 }}><b>{p.empresa || p.nombre || '-'}</b><br /><span style={{ color: '#67756c' }}>{p.sector}{p.ciudad ? ' - ' + p.ciudad : ''}</span></td>
+                    <td style={{ padding: 8 }}><b>{p.empresa || p.nombre || '-'}</b>{p.prioridad ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: PRIO[p.prioridad] || '#94a3b8', borderRadius: 20, padding: '1px 7px' }}>{p.prioridad}</span> : null}<br /><span style={{ color: '#67756c' }}>{p.sector}{p.ciudad ? ' - ' + p.ciudad : ''}</span></td>
                     <td>{p.email || <span style={{ color: '#94a3b8' }}>sin email</span>}</td>
                     <td>{p.situacion === 'mejorable' ? 'Mejorable' : 'Sin presencia'}</td>
                     <td style={{ textAlign: 'center' }}>{p.email_borrador ? 'Si' : '-'}</td>

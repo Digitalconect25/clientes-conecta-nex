@@ -7,7 +7,6 @@ const HORAS = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '1
 const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const DOW = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
-// Estados (la BD admite: pendiente | confirmada | hecha | cancelada)
 const EST = {
   pendiente: { label: 'Pendiente confirmación', color: '#b8860b', bg: '#fdf6e3' },
   confirmada: { label: 'Confirmada', color: '#16a34a', bg: '#f0fdf4' },
@@ -26,8 +25,12 @@ const FILTROS = [
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+function soloFecha(s) {
+  return String(s || '').slice(0, 10); // tolera 'YYYY-MM-DD' o timestamps ISO
+}
 function fechaLarga(s) {
-  const d = new Date(s + 'T00:00:00');
+  const d = new Date(soloFecha(s) + 'T00:00:00');
+  if (isNaN(d.getTime())) return String(s || '');
   return `${DOW[(d.getDay() + 6) % 7]} ${d.getDate()} de ${MES[d.getMonth()]} de ${d.getFullYear()}`;
 }
 
@@ -38,14 +41,17 @@ export default function Agenda() {
   const hoyStr = ymd(new Date());
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [diaSel, setDiaSel] = useState(hoyStr);
-  const [nueva, setNueva] = useState(null); // { fecha, hora, nombre, email, telefono, nota }
+  const [nueva, setNueva] = useState(null);
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => { cargar(); }, []);
   async function cargar() {
     setCargando(true);
-    try { setCitas(await api.citasList()); }
-    catch (err) { alert('Error: ' + err.message); }
+    try {
+      const data = await api.citasList();
+      // Normaliza la fecha SIEMPRE a YYYY-MM-DD (clave del calendario).
+      setCitas((data || []).map((c) => ({ ...c, fecha: soloFecha(c.fecha), hora: String(c.hora || '').slice(0, 5) })));
+    } catch (err) { alert('Error: ' + err.message); }
     finally { setCargando(false); }
   }
   async function cambiarEstado(c, estado) {
@@ -85,7 +91,6 @@ export default function Agenda() {
   const proximas = citas.filter((c) => c.fecha >= hoyStr && c.estado !== 'cancelada');
   const card = { background: '#fff', border: '1px solid #e3e8e5', borderRadius: 14, padding: 20, marginBottom: 16, boxShadow: '0 1px 3px rgba(16,40,28,.06)' };
 
-  // rejilla del mes (semana empieza en lunes)
   const year = cursor.getFullYear(), month = cursor.getMonth();
   const offset = (new Date(year, month, 1).getDay() + 6) % 7;
   const diasMes = new Date(year, month + 1, 0).getDate();
@@ -98,7 +103,7 @@ export default function Agenda() {
   const finde = dSel.getDay() === 0 || dSel.getDay() === 6;
   const citasDia = (porDia[diaSel] || []);
   const citaEnHora = (h) => citasDia.find((c) => c.hora === h && c.estado !== 'cancelada');
-  const extra = citasDia.filter((c) => !HORAS.includes(c.hora)); // por si hay horas fuera de rango
+  const extra = citasDia.filter((c) => !HORAS.includes(c.hora));
 
   const btn = { cursor: 'pointer', border: '1px solid #e3e8e5', background: '#fff', borderRadius: 10, padding: '8px 12px', fontWeight: 600 };
 
@@ -107,7 +112,6 @@ export default function Agenda() {
       <h1>Agenda</h1>
       <p style={{ color: '#67756c', marginTop: -6 }}>Calendario de citas. Las reservas del Agente Nex y del formulario entran aquí automáticamente.</p>
 
-      {/* Pestañas por estado */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {FILTROS.map((f) => {
           const activo = filtro === f.k;
@@ -122,7 +126,6 @@ export default function Agenda() {
         })}
       </div>
 
-      {/* Calendario */}
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ fontSize: 18, fontWeight: 800, textTransform: 'capitalize' }}>{MES[month]} {year}</div>
@@ -165,7 +168,6 @@ export default function Agenda() {
         )}
       </div>
 
-      {/* Vista del día: TODOS los tramos horarios */}
       <div style={card}>
         <h2 style={{ marginTop: 0, fontSize: 16, textTransform: 'capitalize' }}>{fechaLarga(diaSel)}</h2>
         {finde ? (
@@ -193,8 +195,8 @@ export default function Agenda() {
                       {c.origen === 'agente' ? <span style={{ color: '#5b3fa0', fontSize: 11 }}> · Agente Nex</span> : c.origen === 'frio' ? <span style={{ color: '#16a34a', fontSize: 11 }}> · captación</span> : c.origen === 'manual' ? <span style={{ color: '#64748b', fontSize: 11 }}> · manual</span> : null}
                     </div>
                     <div style={{ fontSize: 13, color: '#67756c', margin: '2px 0' }}>{[c.email, c.telefono].filter(Boolean).join(' · ') || 'Sin contacto'}</div>
-                    <input defaultValue={c.nota || ''} placeholder="Anotación…" onBlur={(ev) => guardarNota(c, ev.target.value)}
-                      style={{ width: '100%', maxWidth: 360, fontSize: 13, border: '1px solid #e3e8e5', borderRadius: 8, padding: '5px 8px', marginTop: 2 }} />
+                    <input defaultValue={c.nota || ''} placeholder="Qué quiere el cliente / nota para preparar la reunión…" onBlur={(ev) => guardarNota(c, ev.target.value)}
+                      style={{ width: '100%', maxWidth: 420, fontSize: 13, border: '1px solid #e3e8e5', borderRadius: 8, padding: '5px 8px', marginTop: 2 }} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                     <select value={c.estado} onChange={(ev) => cambiarEstado(c, ev.target.value)} style={{ color: e.color, fontWeight: 700, border: `1px solid ${e.color}55`, borderRadius: 8, padding: '4px 6px' }}>
@@ -216,14 +218,13 @@ export default function Agenda() {
         )}
       </div>
 
-      {/* Próximas citas (resumen) */}
       <div style={card}>
         <h2 style={{ marginTop: 0, fontSize: 16 }}>Próximas citas</h2>
         {proximas.length === 0 ? (
           <p style={{ color: '#67756c' }}>No hay citas próximas. Cuando reserven (Agente Nex, formulario o email), aparecerán aquí.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {proximas.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)).slice(0, 30).map((c) => {
+            {proximas.slice().sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)).slice(0, 40).map((c) => {
               const e = EST[c.estado] || EST.pendiente;
               return (
                 <div key={c.id} onClick={() => { const [y, m] = c.fecha.split('-'); setCursor(new Date(+y, +m - 1, 1)); setDiaSel(c.fecha); }}
@@ -238,14 +239,13 @@ export default function Agenda() {
         )}
       </div>
 
-      {/* Modal alta manual */}
       {nueva && (
         <div onClick={() => setNueva(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 420 }}>
             <h3 style={{ marginTop: 0 }}>Nueva cita — {nueva.hora} h</h3>
             <p style={{ color: '#67756c', marginTop: -8, fontSize: 13 }}>{fechaLarga(nueva.fecha)}</p>
             {['nombre', 'email', 'telefono', 'nota'].map((f) => (
-              <input key={f} placeholder={f === 'nota' ? 'Anotación (opcional)' : f.charAt(0).toUpperCase() + f.slice(1) + (f === 'nombre' ? ' *' : ' (opcional)')}
+              <input key={f} placeholder={f === 'nota' ? 'Qué quiere el cliente (opcional)' : f.charAt(0).toUpperCase() + f.slice(1) + (f === 'nombre' ? ' *' : ' (opcional)')}
                 value={nueva[f]} onChange={(e) => setNueva({ ...nueva, [f]: e.target.value })}
                 style={{ width: '100%', padding: 10, border: '1px solid #e3e8e5', borderRadius: 10, marginBottom: 10, fontSize: 14 }} />
             ))}

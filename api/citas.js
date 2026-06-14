@@ -3,17 +3,29 @@ import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
 const ESTADOS = ['pendiente', 'confirmada', 'hecha', 'cancelada'];
+const HORAS = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'];
+const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+// Auto-migración: asegura la columna de notas internas (idempotente, una vez por instancia).
+let _migrado = false;
+async function asegurarColumnas() {
+  if (_migrado) return;
+  try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS nota_interna text DEFAULT ''`; } catch { /* noop */ }
+  _migrado = true;
+}
 
 export default async function handler(req, res) {
   const auth = checkAuth(req);
   if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
   try {
+    await asegurarColumnas();
+
     if (req.method === 'GET') {
-      // fecha SIEMPRE como texto YYYY-MM-DD (Neon devuelve DATE como timestamp ISO,
-      // lo que rompia el calendario y mostraba "undefined NaN de undefined de NaN").
       const rows = await sql`
         SELECT c.id, c.prospecto_id, c.cliente_id, c.nombre, c.email, c.telefono,
-               to_char(c.fecha, 'YYYY-MM-DD') AS fecha, c.hora, c.nota, c.estado, c.origen,
+               to_char(c.fecha, 'YYYY-MM-DD') AS fecha, c.hora, c.nota,
+               COALESCE(c.nota_interna,'') AS nota_interna, c.estado, c.origen,
                to_char(c.creado_en, 'YYYY-MM-DD"T"HH24:MI:SS') AS creado_en,
                p.empresa AS prospecto_empresa
         FROM citas c LEFT JOIN prospectos p ON p.id = c.prospecto_id
@@ -33,9 +45,29 @@ export default async function handler(req, res) {
     if (req.method === 'PUT') {
       const b = req.body || {};
       if (!b.id) return jsonResponse(res, 400, { error: 'Falta id' });
+
+      // Reprogramar: si llega fecha/hora, validar y comprobar que el hueco esté libre.
+      if (b.fecha || b.hora) {
+        if (!RE_FECHA.test(String(b.fecha || '')) || !HORAS.includes(String(b.hora || ''))) {
+          return jsonResponse(res, 400, { error: 'Día u hora no válidos para reprogramar.' });
+        }
+        const ocupado = await sql`
+          SELECT 1 FROM citas
+          WHERE fecha = ${b.fecha} AND hora = ${b.hora} AND estado != 'cancelada' AND id <> ${b.id}
+          LIMIT 1`;
+        if (ocupado.length) return jsonResponse(res, 409, { error: 'Esa hora ya está ocupada, elige otra.' });
+      }
+
+      const estado = ESTADOS.includes(b.estado) ? b.estado : null;
       const [row] = await sql`
-        UPDATE citas SET estado = ${ESTADOS.includes(b.estado) ? b.estado : 'pendiente'}, nota = ${b.nota || ''}
-        WHERE id = ${b.id} RETURNING *`;
+        UPDATE citas SET
+          estado       = COALESCE(${estado}, estado),
+          nota         = COALESCE(${b.nota ?? null}, nota),
+          nota_interna = COALESCE(${b.nota_interna ?? null}, nota_interna),
+          fecha        = COALESCE(${b.fecha || null}::date, fecha),
+          hora         = COALESCE(${b.hora || null}, hora)
+        WHERE id = ${b.id}
+        RETURNING id, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, estado, nota, COALESCE(nota_interna,'') AS nota_interna`;
       return jsonResponse(res, 200, row);
     }
     if (req.method === 'DELETE') {

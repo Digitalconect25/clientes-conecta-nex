@@ -112,7 +112,25 @@ let _migP = false;
 async function ensureP() {
   if (_migP) return;
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS seguimiento_en timestamptz`; } catch { /* noop */ }
   _migP = true;
+}
+
+// Enriquecimiento: busca el email de contacto en la web del negocio.
+const EMAIL_RX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+const EMAIL_JUNK = ['sentry', 'wixpress', 'example', 'godaddy', 'schema', '.png', '.jpg', '@2x', 'cloudflare', 'wordpress.com'];
+async function enriquecerEmailWeb(website) {
+  if (!website) return '';
+  const url = /^https?:\/\//i.test(website) ? website : 'https://' + website;
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
+    const txt = (await r.text()).slice(0, 400000);
+    for (const e of (txt.match(EMAIL_RX) || [])) {
+      const el = e.toLowerCase();
+      if (!EMAIL_JUNK.some((j) => el.includes(j))) return e;
+    }
+  } catch { /* noop */ }
+  return '';
 }
 
 // La IA puntua la prioridad de contactar a un lead en frio.
@@ -253,6 +271,18 @@ export default async function handler(req, res) {
             }
           }
         }
+        // Enriquecer: buscar el email de contacto en la web de cada nuevo prospecto (salvo enriquecer:false).
+        let enriquecidos = 0;
+        if (b.enriquecer !== false && nuevosIds.length) {
+          const conWeb = await sql`SELECT id, website FROM prospectos WHERE id = ANY(${nuevosIds}) AND website <> '' AND (email IS NULL OR email = '')`;
+          const mails = await Promise.allSettled(conWeb.map((p) => enriquecerEmailWeb(p.website)));
+          for (let i = 0; i < conWeb.length; i++) {
+            const rr = mails[i];
+            if (rr.status === 'fulfilled' && rr.value) {
+              try { await sql`UPDATE prospectos SET email = ${rr.value} WHERE id = ${conWeb[i].id}`; enriquecidos++; } catch { /* sigue */ }
+            }
+          }
+        }
         // Auto-redactar el email en frio de cada nuevo prospecto (salvo generar_emails:false).
         let redactados = 0;
         if (b.generar_emails !== false && iaHabilitada() && nuevosIds.length) {
@@ -268,7 +298,7 @@ export default async function handler(req, res) {
             }
           }
         }
-        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, puntuados, redactados });
+        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, enriquecidos, puntuados, redactados });
       }
 
       if (accion === 'crear') {
@@ -332,6 +362,66 @@ export default async function handler(req, res) {
           SELECT COUNT(*)::int AS pendientes FROM prospectos
           WHERE (email_borrador IS NULL OR email_borrador = '') AND estado = 'nuevo'`;
         return jsonResponse(res, 200, { ok: true, redactados, pendientes });
+      }
+
+      // Enriquecimiento en lote: rellena el email de prospectos con web pero sin email.
+      if (accion === 'enriquecer') {
+        const limite = Math.min(parseInt(b.limite, 10) || 15, 30);
+        const filas = await sql`SELECT id, website FROM prospectos WHERE website <> '' AND (email IS NULL OR email = '') LIMIT ${limite}`;
+        const mails = await Promise.allSettled(filas.map((p) => enriquecerEmailWeb(p.website)));
+        let enriquecidos = 0;
+        for (let i = 0; i < filas.length; i++) {
+          const rr = mails[i];
+          if (rr.status === 'fulfilled' && rr.value) {
+            try { await sql`UPDATE prospectos SET email = ${rr.value} WHERE id = ${filas[i].id}`; enriquecidos++; } catch { /* sigue */ }
+          }
+        }
+        const [{ pendientes }] = await sql`SELECT COUNT(*)::int AS pendientes FROM prospectos WHERE website <> '' AND (email IS NULL OR email = '')`;
+        return jsonResponse(res, 200, { ok: true, enriquecidos, pendientes });
+      }
+
+      // Secuencia de seguimiento: redacta un follow-up para los que recibieron email y no han respondido.
+      if (accion === 'seguimientos') {
+        if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
+        const dias = Math.max(1, parseInt(b.dias, 10) || 4);
+        const limite = Math.min(parseInt(b.limite, 10) || 10, 15);
+        const filas = await sql`
+          SELECT * FROM prospectos
+          WHERE estado = 'email_enviado'
+            AND enviado_en IS NOT NULL AND enviado_en < NOW() - (${dias} * INTERVAL '1 day')
+            AND (seguimiento_en IS NULL OR seguimiento_en < NOW() - INTERVAL '6 days')
+          ORDER BY enviado_en ASC LIMIT ${limite}`;
+        let redactados = 0;
+        for (const p of filas) {
+          try {
+            const sys = `Eres el asistente de Conecta Nex. Escribe un SEGUIMIENTO breve y cordial a un negocio al que ya escribimos hace unos dias y no ha respondido. Espanol de Espana, sin presion, sin emojis, sin guion largo. Recuerda con tacto el correo anterior, aporta un motivo util para responder y deja la puerta abierta. 60-110 palabras. Devuelve EXACTAMENTE: "ASUNTO: <asunto>" en la primera linea, luego "---", luego el cuerpo en HTML con <p>.`;
+            const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Asunto del email anterior: ${p.asunto || '-'}.`;
+            const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 500 });
+            let asunto = '', cuerpo = texto;
+            const m = texto.match(/ASUNTO:\s*(.+)/i);
+            if (m) { asunto = m[1].trim(); cuerpo = texto.slice(texto.indexOf(m[0]) + m[0].length); }
+            cuerpo = cuerpo.replace(/^\s*-{3,}\s*/, '').trim();
+            if (!asunto) asunto = 'Re: ' + String(p.asunto || 'nuestro mensaje').replace(/^\s*Re:\s*/i, '');
+            await sql`UPDATE prospectos SET asunto = ${asunto}, email_borrador = ${cuerpo}, seguimiento_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
+            redactados++;
+          } catch { /* sigue */ }
+        }
+        return jsonResponse(res, 200, { ok: true, redactados });
+      }
+
+      // Resumen del embudo de captacion (panel premium).
+      if (accion === 'resumen') {
+        const [r] = await sql`SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE estado='nuevo')::int AS nuevos,
+          COUNT(*) FILTER (WHERE estado='email_enviado')::int AS enviados,
+          COUNT(*) FILTER (WHERE estado='respondido')::int AS respondidos,
+          COUNT(*) FILTER (WHERE estado='convertido')::int AS convertidos,
+          COUNT(*) FILTER (WHERE email IS NOT NULL AND email <> '')::int AS con_email,
+          COUNT(*) FILTER (WHERE prioridad='Alta')::int AS prioridad_alta,
+          COUNT(*) FILTER (WHERE email_borrador IS NOT NULL AND email_borrador <> '')::int AS con_borrador
+          FROM prospectos`;
+        return jsonResponse(res, 200, { ok: true, ...r });
       }
 
       if (accion === 'enviar') {

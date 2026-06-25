@@ -189,6 +189,8 @@ async function descubrirBrightData(nicho, zona, limite) {
   return out;
 }
 
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
   const auth = checkAuth(req);
   // La automatización (n8n/cron) se autentica con CRON_SECRET en el body, sin el login de la app.
@@ -251,7 +253,22 @@ export default async function handler(req, res) {
             }
           }
         }
-        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, puntuados });
+        // Auto-redactar el email en frio de cada nuevo prospecto (salvo generar_emails:false).
+        let redactados = 0;
+        if (b.generar_emails !== false && iaHabilitada() && nuevosIds.length) {
+          const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
+          const out = await Promise.allSettled(filas.map((p) => generarFrio(p)));
+          for (let i = 0; i < filas.length; i++) {
+            const rr = out[i];
+            if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
+              try {
+                await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
+                redactados++;
+              } catch { /* sigue */ }
+            }
+          }
+        }
+        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, puntuados, redactados });
       }
 
       if (accion === 'crear') {
@@ -289,6 +306,32 @@ export default async function handler(req, res) {
         const r = await generarFrio({ ...p, ...b });
         const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
+      }
+
+      // Redacta en lote el email de los prospectos que aun no tienen borrador (prioriza los de Prioridad Alta).
+      if (accion === 'generar_pendientes') {
+        if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada (GROQ_API_KEY).' });
+        const limite = Math.min(parseInt(b.limite, 10) || 10, 15);
+        const filas = await sql`
+          SELECT * FROM prospectos
+          WHERE (email_borrador IS NULL OR email_borrador = '') AND estado = 'nuevo'
+          ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
+          LIMIT ${limite}`;
+        const out = await Promise.allSettled(filas.map((p) => generarFrio(p)));
+        let redactados = 0;
+        for (let i = 0; i < filas.length; i++) {
+          const rr = out[i];
+          if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
+            try {
+              await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
+              redactados++;
+            } catch { /* sigue */ }
+          }
+        }
+        const [{ pendientes }] = await sql`
+          SELECT COUNT(*)::int AS pendientes FROM prospectos
+          WHERE (email_borrador IS NULL OR email_borrador = '') AND estado = 'nuevo'`;
+        return jsonResponse(res, 200, { ok: true, redactados, pendientes });
       }
 
       if (accion === 'enviar') {

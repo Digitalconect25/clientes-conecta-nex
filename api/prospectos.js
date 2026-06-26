@@ -2,6 +2,7 @@ import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import crypto from 'node:crypto';
 
 // ── Pie legal (LSSI-CE): identificacion del emisor + opcion de baja ──────────
 async function getEmisor() {
@@ -33,16 +34,24 @@ function bannerPie() {
   return `<div style="margin-top:18px;text-align:center"><img src="cid:banner" alt="Conecta Nex" style="max-width:100%;height:auto;border-radius:8px"></div>`;
 }
 
-// Botones de accion del email: agendar cita, llamar y responder.
+// Firma HMAC del enlace de interes (analisis/consulta) para que no se pueda enumerar.
+export function firmaInteres(pid, tipo) {
+  const key = process.env.CRON_SECRET || process.env.ACCESS_ENCRYPTION_KEY || 'cnx';
+  return crypto.createHmac('sha256', key).update(`${pid}:${tipo}`).digest('hex').slice(0, 16);
+}
+
+// Botones de accion del email: pedir analisis / consulta gratis (respuesta automatica) y llamar.
 function botonesCTA(em, p) {
   const pid = p && p.id ? p.id : '';
   const link = `${BASE_URL}/agendar?p=${pid}`;
   const form = `${BASE_URL}/solicitud?p=${pid}`;
   const tel = String(em.telefono || '').replace(/\s+/g, '');
+  const analisis = `${BASE_URL}/api/interes?p=${pid}&t=analisis&f=${firmaInteres(pid, 'analisis')}`;
+  const consulta = `${BASE_URL}/api/interes?p=${pid}&t=consulta&f=${firmaInteres(pid, 'consulta')}`;
   const btn = (href, txt, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;margin:4px 8px 4px 0">${txt}</a>`;
   return `<div style="margin:20px 0 6px">
-    ${btn(form, 'Cuéntanos tu negocio (2 min)', '#5b3fa0')}
-    ${btn(link, 'Agendar una llamada', '#16a34a')}
+    ${pid ? btn(analisis, 'Quiero mi análisis gratis', '#5b3fa0') : ''}
+    ${pid ? btn(consulta, 'Quiero una consulta gratuita', '#16a34a') : ''}
     ${tel ? btn('tel:' + tel, 'Llamar ahora', '#0f7a39') : ''}
   </div>
   <p style="color:#555;font-size:13px;margin:6px 0 0">O simplemente responde a este correo y te contestamos.</p>`;

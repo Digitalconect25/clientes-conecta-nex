@@ -207,6 +207,70 @@ async function descubrirBrightData(nicho, zona, limite) {
   return out;
 }
 
+// Investiga un negocio en internet: texto de su web + ficha/reseñas de Google (Bright Data).
+async function investigarNegocio(p) {
+  let web = '', serp = '';
+  if (p.website) {
+    try {
+      const url = /^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
+      web = (await r.text())
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 2500);
+    } catch { /* noop */ }
+  }
+  try {
+    const key = process.env.BRIGHTDATA_KEY;
+    if (key) {
+      const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
+      const q = encodeURIComponent(`${p.empresa} ${p.ciudad || ''} opiniones`);
+      const url = `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`;
+      const rr = await fetch('https://api.brightdata.com/request', {
+        method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, url, format: 'raw' }), signal: AbortSignal.timeout(22000),
+      });
+      let data = await rr.json().catch(() => null);
+      if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
+      if (data) {
+        const sp = (data.snack_pack || [])[0];
+        const org = (data.organic || data.organic_results || []).slice(0, 4)
+          .map((o) => `${o.title || ''}: ${o.description || o.snippet || ''}`).join(' | ');
+        serp = `${sp ? `Google: ${sp.rating || '?'} estrellas (${sp.reviews_cnt || sp.reviews || '?'} resenas). ` : ''}${org}`.slice(0, 1500);
+      }
+    }
+  } catch { /* noop */ }
+  return { web, serp };
+}
+
+// Agente PRO: investiga el negocio, saca punto fuerte y debil, y redacta un email PERSONALIZADO.
+async function redactarPro(p) {
+  const { web, serp } = await investigarNegocio(p);
+  const sys = `Eres el asistente de captacion de Conecta Nex; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. Tu tarea:
+1) Identifica UN punto fuerte real y concreto (algo que hacen bien: producto, trato, trayectoria, buenas resenas) y UN punto debil u oportunidad, sobre todo de presencia online (sin web, sin resenas, no aparece en Google ni en la IA, web anticuada, no fideliza a sus clientes).
+2) Escribe un email de PRIMER CONTACTO personalizado para ESE negocio: modesto, amable y honesto, SIN vender humo ni exagerar ni prometer resultados. Reconoce con sinceridad el punto fuerte (concreto, no generico), plantea con tacto el punto debil como oportunidad, y ofrece ayuda sin presion (ensenarselo en una llamada corta).
+REGLAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), 120-180 palabras, sin mencionar precios, sin formulas vacias. NO INVENTES datos: si no sabes algo, no lo afirmes. No escribas botones ni enlaces.
+Devuelve EXACTAMENTE este formato:
+FUERTE: <una frase>
+DEBIL: <una frase>
+ASUNTO: <asunto honesto, sin clickbait>
+---
+<cuerpo del email en HTML simple con varios <p>>`;
+  const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
+INFO DE SU WEB: ${web || '(no disponible)'}
+INFO DE GOOGLE: ${serp || '(no disponible)'}`;
+  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 950 });
+  const fuerte = ((texto.match(/FUERTE:\s*(.+)/i) || [])[1] || '').trim();
+  const debil = ((texto.match(/DEBIL:\s*(.+)/i) || [])[1] || '').trim();
+  let asunto = ((texto.match(/ASUNTO:\s*(.+)/i) || [])[1] || '').trim();
+  let cuerpo = texto;
+  const idx = texto.indexOf('---');
+  if (idx >= 0) cuerpo = texto.slice(idx + 3);
+  else { const ma = texto.match(/ASUNTO:.*/i); if (ma) cuerpo = texto.slice(texto.indexOf(ma[0]) + ma[0].length); }
+  cuerpo = cuerpo.replace(/^\s*-{3,}\s*/, '').trim();
+  if (!asunto) asunto = `Una idea para ${p.empresa || 'tu negocio'}`;
+  return { asunto, cuerpo, fuerte, debil };
+}
+
 export const maxDuration = 60;
 
 export default async function handler(req, res) {
@@ -422,6 +486,30 @@ export default async function handler(req, res) {
           COUNT(*) FILTER (WHERE email_borrador IS NOT NULL AND email_borrador <> '')::int AS con_borrador
           FROM prospectos`;
         return jsonResponse(res, 200, { ok: true, ...r });
+      }
+
+      // Agente PRO: investiga cada negocio en internet y redacta un email PERSONALIZADO (fuerte/debil).
+      if (accion === 'redactar_pro') {
+        if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
+        const limite = Math.min(parseInt(b.limite, 10) || 4, 6);
+        const filas = b.id
+          ? await sql`SELECT * FROM prospectos WHERE id = ${b.id}`
+          : await sql`
+              SELECT * FROM prospectos
+              WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')
+              ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
+              LIMIT ${limite}`;
+        const res2 = await Promise.allSettled(filas.map(async (p) => {
+          const r = await redactarPro(p);
+          const obs = (p.observaciones ? p.observaciones + '\n' : '') + `[PRO] Fuerte: ${r.fuerte || '-'} | Debil: ${r.debil || '-'}`;
+          await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${p.id}`;
+          return true;
+        }));
+        const redactados = res2.filter((x) => x.status === 'fulfilled').length;
+        const [{ pendientes }] = await sql`
+          SELECT COUNT(*)::int AS pendientes FROM prospectos
+          WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')`;
+        return jsonResponse(res, 200, { ok: true, redactados, pendientes });
       }
 
       if (accion === 'enviar') {

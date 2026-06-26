@@ -19,9 +19,9 @@ export default async function handler(req, res) {
     body: JSON.stringify({ accion, secret, limite: lote, ...extra }),
   }).then((r) => r.json().catch(() => ({}))).catch((e) => ({ error: e.message }));
   try {
-    const pro = await llamar('redactar_pro');   // 1) personaliza los siguientes mas probables
-    const env = await llamar('enviar_auto');    // 2) envia los mas probables que ya estan listos
-    return jsonResponse(res, 200, { ok: true, lote, redactar_pro: pro, enviar_auto: env });
+    const pro = await llamar('redactar_pro', { limite: 6 });   // 1) personaliza 6 (los mas probables)
+    const env = await llamar('enviar_auto', { limite: 10 });   // 2) envia hasta 10/dia (Prioridad Alta primero)
+    return jsonResponse(res, 200, { ok: true, redactar_pro: pro, enviar_auto: env });
   } catch (e) {
     return jsonResponse(res, 200, { ok: false, error: e.message });
   }

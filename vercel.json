@@ -3,8 +3,7 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "crons": [
-    { "path": "/api/cron-pro", "schedule": "0 8 * * *" },
-    { "path": "/api/cron-pro", "schedule": "30 12 * * *" }
+    { "path": "/api/cron-pro", "schedule": "0 8 * * 1-6" }
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },

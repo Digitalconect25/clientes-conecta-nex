@@ -42,8 +42,8 @@ export default async function handler(req, res) {
       const agendar = `${BASE_URL}/agendar?p=${pid}`;
       const hola = `Hola${p.empresa ? ' ' + p.empresa : ''},`;
       const cuerpo = tipo === 'analisis'
-        ? `<p>${hola}</p><p>Gracias por tu interés. Hemos recibido tu solicitud de <b>análisis de visibilidad gratuito</b>: revisaremos cómo te ve hoy internet (Google y la IA) y te lo enviamos en breve, sin compromiso.</p><p>Si lo prefieres, puedes <a href="${agendar}">reservar una llamada corta aquí</a> y te lo contamos en directo.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`
-        : `<p>${hola}</p><p>Gracias por tu interés. Para tu <b>consulta gratuita</b>, elige el hueco que mejor te venga aquí: <a href="${agendar}">reservar llamada</a>. Sin compromiso, en 15 minutos vemos tu caso.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`;
+        ? `<p>${hola}</p><p>Gracias por tu interés. Hemos recibido tu solicitud de <b>análisis de visibilidad gratuito</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo</b> para dártelo, sin compromiso.</p><p>Si lo prefieres, puedes <a href="${agendar}">reservar una llamada corta aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`
+        : `<p>${hola}</p><p>Gracias por tu interés en una <b>consulta gratuita</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo.</b> Si prefieres elegir tú el momento, <a href="${agendar}">reserva una llamada aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`;
       try {
         await enviarEmail({
           to: p.email,

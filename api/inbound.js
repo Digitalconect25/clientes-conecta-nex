@@ -60,11 +60,11 @@ export default async function handler(req, res) {
     }
     const para = String(toRaw || '').trim();
 
-    let prospecto_id = null, cliente_id = null;
+    let prospecto_id = null, cliente_id = null, primeraRespuesta = false;
     const correo = soloEmail(de);
     if (correo) {
-      const [p] = await sql`SELECT id FROM prospectos WHERE lower(email) = ${correo} LIMIT 1`;
-      if (p) { prospecto_id = p.id; await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${p.id} AND estado != 'convertido'`; }
+      const [p] = await sql`SELECT id, estado FROM prospectos WHERE lower(email) = ${correo} LIMIT 1`;
+      if (p) { prospecto_id = p.id; primeraRespuesta = p.estado !== 'respondido' && p.estado !== 'convertido'; await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${p.id} AND estado != 'convertido'`; }
       const [c] = await sql`SELECT id FROM clientes WHERE lower(email) = ${correo} LIMIT 1`;
       if (c) cliente_id = c.id;
     }
@@ -114,6 +114,18 @@ RESPUESTA: <email de respuesta breve, calido, espanol de Espana, sin emojis ni g
         });
       }
     } catch { /* reenvio opcional */ }
+
+    // Acuse AUTOMATICO al lead en su PRIMERA respuesta: un humano toma el relevo a partir de aqui.
+    if (primeraRespuesta && correo && emailHabilitado() && !/^\s*baja\s*$/i.test(texto || '')) {
+      try {
+        await enviarEmail({
+          to: correo,
+          subject: 'Re: ' + String(asunto || 'tu mensaje').replace(/^\s*Re:\s*/i, ''),
+          html: `<div style="font-family:sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:600px;margin:0 auto"><p>Hola,</p><p>Gracias por tu respuesta. La hemos recibido y <b>en breve un miembro de nuestro equipo se pondrá en contacto contigo</b>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p></div>`,
+          replyTo: process.env.REPLY_TO_EMAIL,
+        });
+      } catch (e) { console.error('inbound ack:', e.message); }
+    }
     return jsonResponse(res, 200, { ok: true });
   } catch (err) {
     console.error('inbound error:', err);

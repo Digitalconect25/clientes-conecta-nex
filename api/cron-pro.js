@@ -13,14 +13,15 @@ export default async function handler(req, res) {
 
   const base = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
   const lote = Math.min(parseInt(req.query.lote, 10) || 5, 6);
+  const llamar = (accion, extra = {}) => fetch(`${base}/api/prospectos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accion, secret, limite: lote, ...extra }),
+  }).then((r) => r.json().catch(() => ({}))).catch((e) => ({ error: e.message }));
   try {
-    const r = await fetch(`${base}/api/prospectos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: 'redactar_pro', secret, limite: lote }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return jsonResponse(res, 200, { ok: true, lote, ...data });
+    const pro = await llamar('redactar_pro');   // 1) personaliza los siguientes mas probables
+    const env = await llamar('enviar_auto');    // 2) envia los mas probables que ya estan listos
+    return jsonResponse(res, 200, { ok: true, lote, redactar_pro: pro, enviar_auto: env });
   } catch (e) {
     return jsonResponse(res, 200, { ok: false, error: e.message });
   }

@@ -521,6 +521,38 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, { ok: true, redactados, pendientes });
       }
 
+      // Auto-envio: la IA envia sola a los de mayor probabilidad (Prioridad Alta) que ya tienen email + borrador.
+      // Los pasa a estado 'email_enviado' (= Contactados). Lote pequeno por entregabilidad (anti-spam).
+      if (accion === 'enviar_auto') {
+        if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Email no configurado.' });
+        const limite = Math.min(parseInt(b.limite, 10) || 5, 10);
+        const em = await getEmisor();
+        const filas = await sql`
+          SELECT * FROM prospectos
+          WHERE estado = 'nuevo'
+            AND email IS NOT NULL AND email <> ''
+            AND email_borrador IS NOT NULL AND email_borrador <> ''
+          ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
+          LIMIT ${limite}`;
+        let enviados = 0;
+        for (const p of filas) {
+          if (!RE_EMAIL.test(String(p.email || ''))) continue;
+          try {
+            await enviarEmail({
+              to: p.email,
+              subject: p.asunto || `Una idea para ${p.empresa || 'tu negocio'}`,
+              html: emailHtml(p.email_borrador, em, p),
+              replyTo: process.env.REPLY_TO_EMAIL,
+              attachments: ADJUNTOS_INLINE,
+            });
+            await sql`UPDATE prospectos SET estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
+            enviados++;
+          } catch (e) { console.error('enviar_auto:', e.message); }
+        }
+        const [{ pendientes }] = await sql`SELECT COUNT(*)::int AS pendientes FROM prospectos WHERE estado = 'nuevo' AND email <> '' AND email_borrador <> ''`;
+        return jsonResponse(res, 200, { ok: true, enviados, pendientes });
+      }
+
       if (accion === 'enviar') {
         if (!b.id) return jsonResponse(res, 400, { error: 'Falta id' });
         if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Email no configurado (RESEND_API_KEY y RESEND_FROM_EMAIL).' });

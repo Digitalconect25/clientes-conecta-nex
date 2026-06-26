@@ -76,6 +76,7 @@ export default function Prospeccion() {
   const [emailOn, setEmailOn] = useState(false);
   const [iaOn, setIaOn] = useState(false);
   const [nuevo, setNuevo] = useState(VACIO);
+  const [vista, setVista] = useState('sin');
   const [pegar, setPegar] = useState('');
   const [sel, setSel] = useState(null); // prospecto en edicion
   const [busy, setBusy] = useState(false);
@@ -177,6 +178,11 @@ export default function Prospeccion() {
   const total = lista.length;
   const enviados = lista.filter((p) => p.estado === 'email_enviado' || p.enviado_en).length;
   const respond = lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length;
+  const filtrada = lista.filter((p) => vista === 'sin'
+    ? (!p.estado || p.estado === 'nuevo')
+    : vista === 'cont'
+      ? p.estado === 'email_enviado'
+      : (p.estado === 'respondido' || p.estado === 'convertido'));
 
   return (
     <div>
@@ -283,6 +289,11 @@ export default function Prospeccion() {
             <button onClick={vaciarTodo} disabled={busy || !lista.length} style={{ color: '#c0392b' }}>Vaciar lista</button>
           </div>
         </div>
+        <div style={{ display: 'flex', gap: 6, margin: '12px 0 0', flexWrap: 'wrap' }}>
+          {[['sin', 'Sin contactar', lista.filter((p) => !p.estado || p.estado === 'nuevo').length], ['cont', 'Contactados', lista.filter((p) => p.estado === 'email_enviado').length], ['resp', 'Con respuesta', lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length]].map(([k, l, n]) => (
+            <button key={k} onClick={() => setVista(k)} style={{ background: vista === k ? '#0f7a39' : '#eef2f0', color: vista === k ? '#fff' : '#374151', border: 0, borderRadius: 8, padding: '7px 12px', fontWeight: 600, cursor: 'pointer' }}>{l} ({n})</button>
+          ))}
+        </div>
         {cargando ? <p>Cargando...</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginTop: 10 }}>
             <thead><tr style={{ textAlign: 'left', color: '#67756c', fontSize: 12, textTransform: 'uppercase' }}>
@@ -290,7 +301,7 @@ export default function Prospeccion() {
               <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody>
-              {[...lista].sort((a, b) => ordP(b.prioridad) - ordP(a.prioridad)).map((p) => {
+              {[...filtrada].sort((a, b) => ordP(b.prioridad) - ordP(a.prioridad)).map((p) => {
                 const e = PESTADO[p.estado] || PESTADO.nuevo;
                 return (
                   <tr key={p.id} style={{ borderTop: '1px solid #eef2f0', background: marcados.has(p.id) ? '#fef4f4' : undefined }}>

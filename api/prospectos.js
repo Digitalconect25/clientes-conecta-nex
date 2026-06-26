@@ -11,9 +11,21 @@ async function getEmisor() {
 }
 function pieLegal(em) {
   const dir = [em.direccion, [em.cp, em.ciudad].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  const ident = [em.nombre, dir, em.email].filter(Boolean).join(' &middot; ');
+  const ident = [em.nombre_comercial || em.nombre, dir].filter(Boolean).join(' &middot; ');
+  const tel = String(em.telefono || '').trim();
+  const WEB = process.env.EMAIL_WEB_URL || 'https://conectanex.es';
+  const PRIV = process.env.EMAIL_PRIVACY_URL || (WEB.replace(/\/+$/, '') + '/privacidad');
+  const AVISO = process.env.EMAIL_AVISO_URL || (WEB.replace(/\/+$/, '') + '/aviso-legal');
+  const contacto = em.email || process.env.AGENCY_EMAIL || 'info.digitalconect@gmail.com';
   return `<hr style="border:0;border-top:1px solid #eee;margin:18px 0">
-  <p style="color:#888;font-size:12px">${ident}<br>Comunicacion comercial. Si no deseas recibir mas correos, responde con la palabra <b>BAJA</b> y te damos de baja de inmediato.</p>`;
+  <p style="color:#666;font-size:12px;line-height:1.6;margin:0 0 8px">
+    <b>${ident}</b><br>
+    ${em.email ? `<a href="mailto:${em.email}" style="color:#666;text-decoration:none">${em.email}</a> &middot; ` : ''}${tel ? `Tel: <a href="tel:${tel.replace(/\s+/g, '')}" style="color:#666;text-decoration:none">${tel}</a> &middot; ` : ''}<a href="${WEB}" style="color:#0f7a39">${WEB.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a>
+  </p>
+  <p style="color:#999;font-size:11px;line-height:1.6;margin:0">
+    Comunicacion comercial. Si no deseas recibir mas correos, responde <b>BAJA</b> y te damos de baja de inmediato.<br>
+    <b>Proteccion de datos:</b> responsable del tratamiento ${em.nombre_comercial || em.nombre || 'Conecta Nex'}. Tus datos de contacto, obtenidos de fuentes de acceso publico o profesional, se tratan con la finalidad de presentarte nuestros servicios, sobre la base del interes legitimo (art. 6.1.f RGPD). Puedes ejercer tus derechos de acceso, rectificacion, supresion, oposicion, limitacion y portabilidad escribiendo a <a href="mailto:${contacto}" style="color:#999">${contacto}</a>, y reclamar ante la AEPD. Mas informacion en nuestra <a href="${PRIV}" style="color:#999">Politica de Privacidad</a> y <a href="${AVISO}" style="color:#999">Aviso Legal</a>.
+  </p>`;
 }
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const LOGO_URL = process.env.EMAIL_LOGO_URL || (BASE_URL + '/logo-email.png');

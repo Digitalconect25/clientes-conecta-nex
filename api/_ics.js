@@ -29,7 +29,7 @@ function escIcs(s) {
 export function crearIcs({ id, fecha, hora, durMin = 30, titulo, descripcion, ubicacion, url, organizadorEmail, organizadorNombre, ahoraIso }) {
   const dtStart = aStamp(fecha, hora, 0);
   const dtEnd = aStamp(fecha, hora, durMin);
-  const uid = `cita-${id || dtStart}@conectanex.com`;
+  const uid = `cita-${id || dtStart}@conectanex.es`;
   const dtstamp = ahoraIso ? stampUTC(ahoraIso) : `${dtStart}Z`;
   const lines = [
     'BEGIN:VCALENDAR',

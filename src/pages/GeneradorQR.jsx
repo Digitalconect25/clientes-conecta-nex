@@ -135,7 +135,7 @@ const RANDOM_PALETTES = [
 ];
 
 const DEFAULT_STATE = {
-  url: 'https://conectanex.com',
+  url: 'https://conectanex.es',
   size: 600,
   dotStyle: 'extra-rounded',
   cornerSquareStyle: 'extra-rounded',

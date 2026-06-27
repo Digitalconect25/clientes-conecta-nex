@@ -9,6 +9,7 @@ import { enviarEmail, emailHabilitado } from './_email.js';
 import { crearIcs, icsAdjunto } from './_ics.js';
 import { waLink } from './_whatsapp.js';
 import { generarDossier } from './dossier.js';
+import { modalidadTextoLead, modalidadParaIcs, modalidadLabel } from './_modalidad.js';
 
 export const maxDuration = 60;
 
@@ -31,14 +32,15 @@ async function asegurarColumna() {
 // Recordatorio al lead por email (con .ics). Marca recordatorio_en para no repetir el mismo dia.
 async function recordarLead(c, cuandoTxt) {
   if (!c.email || !RE_EMAIL.test(c.email) || !emailHabilitado()) return false;
-  const ics = crearIcs({ id: c.id, fecha: c.fecha, hora: c.hora, durMin: 30, titulo: 'Llamada con Conecta NEX', ubicacion: 'Llamada telefónica' });
+  const ubic = modalidadParaIcs(c.modalidad, c.enlace_reunion);
+  const ics = crearIcs({ id: c.id, fecha: c.fecha, hora: c.hora, durMin: 30, titulo: 'Cita con Conecta NEX', ubicacion: ubic.ubicacion, url: ubic.url });
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
     <div style="text-align:center;padding:12px 0"><img src="${BASE}/logo-email.png" alt="Conecta NEX" width="140" style="max-width:140px;height:auto"></div>
     <div style="border:1px solid #eee;border-radius:12px;padding:22px">
       <p>Hola ${esc(c.nombre || '')},</p>
       <p>Te recordamos tu cita con <b>Conecta NEX</b>:</p>
       <p style="font-size:17px;font-weight:bold;margin:10px 0">${cuandoTxt}</p>
-      <p style="color:#444">Es una llamada breve, sin compromiso. Si necesitas cambiarla, responde a este correo y la ajustamos.</p>
+      <p style="color:#444">${esc(modalidadTextoLead(c.modalidad, c.enlace_reunion))} Si necesitas cambiarla, responde a este correo y la ajustamos.</p>
       <p style="margin-top:16px">Un saludo,<br><b>Equipo Conecta NEX</b><br><span style="color:#888;font-size:13px">Calle Alberola 24, Alicante · conectanex.es</span></p>
     </div></div>`;
   try {
@@ -61,12 +63,14 @@ export default async function handler(req, res) {
 
     const citasHoy = await sql`
       SELECT c.id, c.nombre, c.email, c.telefono, to_char(c.fecha,'YYYY-MM-DD') AS fecha, c.hora, c.estado,
-             COALESCE(c.dossier,'') AS dossier, c.recordatorio_en, p.empresa AS empresa
+             COALESCE(c.dossier,'') AS dossier, COALESCE(c.modalidad,'a_concretar') AS modalidad,
+             COALESCE(c.enlace_reunion,'') AS enlace_reunion, c.recordatorio_en, p.empresa AS empresa
       FROM citas c LEFT JOIN prospectos p ON p.id = c.prospecto_id
       WHERE to_char(c.fecha,'YYYY-MM-DD') = ${hoy} AND c.estado IN ('confirmada','pendiente')
       ORDER BY c.hora ASC`;
     const citasManana = await sql`
-      SELECT c.id, c.nombre, c.email, c.telefono, to_char(c.fecha,'YYYY-MM-DD') AS fecha, c.hora, c.estado, c.recordatorio_en
+      SELECT c.id, c.nombre, c.email, c.telefono, to_char(c.fecha,'YYYY-MM-DD') AS fecha, c.hora, c.estado,
+             COALESCE(c.modalidad,'a_concretar') AS modalidad, COALESCE(c.enlace_reunion,'') AS enlace_reunion, c.recordatorio_en
       FROM citas c WHERE to_char(c.fecha,'YYYY-MM-DD') = ${manana} AND c.estado = 'confirmada'
       ORDER BY c.hora ASC`;
 
@@ -93,10 +97,10 @@ export default async function handler(req, res) {
     if (destino && emailHabilitado() && citasHoy.length) {
       const bloques = citasHoy.map((c) => {
         const cuando = `${c.hora} h`;
-        const waTxt = `Hola ${c.nombre || ''}, te recordamos tu cita con Conecta NEX hoy a las ${c.hora} h. Es una llamada breve, sin compromiso. Si necesitas cambiarla, dinos. Un saludo.`;
+        const waTxt = `Hola ${c.nombre || ''}, te recordamos tu cita con Conecta NEX hoy a las ${c.hora} h. ${modalidadTextoLead(c.modalidad, c.enlace_reunion)} Si necesitas cambiarla, dinos. Un saludo.`;
         const wa = c.telefono ? waLink(c.telefono, waTxt) : '';
         return `<div style="border:1px solid #e6e1d8;border-radius:10px;padding:14px;margin:0 0 12px">
-          <div style="font-weight:700;font-size:15px">${cuando} · ${esc(c.nombre || c.empresa || 'Sin nombre')} ${c.estado === 'pendiente' ? '<span style="color:#b8860b;font-size:12px">(sin confirmar)</span>' : ''}</div>
+          <div style="font-weight:700;font-size:15px">${cuando} · ${esc(c.nombre || c.empresa || 'Sin nombre')} <span style="color:#5b3fa0;font-size:12px;font-weight:600">· ${esc(modalidadLabel(c.modalidad))}</span> ${c.estado === 'pendiente' ? '<span style="color:#b8860b;font-size:12px">(sin confirmar)</span>' : ''}</div>
           <div style="color:#667;font-size:13px;margin:2px 0 8px">${esc(c.email || '')}${c.telefono ? ' · ' + esc(c.telefono) : ''}</div>
           ${wa ? `<a href="${wa}" style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;font-weight:700;padding:9px 16px;border-radius:8px;font-size:14px">Recordar por WhatsApp</a>` : '<span style="color:#999;font-size:12px">Sin teléfono para WhatsApp</span>'}
           ${c.dossier ? `<div style="margin-top:10px;background:#faf9f6;border:1px solid #eee;border-radius:8px;padding:12px;white-space:pre-wrap;font-size:13px;line-height:1.5">${esc(c.dossier)}</div>` : ''}

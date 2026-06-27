@@ -8,6 +8,7 @@ import { sql } from './_db.js';
 import { firmaCita } from './agendar.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { crearIcs, icsAdjunto } from './_ics.js';
+import { modalidadTextoLead, modalidadParaIcs } from './_modalidad.js';
 
 const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -51,7 +52,7 @@ function pagina({ titulo, mensaje, color = '#16a34a', detalle = '', extra = '' }
 }
 
 // Email de "cita confirmada" con .ics y boton al formulario del negocio.
-function emailConfirmadaHTML({ nombre, cuando, urlFormulario }) {
+function emailConfirmadaHTML({ nombre, cuando, urlFormulario, modalidadTxt }) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
     <div style="text-align:center;padding:14px 0 6px">
       <img src="${BASE}/logo-email.png" alt="Conecta NEX" width="150" style="max-width:150px;height:auto;display:inline-block">
@@ -64,7 +65,7 @@ function emailConfirmadaHTML({ nombre, cuando, urlFormulario }) {
       <p>Perfecto, <b>tu cita queda reservada en firme</b>:</p>
       <table style="width:100%;border-collapse:collapse;margin:10px 0 16px">
         <tr><td style="padding:7px 0;color:#888">Cuándo</td><td style="padding:7px 0;font-weight:bold">${cuando}</td></tr>
-        <tr><td style="padding:7px 0;color:#888">Cómo</td><td style="padding:7px 0">Llamada breve, sin compromiso</td></tr>
+        <tr><td style="padding:7px 0;color:#888">Cómo</td><td style="padding:7px 0">${modalidadTxt}</td></tr>
       </table>
       <p style="color:#444">Te adjuntamos el evento para que lo <b>añadas a tu calendario</b>. Te enviaremos un recordatorio antes.</p>
       ${urlFormulario ? `
@@ -89,7 +90,7 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    const [cita] = await sql`SELECT id, estado, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, nombre, email, telefono, prospecto_id FROM citas WHERE id = ${c}`;
+    const [cita] = await sql`SELECT id, estado, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, nombre, email, telefono, prospecto_id, COALESCE(modalidad,'a_concretar') AS modalidad, COALESCE(enlace_reunion,'') AS enlace_reunion FROM citas WHERE id = ${c}`;
     if (!cita) {
       res.status(404).send(pagina({ titulo: 'Cita no encontrada', mensaje: 'No hemos encontrado esta cita.', color: '#c0392b' }));
       return;
@@ -113,18 +114,19 @@ export default async function handler(req, res) {
     if (cita.email && emailHabilitado()) {
       try {
         const [em] = await sql`SELECT nombre_comercial, nombre, email, direccion, cp, ciudad FROM emisor WHERE id = 1`;
+        const ubic = modalidadParaIcs(cita.modalidad, cita.enlace_reunion);
         const ics = crearIcs({
           id: cita.id, fecha: cita.fecha, hora: cita.hora, durMin: 30,
-          titulo: 'Llamada con Conecta NEX',
-          descripcion: 'Llamada breve para ver cómo mejorar la presencia digital de tu negocio. Conecta NEX (Digital Conect).',
-          ubicacion: 'Llamada telefónica',
+          titulo: 'Cita con Conecta NEX',
+          descripcion: 'Hablamos de cómo mejorar la presencia digital de tu negocio. Conecta NEX (Digital Conect).',
+          ubicacion: ubic.ubicacion, url: ubic.url,
           organizadorEmail: em?.email || process.env.AGENCY_EMAIL || undefined,
           organizadorNombre: em?.nombre_comercial || em?.nombre || 'Conecta NEX',
         });
         await enviarEmail({
           to: cita.email,
           subject: `Cita confirmada — ${cuandoCorto} · Conecta NEX`,
-          html: emailConfirmadaHTML({ nombre: cita.nombre, cuando, urlFormulario }),
+          html: emailConfirmadaHTML({ nombre: cita.nombre, cuando, urlFormulario, modalidadTxt: modalidadTextoLead(cita.modalidad, cita.enlace_reunion) }),
           attachments: [icsAdjunto(ics)],
           replyTo: process.env.REPLY_TO_EMAIL,
         });

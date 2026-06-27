@@ -26,7 +26,7 @@ function escIcs(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 }
 
-export function crearIcs({ id, fecha, hora, durMin = 30, titulo, descripcion, ubicacion, organizadorEmail, organizadorNombre, ahoraIso }) {
+export function crearIcs({ id, fecha, hora, durMin = 30, titulo, descripcion, ubicacion, url, organizadorEmail, organizadorNombre, ahoraIso }) {
   const dtStart = aStamp(fecha, hora, 0);
   const dtEnd = aStamp(fecha, hora, durMin);
   const uid = `cita-${id || dtStart}@conectanex.com`;
@@ -45,6 +45,7 @@ export function crearIcs({ id, fecha, hora, durMin = 30, titulo, descripcion, ub
     `SUMMARY:${escIcs(titulo || 'Cita con Conecta NEX')}`,
     descripcion ? `DESCRIPTION:${escIcs(descripcion)}` : '',
     ubicacion ? `LOCATION:${escIcs(ubicacion)}` : '',
+    url ? `URL:${escIcs(url)}` : '',
     organizadorEmail ? `ORGANIZER;CN=${escIcs(organizadorNombre || 'Conecta NEX')}:mailto:${organizadorEmail}` : '',
     'STATUS:CONFIRMED',
     'BEGIN:VALARM',

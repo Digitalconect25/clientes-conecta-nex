@@ -218,6 +218,8 @@ export const api = {
   citaCrear: (data) => request('POST', '/api/citas', data),
   citaUpdate: (data) => request('PUT', '/api/citas', data),
   citaDelete: (id) => request('DELETE', `/api/citas?id=${id}`),
+  // Dossier "base para presentar" (IA): genera/regenera la ficha de reunión de una cita.
+  citaDossier: (id) => request('POST', '/api/dossier', { id }),
 };
 
 // Endpoint PUBLICO de acceso al acta (sin auth de admin)

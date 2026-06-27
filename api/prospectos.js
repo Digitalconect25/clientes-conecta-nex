@@ -58,15 +58,15 @@ function botonesCTA(em, p) {
   const link = `${BASE_URL}/agendar?p=${pid}`;
   const form = `${BASE_URL}/solicitud?p=${pid}`;
   const tel = String(em.telefono || '').replace(/\s+/g, '');
-  const analisis = `${BASE_URL}/api/interes?p=${pid}&t=analisis&f=${firmaInteres(pid, 'analisis')}`;
-  const consulta = `${BASE_URL}/api/interes?p=${pid}&t=consulta&f=${firmaInteres(pid, 'consulta')}`;
+  const telDisp = String(em.telefono || '').trim();
+  const info = `${BASE_URL}/api/interes?p=${pid}&t=info&f=${firmaInteres(pid, 'info')}`;
+  const agenda = `${BASE_URL}/agendar?p=${pid}`;
   const btn = (href, txt, bg) => `<a href="${href}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;margin:4px 8px 4px 0">${txt}</a>`;
   return `<div style="margin:20px 0 6px">
-    ${pid ? btn(analisis, 'Quiero mi análisis gratis', '#5b3fa0') : ''}
-    ${pid ? btn(consulta, 'Quiero una consulta gratuita', '#16a34a') : ''}
-    ${tel ? btn('tel:' + tel, 'Llamar ahora', '#0f7a39') : ''}
+    ${pid ? btn(info, 'Quiero información', '#5b3fa0') : ''}
+    ${pid ? btn(agenda, 'Quiero agendar cita', '#16a34a') : ''}
   </div>
-  <p style="color:#555;font-size:13px;margin:6px 0 0">O simplemente responde a este correo y te contestamos.</p>`;
+  <p style="color:#555;font-size:13px;margin:8px 0 0">Reserva tu cita y te llamamos a la hora que elijas, sin compromiso.${telDisp ? ` Si prefieres agilizar, llámanos al <a href="tel:${tel}" style="color:#0f7a39;text-decoration:none"><b>${telDisp}</b></a>.` : ''} O responde a este correo y te contestamos.</p>`;
 }
 
 function emailHtml(cuerpo, em, p) {
@@ -89,9 +89,9 @@ GUION EN ORDEN (parrafos cortos, varios):
 1) SALUDO cordial (usa el nombre del contacto si lo hay; si no, "Hola, buenos dias" o similar).
 2) INTRODUCCION humana: explica que, buscando por internet, has dado con su negocio. Puedes mencionar su sector y su ciudad de forma natural (la del NEGOCIO, no la tuya).
 3) OBSERVACION: ${sin
-    ? 'comenta con tacto que apenas tienen presencia online y, sobre todo, que probablemente no tienen una forma de mantener el contacto con sus clientes para que vuelvan, sin culpabilizar ni alarmar.'
-    : 'reconoce que ya tienen algo de presencia, y enfoca en que captar clientes esta bien pero el mayor valor esta en mantenerlos y hacer que vuelvan.'}
-4) PROPUESTA DE VALOR (lo importante): explica con calma como les ayudamos a fidelizar y vender mas a sus clientes actuales con email marketing: boletines y newsletters con plantillas de diseno profesional, campanas automatizadas (felicitaciones, recordatorios, ofertas en el momento justo) y segmentos creados con inteligencia artificial para enviar el mensaje adecuado a cada tipo de cliente. Explica el beneficio en su negocio concreto, con ejemplos realistas.
+    ? 'comenta con tacto que apenas tienen presencia online y que, cuando alguien busca su servicio en Google o se lo pregunta a la IA, no aparecen, sin culpabilizar ni alarmar.'
+    : 'reconoce que ya tienen algo de presencia online, pero que se puede mejorar para que les encuentren mas y aparezcan cuando la gente busca su servicio.'}
+4) PROPUESTA DE VALOR (lo importante): explica con calma que AYUDAMOS A NEGOCIOS A MEJORAR SU PRESENCIA DIGITAL: que aparezcan en Google y en la IA cuando alguien busca su servicio, con web y ficha de Google al dia, buenas resenas y redes cuidadas, para que les encuentren y lleguen mas clientes. Explica el beneficio en su negocio concreto, con ejemplos realistas.
 5) CIERRE suave, sin presion: ofrece ensenarselo en una llamada corta o resolver dudas, dejando la puerta abierta.
 REGLAS ESTRICTAS:
 - Espanol de Espana, profesional, cercano y humano. Tono tranquilo y consultivo, NUNCA agresivo ni con prisa.
@@ -134,6 +134,7 @@ async function ensureP() {
   if (_migP) return;
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { /* noop */ }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS seguimiento_en timestamptz`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { /* noop */ }
   _migP = true;
 }
 
@@ -229,7 +230,7 @@ async function descubrirBrightData(nicho, zona, limite) {
 }
 
 // Investiga un negocio en internet: texto de su web + ficha/reseñas de Google (Bright Data).
-async function investigarNegocio(p) {
+export async function investigarNegocio(p) {
   let web = '', serp = '';
   if (p.website) {
     try {
@@ -267,8 +268,8 @@ async function investigarNegocio(p) {
 async function redactarPro(p) {
   const { web, serp } = await investigarNegocio(p);
   const sys = `Eres el asistente de captacion de Conecta Nex; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. Tu tarea:
-1) Identifica UN punto fuerte real y concreto (algo que hacen bien: producto, trato, trayectoria, buenas resenas) y UN punto debil u oportunidad, sobre todo de presencia online (sin web, sin resenas, no aparece en Google ni en la IA, web anticuada, no fideliza a sus clientes).
-2) Escribe un email de PRIMER CONTACTO personalizado para ESE negocio: modesto, amable y honesto, SIN vender humo ni exagerar ni prometer resultados. Reconoce con sinceridad el punto fuerte (concreto, no generico), plantea con tacto el punto debil como oportunidad, y ofrece ayuda sin presion (ensenarselo en una llamada corta).
+1) Identifica UN punto fuerte real y concreto (algo que hacen bien: producto, trato, trayectoria, buenas resenas) y UN punto debil u oportunidad, sobre todo de PRESENCIA DIGITAL (sin web, pocas resenas, no aparece en Google ni en la IA, web anticuada).
+2) Escribe un email de PRIMER CONTACTO personalizado para ESE negocio: modesto, amable y honesto, SIN vender humo ni exagerar ni prometer resultados. Reconoce con sinceridad el punto fuerte (concreto, no generico), plantea con tacto el punto debil como oportunidad, y explica que AYUDAMOS A NEGOCIOS A MEJORAR SU PRESENCIA DIGITAL (aparecer en Google y en la IA, web y ficha al dia, resenas) para que les encuentren mas clientes. Ofrece ayuda sin presion (ensenarselo en una llamada corta).
 REGLAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), 120-180 palabras, sin mencionar precios, sin formulas vacias. NO INVENTES datos: si no sabes algo, no lo afirmes. No escribas botones ni enlaces.
 Devuelve EXACTAMENTE este formato:
 FUERTE: <una frase>
@@ -634,9 +635,9 @@ export default async function handler(req, res) {
         const em = await getEmisor();
         const cuerpo = `<p>Hola, buenos dias:</p>
 <p>Este es un email de PRUEBA para que veas como se ve el correo que reciben los prospectos.</p>
-<p>Buscando por internet di con tu negocio y me llamo la atencion. En Conecta Nex, de Digital Conect, ayudamos a fidelizar a tus clientes con boletines de diseno profesional, campanas automatizadas y segmentos creados con inteligencia artificial, para que cada cliente reciba el mensaje adecuado y vuelva mas a menudo.</p>
+<p>Buscando por internet di con tu negocio y me llamo la atencion. En Conecta Nex ayudamos a negocios a MEJORAR SU PRESENCIA DIGITAL: que aparezcan en Google y en la IA cuando alguien busca su servicio, con web y ficha de Google al dia, buenas resenas y redes cuidadas, para que les encuentren y lleguen mas clientes.</p>
 <p>Si te apetece, te lo enseno en una llamada corta y sin compromiso. Un saludo, Lazaro.</p>`;
-        await enviarEmail({ to, subject: '[PRUEBA] Asi se ve tu email de captacion - Conecta Nex', html: emailHtml(cuerpo, em, { id: 0 }), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
+        await enviarEmail({ to, subject: '[PRUEBA] Asi se ve tu email de captacion - Conecta Nex', html: emailHtml(cuerpo, em, { id: 999999999 }), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
         return jsonResponse(res, 200, { ok: true, to });
       }
 

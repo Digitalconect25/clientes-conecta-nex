@@ -31,6 +31,16 @@ function fechaLarga(s) {
   if (isNaN(d.getTime())) return String(s || '');
   return `${DOW[(d.getDay() + 6) % 7]} ${d.getDate()} de ${MES[d.getMonth()]} de ${d.getFullYear()}`;
 }
+// Enlace wa.me 1 clic (gratis): normaliza el teléfono (ES por defecto) y precarga el mensaje.
+function waLink(tel, texto) {
+  let n = String(tel || '').replace(/[^\d+]/g, '');
+  if (!n) return '';
+  if (n.startsWith('+')) n = n.slice(1);
+  else if (n.startsWith('00')) n = n.slice(2);
+  else if (n.length === 9) n = '34' + n;
+  n = n.replace(/\D/g, '');
+  return n ? `https://wa.me/${n}?text=${encodeURIComponent(texto || '')}` : '';
+}
 
 export default function Agenda() {
   const [citas, setCitas] = useState([]);
@@ -46,6 +56,7 @@ export default function Agenda() {
   const [notaInt, setNotaInt] = useState('');
   const [repro, setRepro] = useState(null);  // { fecha, hora }
   const [mail, setMail] = useState(null);     // { asunto, mensaje, enviando }
+  const [dossierCargando, setDossierCargando] = useState(false);
 
   useEffect(() => { cargar(); }, []);
   async function cargar() {
@@ -77,6 +88,16 @@ export default function Agenda() {
       setDetalle((d) => ({ ...d, nota_interna: notaInt }));
       alert('Nota interna guardada ✓');
     } catch (err) { alert('Error: ' + err.message); }
+  }
+  async function generarDossier() {
+    if (!detalle) return;
+    setDossierCargando(true);
+    try {
+      const { dossier } = await api.citaDossier(detalle.id);
+      setCitas((xs) => xs.map((x) => x.id === detalle.id ? { ...x, dossier } : x));
+      setDetalle((d) => ({ ...d, dossier }));
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setDossierCargando(false); }
   }
   async function reprogramar() {
     if (!repro?.fecha || !repro?.hora) { alert('Elige el nuevo día y hora.'); return; }
@@ -332,6 +353,29 @@ export default function Agenda() {
                   <div style={{ ...lab, marginBottom: 6 }}>Notas internas del equipo (privadas)</div>
                   <textarea value={notaInt} onChange={(ev) => setNotaInt(ev.target.value)} rows={3} placeholder="Solo para el equipo: contexto, preparación, seguimiento…" style={{ ...inp, resize: 'vertical', background: '#fbfaf7' }} />
                   <button onClick={guardarNotaInterna} style={{ ...btn, marginTop: 8, fontSize: 13, padding: '6px 12px' }}>Guardar nota interna</button>
+                </div>
+
+                {/* Preparar reunión: dossier IA + recordatorio WhatsApp */}
+                <div style={{ marginTop: 16, borderTop: '1px solid #f1f5f0', paddingTop: 14 }}>
+                  <div style={{ ...lab, marginBottom: 8 }}>Preparar la reunión</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button onClick={generarDossier} disabled={dossierCargando}
+                      style={{ ...btn, fontSize: 13, padding: '7px 12px', background: '#5b3fa0', color: '#fff', border: 'none', opacity: dossierCargando ? .7 : 1 }}>
+                      {dossierCargando ? 'Investigando…' : (detalle.dossier ? '📋 Regenerar dossier IA' : '📋 Generar dossier IA')}
+                    </button>
+                    {detalle.telefono && (
+                      <a href={waLink(detalle.telefono, `Hola ${detalle.nombre || ''}, te recordamos tu cita con Conecta NEX el ${fechaLarga(detalle.fecha)} a las ${detalle.hora} h. Es una llamada breve, sin compromiso. Si necesitas cambiarla, dinos. Un saludo.`)}
+                        target="_blank" rel="noopener noreferrer"
+                        style={{ ...btn, fontSize: 13, padding: '7px 12px', background: '#25D366', color: '#fff', border: 'none', textDecoration: 'none' }}>
+                        📲 Recordar por WhatsApp
+                      </a>
+                    )}
+                  </div>
+                  {detalle.dossier ? (
+                    <div style={{ marginTop: 10, background: '#faf9f6', border: '1px solid #ece8df', borderRadius: 10, padding: 12, whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5, color: '#33312c' }}>{detalle.dossier}</div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#9aa6a0', marginTop: 8 }}>La IA investiga el negocio (web + Google) y prepara una base para presentar. {!detalle.telefono && 'Sin teléfono: no hay recordatorio por WhatsApp.'}</p>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

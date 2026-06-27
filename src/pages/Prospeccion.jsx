@@ -306,7 +306,7 @@ export default function Prospeccion() {
                 return (
                   <tr key={p.id} style={{ borderTop: '1px solid #eef2f0', background: marcados.has(p.id) ? '#fef4f4' : undefined }}>
                     <td style={{ padding: 8 }}><input type="checkbox" checked={marcados.has(p.id)} onChange={() => toggleMarcado(p.id)} /></td>
-                    <td style={{ padding: 8 }}><b>{p.empresa || p.nombre || '-'}</b>{p.prioridad ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: PRIO[p.prioridad] || '#94a3b8', borderRadius: 20, padding: '1px 7px' }}>{p.prioridad}</span> : null}<br /><span style={{ color: '#67756c' }}>{p.sector}{p.ciudad ? ' - ' + p.ciudad : ''}</span></td>
+                    <td style={{ padding: 8 }}><b>{p.empresa || p.nombre || '-'}</b>{p.prioridad ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: PRIO[p.prioridad] || '#94a3b8', borderRadius: 20, padding: '1px 7px' }}>{p.prioridad}</span> : null}{p.interes_grado ? <span title="Interés detectado por la IA en su respuesta" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: p.interes_grado === 'alto' ? '#16a34a' : p.interes_grado === 'medio' ? '#b8860b' : '#94a3b8', borderRadius: 20, padding: '1px 7px' }}>★ {p.interes_grado}</span> : null}<br /><span style={{ color: '#67756c' }}>{p.sector}{p.ciudad ? ' - ' + p.ciudad : ''}</span></td>
                     <td>{p.email || <span style={{ color: '#94a3b8' }}>sin email</span>}</td>
                     <td>{p.situacion === 'mejorable' ? 'Mejorable' : 'Sin presencia'}</td>
                     <td style={{ textAlign: 'center' }}>{p.email_borrador ? 'Si' : '-'}</td>

@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     const pid = parseInt(req.query.p, 10);
     const tipo = String(req.query.t || 'analisis');
     const f = String(req.query.f || '');
-    if (!pid || !['analisis', 'consulta'].includes(tipo) || f !== firmaInteres(pid, tipo)) {
+    if (!pid || !['analisis', 'consulta', 'info'].includes(tipo) || f !== firmaInteres(pid, tipo)) {
       return send(400, page('Enlace no válido', 'Este enlace no es correcto o ha caducado. Si quieres, responde directamente a nuestro correo.'));
     }
     try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_en timestamptz`; } catch { /* noop */ }
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     if (!p) return send(404, page('No encontrado', 'No hemos podido localizar tu registro.'));
 
     const yaPedido = !!p.interes_en;
-    const etiqueta = tipo === 'analisis' ? 'tu análisis de visibilidad gratuito' : 'tu consulta gratuita';
+    const etiqueta = tipo === 'analisis' ? 'tu análisis de visibilidad gratuito' : tipo === 'info' ? 'la información que pediste' : 'tu consulta gratuita';
     await sql`UPDATE prospectos SET
         estado = CASE WHEN estado = 'convertido' THEN estado ELSE 'respondido' END,
         interes_en = NOW(),
@@ -41,13 +41,15 @@ export default async function handler(req, res) {
     if (!yaPedido && emailHabilitado() && RE_EMAIL.test(String(p.email || ''))) {
       const agendar = `${BASE_URL}/agendar?p=${pid}`;
       const hola = `Hola${p.empresa ? ' ' + p.empresa : ''},`;
-      const cuerpo = tipo === 'analisis'
-        ? `<p>${hola}</p><p>Gracias por tu interés. Hemos recibido tu solicitud de <b>análisis de visibilidad gratuito</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo</b> para dártelo, sin compromiso.</p><p>Si lo prefieres, puedes <a href="${agendar}">reservar una llamada corta aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`
-        : `<p>${hola}</p><p>Gracias por tu interés en una <b>consulta gratuita</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo.</b> Si prefieres elegir tú el momento, <a href="${agendar}">reserva una llamada aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`;
+      const cuerpo = tipo === 'info'
+        ? `<p>${hola}</p><p>Gracias por tu interés. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo</b> con toda la información, sin compromiso.</p><p>Si lo prefieres, puedes <a href="${agendar}">agendar una llamada aquí</a> y te llamamos a la hora que elijas.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`
+        : tipo === 'analisis'
+          ? `<p>${hola}</p><p>Gracias por tu interés. Hemos recibido tu solicitud de <b>análisis de visibilidad gratuito</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo</b> para dártelo, sin compromiso.</p><p>Si lo prefieres, puedes <a href="${agendar}">reservar una llamada corta aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`
+          : `<p>${hola}</p><p>Gracias por tu interés en una <b>consulta gratuita</b>. <b>En breve un miembro de nuestro equipo se pondrá en contacto contigo.</b> Si prefieres elegir tú el momento, <a href="${agendar}">reserva una llamada aquí</a>.</p><p>Un saludo,<br>Equipo de Conecta Nex</p>`;
       try {
         await enviarEmail({
           to: p.email,
-          subject: tipo === 'analisis' ? 'Tu análisis de visibilidad gratuito · Conecta Nex' : 'Tu consulta gratuita · Conecta Nex',
+          subject: tipo === 'analisis' ? 'Tu análisis de visibilidad gratuito · Conecta Nex' : tipo === 'info' ? 'Tu información · Conecta Nex' : 'Tu consulta gratuita · Conecta Nex',
           html: `<div style="font-family:sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:600px;margin:0 auto">${cuerpo}</div>`,
           replyTo: process.env.REPLY_TO_EMAIL,
         });
@@ -62,7 +64,7 @@ export default async function handler(req, res) {
         await enviarEmail({
           to: destino,
           subject: `🔥 Lead interesado (${tipo}): ${p.empresa || p.email || ('#' + pid)}`,
-          html: `<p style="font-family:sans-serif"><b>${p.empresa || '(sin nombre)'}</b> (${p.sector || '-'}, ${p.ciudad || '-'}) ha pulsado <b>"${tipo === 'analisis' ? 'Quiero mi análisis gratis' : 'Quiero una consulta gratuita'}"</b>.<br>Email: ${p.email || '-'} · Tel: ${p.telefono || '-'}<br>Ábrelo en Prospección para hacer seguimiento.</p>`,
+          html: `<p style="font-family:sans-serif"><b>${p.empresa || '(sin nombre)'}</b> (${p.sector || '-'}, ${p.ciudad || '-'}) ha pulsado <b>"${tipo === 'info' ? 'Quiero información' : tipo === 'analisis' ? 'Quiero mi análisis gratis' : 'Quiero una consulta gratuita'}"</b>.<br>Email: ${p.email || '-'} · Tel: ${p.telefono || '-'}<br>Ábrelo en Prospección para hacer seguimiento.</p>`,
         });
       }
     } catch { /* aviso opcional */ }

@@ -12,6 +12,8 @@ let _migrado = false;
 async function asegurarColumnas() {
   if (_migrado) return;
   try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS nota_interna text DEFAULT ''`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS dossier text DEFAULT ''`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS dossier_en timestamptz`; } catch { /* noop */ }
   _migrado = true;
 }
 
@@ -26,8 +28,10 @@ export default async function handler(req, res) {
         SELECT c.id, c.prospecto_id, c.cliente_id, c.nombre, c.email, c.telefono,
                to_char(c.fecha, 'YYYY-MM-DD') AS fecha, c.hora, c.nota,
                COALESCE(c.nota_interna,'') AS nota_interna, c.estado, c.origen,
+               COALESCE(c.dossier,'') AS dossier,
+               to_char(c.dossier_en, 'YYYY-MM-DD"T"HH24:MI:SS') AS dossier_en,
                to_char(c.creado_en, 'YYYY-MM-DD"T"HH24:MI:SS') AS creado_en,
-               p.empresa AS prospecto_empresa
+               p.empresa AS prospecto_empresa, p.website AS prospecto_web, p.sector AS prospecto_sector
         FROM citas c LEFT JOIN prospectos p ON p.id = c.prospecto_id
         ORDER BY c.fecha ASC, c.hora ASC`;
       return jsonResponse(res, 200, rows);

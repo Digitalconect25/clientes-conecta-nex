@@ -437,6 +437,8 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
         )}
       </div>
 
+      <SeccionPropuesta prospecto={p} emailOn={emailOn} iaOn={iaOn} />
+
       <hr style={{ border: 0, borderTop: '1px solid #e3e8e5', margin: '16px 0' }} />
       <h4 style={{ margin: '0 0 8px' }}>Email en frio</h4>
       <label>Asunto<input value={p.asunto || ''} onChange={(e) => set('asunto', e.target.value)} placeholder="(se genera con la IA)" /></label>
@@ -454,6 +456,117 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
         Al enviar se anade tu identificacion y una opcion de baja (obligatorio por la LSSI). Envia solo a negocios (B2B). "Abrir en mi correo" abre Gmail/Outlook con el mensaje ya escrito.
       </p>
       </div>
+    </div>
+  );
+}
+
+const PROP_EST = {
+  borrador: { l: 'Borrador', c: '#94a3b8' }, enviada: { l: 'Enviada', c: '#2563eb' }, vista: { l: 'Vista', c: '#0c7b6d' },
+  aceptada: { l: 'Aceptada', c: '#16a34a' }, rechazada: { l: 'Rechazada', c: '#c0392b' }, caducada: { l: 'Caducada', c: '#b8860b' },
+};
+const fmtEur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const PROP_BASE = (typeof window !== 'undefined' ? window.location.origin : '');
+
+// Sección de PROPUESTA dentro del detalle del prospecto: generar (IA) / editar / enviar / ver estado.
+function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
+  const [lista, setLista] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [items, setItems] = useState([]);
+  const [meta, setMeta] = useState({ intro: '', descuento: 0, validez_dias: 15, notas: '' });
+
+  useEffect(() => { cargar(); }, []);
+  async function cargar() { try { const r = await api.propuestasList(prospecto.id); setLista(r.propuestas || []); } catch { setLista([]); } }
+  function abrir(pr) { setEdit(pr); setItems(pr.items_json || []); setMeta({ intro: pr.intro || '', descuento: Number(pr.descuento || 0), validez_dias: pr.validez_dias || 15, notas: pr.notas || '' }); }
+  async function generarIA() { setBusy(true); try { const row = await api.propuestaGenerarIA(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
+  async function crearVacia() { setBusy(true); try { const row = await api.propuestaCrear(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
+
+  const subtotal = items.reduce((s, it) => s + Number(it.precio || 0) * Number(it.cantidad || 1), 0);
+  const total = Math.max(0, subtotal - Number(meta.descuento || 0));
+  const setItem = (i, k, v) => setItems(items.map((it, j) => j === i ? { ...it, [k]: v } : it));
+  const payload = () => ({ id: edit.id, intro: meta.intro, descuento: Number(meta.descuento || 0), validez_dias: Number(meta.validez_dias || 15), notas: meta.notas, items: items.map((it) => ({ servicio_id: it.servicio_id, nombre: it.nombre, descripcion: it.descripcion || '', cantidad: Number(it.cantidad || 1), precio: Number(it.precio || 0), subtotal: Number(it.precio || 0) * Number(it.cantidad || 1) })) });
+
+  async function guardar(aviso = true) { setBusy(true); try { const row = await api.propuestaUpdate(payload()); await cargar(); setEdit(row); if (aviso) alert('Propuesta guardada ✓'); return row; } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
+  async function enviar() {
+    if (!emailOn) { alert('Email no configurado (RESEND).'); return; }
+    if (!prospecto.email) { alert('El prospecto no tiene email. Añádelo arriba y guarda.'); return; }
+    if (!items.length) { alert('Añade al menos una línea a la propuesta.'); return; }
+    if (!confirm('Enviar la propuesta a ' + prospecto.email + '?')) return;
+    setBusy(true);
+    try { await api.propuestaUpdate(payload()); const row = await api.propuestaEnviar(edit.id, prospecto.email); await cargar(); setEdit(row); alert('Propuesta enviada ✓'); }
+    catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); }
+  }
+  async function borrar(pr) { if (!confirm('Borrar esta propuesta?')) return; try { await api.propuestaDelete(pr.id); if (edit && edit.id === pr.id) setEdit(null); await cargar(); } catch (e) { alert('Error: ' + e.message); } }
+  function copiarEnlace(pr) { const url = PROP_BASE + '/propuesta/' + pr.token; navigator.clipboard?.writeText(url); alert('Enlace copiado:\n' + url); }
+
+  const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #d7ddd9', fontSize: 14, boxSizing: 'border-box' };
+  const badge = (e) => { const x = PROP_EST[e] || PROP_EST.borrador; return <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: x.c, borderRadius: 20, padding: '2px 9px' }}>{x.l}</span>; };
+
+  return (
+    <div style={{ background: '#faf8f3', border: '1px solid #ece7da', borderRadius: 10, padding: 14, marginTop: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <b>Propuesta comercial</b>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={generarIA} disabled={busy || !iaOn} style={{ background: '#5b3fa0', color: '#fff' }}>✨ Generar con IA</button>
+          <button onClick={crearVacia} disabled={busy}>+ Vacía</button>
+        </div>
+      </div>
+      <p style={{ color: '#67756c', fontSize: 12.5, margin: '4px 0 0' }}>Oferta de servicios con precio. Se envía por email y el cliente la acepta con su nombre (queda registrada con fecha e IP).</p>
+
+      {/* Lista de propuestas existentes */}
+      {lista && lista.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lista.map((pr) => (
+            <div key={pr.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px', border: '1px solid #ece7da', borderRadius: 8, background: '#fff' }}>
+              <b style={{ fontSize: 13 }}>{pr.numero}</b>{badge(pr.estado)}
+              <span style={{ fontWeight: 700 }}>{fmtEur(pr.total)}</span>
+              {pr.estado === 'aceptada' && pr.acept_nombre && <span style={{ fontSize: 12, color: '#16a34a' }}>✓ {pr.acept_nombre}</span>}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button onClick={() => abrir(pr)} style={{ fontSize: 12, padding: '4px 10px' }}>Editar</button>
+                {pr.token && <button onClick={() => copiarEnlace(pr)} style={{ fontSize: 12, padding: '4px 10px' }}>Enlace</button>}
+                <button onClick={() => borrar(pr)} style={{ fontSize: 12, padding: '4px 10px', color: '#c0392b' }}>Borrar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Editor de la propuesta abierta */}
+      {edit && (
+        <div style={{ marginTop: 12, borderTop: '1px solid #ece7da', paddingTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <b>Editar {edit.numero} {badge(edit.estado)}</b>
+            <button onClick={() => setEdit(null)} style={{ fontSize: 12, padding: '4px 10px' }}>Cerrar editor</button>
+          </div>
+          <label style={{ display: 'block', marginTop: 8, fontSize: 13 }}>Introducción
+            <textarea value={meta.intro} onChange={(e) => setMeta({ ...meta, intro: e.target.value })} style={{ ...inp, minHeight: 70 }} placeholder="Texto personalizado para el cliente" />
+          </label>
+          <div style={{ fontSize: 13, fontWeight: 600, margin: '10px 0 4px' }}>Líneas</div>
+          {items.map((it, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 90px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+              <input value={it.nombre || ''} onChange={(e) => setItem(i, 'nombre', e.target.value)} placeholder="Servicio" style={inp} />
+              <input type="number" min="1" value={it.cantidad || 1} onChange={(e) => setItem(i, 'cantidad', e.target.value)} style={inp} />
+              <input type="number" min="0" step="0.01" value={it.precio || 0} onChange={(e) => setItem(i, 'precio', e.target.value)} style={inp} />
+              <button onClick={() => setItems(items.filter((_, j) => j !== i))} style={{ color: '#c0392b', padding: 4 }}>×</button>
+            </div>
+          ))}
+          <button onClick={() => setItems([...items, { nombre: '', descripcion: '', cantidad: 1, precio: 0 }])} style={{ fontSize: 12, padding: '4px 10px' }}>+ Añadir línea</button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10, alignItems: 'flex-end' }}>
+            <label style={{ fontSize: 13 }}>Descuento €<input type="number" min="0" step="0.01" value={meta.descuento} onChange={(e) => setMeta({ ...meta, descuento: e.target.value })} style={{ ...inp, width: 100 }} /></label>
+            <label style={{ fontSize: 13 }}>Validez (días)<input type="number" min="1" value={meta.validez_dias} onChange={(e) => setMeta({ ...meta, validez_dias: e.target.value })} style={{ ...inp, width: 90 }} /></label>
+            <div style={{ marginLeft: 'auto', fontSize: 18, fontWeight: 800 }}>Total: {fmtEur(total)}</div>
+          </div>
+          <label style={{ display: 'block', marginTop: 8, fontSize: 13 }}>Condiciones / forma de pago (opcional)
+            <textarea value={meta.notas} onChange={(e) => setMeta({ ...meta, notas: e.target.value })} style={{ ...inp, minHeight: 50 }} />
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <button onClick={() => guardar(true)} disabled={busy}>Guardar</button>
+            <button onClick={enviar} disabled={busy || !emailOn} style={{ background: '#0c7b6d', color: '#fff' }}>Enviar al cliente</button>
+            {edit.token && <button onClick={() => copiarEnlace(edit)}>Copiar enlace</button>}
+          </div>
+          {edit.estado === 'aceptada' && <p style={{ color: '#16a34a', fontSize: 13, marginTop: 8 }}>✓ Aceptada por <b>{edit.acept_nombre}</b> el {String(edit.aceptada_en || '').slice(0, 16).replace('T', ' ')} (IP {edit.acept_ip}). Ya puedes convertirlo en cliente arriba.</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -208,6 +208,14 @@ export const api = {
   prospectoConvertir: (id, datos) => request('POST', '/api/prospectos', { accion: 'convertir', id, ...datos }),
   prospectoEmailPrueba: (email) => request('POST', '/api/prospectos', { accion: 'email_prueba', email }),
 
+  // Propuestas comerciales (oferta servicios+precio -> el cliente la acepta)
+  propuestasList: (prospectoId) => request('GET', `/api/propuestas?prospecto_id=${prospectoId}`),
+  propuestaGenerarIA: (prospectoId) => request('POST', '/api/propuestas', { accion: 'generar_ia', prospecto_id: prospectoId }),
+  propuestaCrear: (prospectoId) => request('POST', '/api/propuestas', { accion: 'crear', prospecto_id: prospectoId, items: [] }),
+  propuestaUpdate: (data) => request('PUT', '/api/propuestas', data),
+  propuestaEnviar: (id, email) => request('POST', '/api/propuestas', { accion: 'enviar', id, email }),
+  propuestaDelete: (id) => request('DELETE', `/api/propuestas?id=${id}`),
+
   // Bandeja de entrada (respuestas)
   mensajesList: () => request('GET', '/api/mensajes'),
   mensajeLeido: (id, leido) => request('PUT', '/api/mensajes', { id, leido }),

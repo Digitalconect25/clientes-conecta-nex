@@ -63,14 +63,14 @@ export default async function handler(req, res) {
 
     const citasHoy = await sql`
       SELECT c.id, c.nombre, c.email, c.telefono, to_char(c.fecha,'YYYY-MM-DD') AS fecha, c.hora, c.estado,
-             COALESCE(c.dossier,'') AS dossier, COALESCE(c.modalidad,'a_concretar') AS modalidad,
+             COALESCE(c.dossier,'') AS dossier, COALESCE(c.modalidad,'telefono') AS modalidad,
              COALESCE(c.enlace_reunion,'') AS enlace_reunion, c.recordatorio_en, p.empresa AS empresa
       FROM citas c LEFT JOIN prospectos p ON p.id = c.prospecto_id
       WHERE to_char(c.fecha,'YYYY-MM-DD') = ${hoy} AND c.estado IN ('confirmada','pendiente')
       ORDER BY c.hora ASC`;
     const citasManana = await sql`
       SELECT c.id, c.nombre, c.email, c.telefono, to_char(c.fecha,'YYYY-MM-DD') AS fecha, c.hora, c.estado,
-             COALESCE(c.modalidad,'a_concretar') AS modalidad, COALESCE(c.enlace_reunion,'') AS enlace_reunion, c.recordatorio_en
+             COALESCE(c.modalidad,'telefono') AS modalidad, COALESCE(c.enlace_reunion,'') AS enlace_reunion, c.recordatorio_en
       FROM citas c WHERE to_char(c.fecha,'YYYY-MM-DD') = ${manana} AND c.estado = 'confirmada'
       ORDER BY c.hora ASC`;
 

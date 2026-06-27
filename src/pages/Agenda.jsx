@@ -14,7 +14,7 @@ const EST = {
 };
 const ORDEN_EST = ['pendiente', 'confirmada', 'hecha', 'cancelada'];
 const ORIGEN = { agente: 'Agente Nex (web)', frio: 'Captación / formulario', cliente: 'Cliente', manual: 'Alta manual' };
-const MODAL = { a_concretar: 'A concretar', telefono: 'Llamada telefónica', zoom: 'Videollamada (Zoom)', presencial: 'Presencial' };
+const MODAL = { telefono: 'Llamada telefónica', zoom: 'Videollamada (Zoom)', presencial: 'Visita presencial' };
 const FILTROS = [
   { k: 'todas', label: 'Todas' },
   { k: 'pendiente', label: 'Pendientes' },
@@ -177,7 +177,7 @@ export default function Agenda() {
     if (!nueva?.nombre?.trim()) { alert('Pon al menos un nombre.'); return; }
     setGuardando(true);
     try {
-      await api.citaCrear({ nombre: nueva.nombre.trim(), email: (nueva.email || '').trim(), telefono: (nueva.telefono || '').trim(), fecha: nueva.fecha, hora: nueva.hora, nota: (nueva.nota || '').trim(), estado: 'confirmada', modalidad: nueva.modalidad || 'a_concretar', enlace_reunion: (nueva.enlace_reunion || '').trim() });
+      await api.citaCrear({ nombre: nueva.nombre.trim(), email: (nueva.email || '').trim(), telefono: (nueva.telefono || '').trim(), fecha: nueva.fecha, hora: nueva.hora, nota: (nueva.nota || '').trim(), estado: 'confirmada', modalidad: nueva.modalidad || 'telefono', enlace_reunion: (nueva.enlace_reunion || '').trim() });
       setNueva(null); await cargar();
     } catch (err) { alert('Error: ' + err.message); }
     finally { setGuardando(false); }
@@ -358,7 +358,7 @@ export default function Agenda() {
                 <div style={{ ...row, alignItems: 'flex-start' }}>
                   <span style={lab}>Modalidad</span>
                   <div style={{ flex: 1 }}>
-                    <select value={detalle.modalidad || 'a_concretar'} onChange={(ev) => guardarModalidad(ev.target.value)}
+                    <select value={detalle.modalidad || 'telefono'} onChange={(ev) => guardarModalidad(ev.target.value)}
                       style={{ width: '100%', border: '1px solid #e3e8e5', borderRadius: 8, padding: '7px 8px', fontWeight: 600 }}>
                       {Object.entries(MODAL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
@@ -369,7 +369,7 @@ export default function Agenda() {
                         <button onClick={guardarEnlace} style={{ ...btn, fontSize: 13, padding: '6px 12px' }}>Guardar</button>
                       </div>
                     )}
-                    {detalle.modalidad === 'a_concretar' && <p style={{ fontSize: 11, color: '#9aa6a0', margin: '6px 0 0' }}>Sin decidir: el cliente verá "te confirmaremos el formato (teléfono o Zoom)".</p>}
+                    {(detalle.modalidad || 'telefono') === 'telefono' && <p style={{ fontSize: 11, color: '#9aa6a0', margin: '6px 0 0' }}>Empezamos por llamada. Cuando esté todo claro, cámbiala a Zoom o visita presencial.</p>}
                   </div>
                 </div>
                 {detalle.creado_en && <div style={row}><span style={lab}>Creada</span><span>{soloFecha(detalle.creado_en).split('-').reverse().join('/')}</span></div>}
@@ -488,7 +488,7 @@ export default function Agenda() {
                 value={nueva[f]} onChange={(e) => setNueva({ ...nueva, [f]: e.target.value })}
                 style={{ width: '100%', padding: 10, border: '1px solid #e3e8e5', borderRadius: 10, marginBottom: 10, fontSize: 14 }} />
             ))}
-            <select value={nueva.modalidad || 'a_concretar'} onChange={(e) => setNueva({ ...nueva, modalidad: e.target.value })}
+            <select value={nueva.modalidad || 'telefono'} onChange={(e) => setNueva({ ...nueva, modalidad: e.target.value })}
               style={{ width: '100%', padding: 10, border: '1px solid #e3e8e5', borderRadius: 10, marginBottom: 10, fontSize: 14, fontWeight: 600 }}>
               {Object.entries(MODAL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>

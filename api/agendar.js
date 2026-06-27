@@ -99,9 +99,9 @@ export default async function handler(req, res) {
       let nuevaId = null;
       try {
         const [row] = await sql`
-          INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen)
+          INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen, modalidad)
           VALUES (${pid}, ${nombre}, ${email}, ${String(b.telefono || '').trim()},
-                  ${fecha}, ${hora}, ${nota}, ${'pendiente'}, ${'frio'})
+                  ${fecha}, ${hora}, ${nota}, ${'pendiente'}, ${'frio'}, ${'telefono'})
           RETURNING id`;
         nuevaId = row?.id;
       } catch (e) {

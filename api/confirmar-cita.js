@@ -90,7 +90,7 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    const [cita] = await sql`SELECT id, estado, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, nombre, email, telefono, prospecto_id, COALESCE(modalidad,'a_concretar') AS modalidad, COALESCE(enlace_reunion,'') AS enlace_reunion FROM citas WHERE id = ${c}`;
+    const [cita] = await sql`SELECT id, estado, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, nombre, email, telefono, prospecto_id, COALESCE(modalidad,'telefono') AS modalidad, COALESCE(enlace_reunion,'') AS enlace_reunion FROM citas WHERE id = ${c}`;
     if (!cita) {
       res.status(404).send(pagina({ titulo: 'Cita no encontrada', mensaje: 'No hemos encontrado esta cita.', color: '#c0392b' }));
       return;

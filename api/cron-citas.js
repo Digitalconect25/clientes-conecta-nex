@@ -10,6 +10,7 @@ import { crearIcs, icsAdjunto } from './_ics.js';
 import { waLink } from './_whatsapp.js';
 import { generarDossier } from './dossier.js';
 import { modalidadTextoLead, modalidadParaIcs, modalidadLabel } from './_modalidad.js';
+import { envolverEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
 export const maxDuration = 60;
 
@@ -34,15 +35,13 @@ async function recordarLead(c, cuandoTxt) {
   if (!c.email || !RE_EMAIL.test(c.email) || !emailHabilitado()) return false;
   const ubic = modalidadParaIcs(c.modalidad, c.enlace_reunion);
   const ics = crearIcs({ id: c.id, fecha: c.fecha, hora: c.hora, durMin: 30, titulo: 'Cita con Conecta NEX', ubicacion: ubic.ubicacion, url: ubic.url });
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
-    <div style="text-align:center;padding:12px 0"><img src="${BASE}/logo-email.png" alt="Conecta NEX" width="140" style="max-width:140px;height:auto"></div>
-    <div style="border:1px solid #eee;border-radius:12px;padding:22px">
-      <p>Hola ${esc(c.nombre || '')},</p>
-      <p>Te recordamos tu cita con <b>Conecta NEX</b>:</p>
-      <p style="font-size:17px;font-weight:bold;margin:10px 0">${cuandoTxt}</p>
-      <p style="color:#444">${esc(modalidadTextoLead(c.modalidad, c.enlace_reunion))} Si necesitas cambiarla, responde a este correo y la ajustamos.</p>
-      <p style="margin-top:16px">Un saludo,<br><b>Equipo Conecta NEX</b><br><span style="color:#888;font-size:13px">Calle Alberola 24, Alicante · conectanex.es</span></p>
-    </div></div>`;
+  const cuerpo = `
+    <p style="margin:0 0 14px">Hola ${escEmail(c.nombre || '')},</p>
+    <p style="margin:0 0 16px">Te recordamos tu cita con nosotros:</p>
+    ${tarjetaDatos([['Cuándo', escEmail(cuandoTxt)], ['Formato', escEmail(modalidadLabel(c.modalidad))]])}
+    <p style="margin:14px 0 16px">${escEmail(modalidadTextoLead(c.modalidad, c.enlace_reunion))} Si necesitas cambiarla, responde a este correo y la ajustamos.</p>
+    <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+  const html = envolverEmail({ titulo: 'Recordatorio de tu cita', preheader: cuandoTxt, cuerpoHtml: cuerpo });
   try {
     await enviarEmail({ to: c.email, subject: `Recordatorio de tu cita — ${cuandoTxt} · Conecta NEX`, html, attachments: [icsAdjunto(ics)], replyTo: process.env.REPLY_TO_EMAIL });
     await sql`UPDATE citas SET recordatorio_en = NOW() WHERE id = ${c.id}`;

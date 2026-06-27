@@ -8,6 +8,7 @@ import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
 // Horario de atencion (EDITA AQUI). diasLaborables: 1=lunes ... 5=viernes
 const DIAS_LABORABLES = [1, 2, 3, 4, 5];
@@ -46,29 +47,15 @@ function fechaLarga(fecha) {
 
 function emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }) {
   const cuando = `${fechaLarga(fecha)} a las ${hora} h`;
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
-    <div style="text-align:center;padding:14px 0 6px">
-      <img src="https://clientes.conectanex.com/logo-email.png" alt="Conecta NEX" width="150" style="max-width:150px;height:auto;display:inline-block">
-      <div style="font-size:18px;font-weight:800;color:#5b3fa0;margin-top:4px">Conecta NEX</div>
-    </div>
-    <div style="background:#5b3fa0;color:#fff;padding:18px 24px;border-radius:12px 12px 0 0">
-      <h2 style="margin:0;color:#fff">Hemos recibido tu solicitud de cita</h2>
-    </div>
-    <div style="border:1px solid #eee;border-top:0;padding:24px;border-radius:0 0 12px 12px">
-      <p>Hola ${nombre || ''},</p>
-      <p>Esta es tu cita propuesta. <b>Confírmala</b> pulsando el botón para que quede reservada en firme:</p>
-      <table style="width:100%;border-collapse:collapse;margin:14px 0">
-        <tr><td style="padding:7px 0;color:#888">Fecha</td><td style="padding:7px 0;font-weight:bold">${cuando}</td></tr>
-        ${nota ? `<tr><td style="padding:7px 0;color:#888">Nota</td><td style="padding:7px 0">${nota}</td></tr>` : ''}
-      </table>
-      <p style="text-align:center;margin:26px 0">
-        <a href="${urlConfirmar}" style="background:#16a34a;color:#fff;text-decoration:none;font-weight:700;padding:14px 26px;border-radius:10px;display:inline-block">Aceptar y confirmar la cita</a>
-      </p>
-      <p style="font-size:13px;color:#888">Si no reconoces esta solicitud, ignora este correo y no se reservará nada.</p>
-      <p style="margin-top:22px">Un saludo,<br><b>Equipo Conecta NEX</b><br>
-      <span style="color:#888;font-size:13px">Calle Alberola 24, Alicante · conectanex.es</span></p>
-    </div>
-  </div>`;
+  const saludo = nombre ? `Hola ${escEmail(nombre)},` : 'Hola,';
+  const cuerpo = `
+    <p style="margin:0 0 14px">${saludo}</p>
+    <p style="margin:0 0 16px">Hemos recibido tu solicitud de cita. Revísala y <b>confírmala</b> para dejarla reservada en firme.</p>
+    ${tarjetaDatos([['Fecha y hora', escEmail(cuando)], nota ? ['Tu nota', escEmail(nota)] : null])}
+    ${botonEmail(urlConfirmar, 'Aceptar y confirmar la cita')}
+    <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si no reconoces esta solicitud, ignora este correo: no se reservará nada.</p>
+    <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+  return envolverEmail({ titulo: 'Confirma tu cita', preheader: 'Pulsa para dejar tu cita reservada en firme.', cuerpoHtml: cuerpo });
 }
 
 async function slotsLibres(fecha) {

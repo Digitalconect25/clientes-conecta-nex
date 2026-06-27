@@ -8,7 +8,8 @@ import { sql } from './_db.js';
 import { firmaCita } from './agendar.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { crearIcs, icsAdjunto } from './_ics.js';
-import { modalidadTextoLead, modalidadParaIcs } from './_modalidad.js';
+import { modalidadTextoLead, modalidadParaIcs, modalidadLabel } from './_modalidad.js';
+import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
 const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -21,63 +22,55 @@ function fechaLarga(fecha) {
   } catch { return String(fecha); }
 }
 
-function pagina({ titulo, mensaje, color = '#16a34a', detalle = '', extra = '' }) {
+function pagina({ titulo, mensaje, color = '#0c7b6d', detalle = '', extra = '' }) {
+  const exito = color === '#0c7b6d' || color === '#16a34a';
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${titulo} · Conecta NEX</title>
 <style>
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f6f3ee;color:#2b2b2b;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:18px}
-  .card{background:#fff;border:1px solid #e9e4dc;border-radius:16px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 6px 24px rgba(16,40,28,.08)}
-  .top{background:#5b3fa0;color:#fff;padding:22px 24px}
-  .top h1{margin:0;font-size:20px}
-  .body{padding:26px 24px;text-align:center}
-  .icon{width:64px;height:64px;border-radius:50%;background:${color};margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px}
-  .msg{font-size:16px;line-height:1.5}
-  .det{margin-top:10px;color:#67756c;font-size:14px}
-  .cta{display:inline-block;margin-top:18px;background:#16a34a;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px}
-  .foot{color:#9a9384;font-size:12px;margin-top:22px}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f1efe8;color:#20242a;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:20px}
+  .card{background:#fff;border:1px solid #ece7da;border-radius:18px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 10px 40px rgba(16,40,28,.10)}
+  .top{padding:24px 24px 6px;text-align:center;border-bottom:1px solid #f2eee3}
+  .top img{max-width:150px;height:auto}
+  .body{padding:30px 28px 28px;text-align:center}
+  .icon{width:62px;height:62px;border-radius:50%;background:${color};margin:0 auto 18px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:700}
+  .ttl{font-size:20px;font-weight:700;color:#20242a;margin:0 0 6px}
+  .msg{font-size:15.5px;line-height:1.6;color:#4a4f56;margin:0}
+  .det{margin-top:14px;display:inline-block;background:#f7f5ef;border:1px solid #efe9db;border-radius:10px;padding:9px 16px;color:#20242a;font-weight:600;font-size:14px}
+  .cta{display:inline-block;margin-top:22px;background:#0a5e53;color:#fff;text-decoration:none;font-weight:700;padding:13px 24px;border-radius:10px;font-size:15px}
+  .foot{color:#9a9384;font-size:12px;margin-top:24px;line-height:1.6}
+  .foot a{color:#0c7b6d;text-decoration:none}
 </style></head><body>
   <div class="card">
-    <div class="top"><h1>Conecta NEX</h1></div>
+    <div class="top"><img src="${BASE}/logo-email.png" alt="Conecta NEX"></div>
     <div class="body">
-      <div class="icon">${color === '#16a34a' ? '✓' : '!'}</div>
-      <div class="msg"><b>${titulo}</b><br>${mensaje}</div>
+      <div class="icon">${exito ? '✓' : '!'}</div>
+      <div class="ttl">${titulo}</div>
+      <p class="msg">${mensaje}</p>
       ${detalle ? `<div class="det">${detalle}</div>` : ''}
       ${extra || ''}
-      <div class="foot">Calle Alberola 24, Alicante · conectanex.es</div>
+      <div class="foot">Conecta NEX · Calle Alberola 24, 03007 Alicante<br><a href="https://conectanex.es">conectanex.es</a></div>
     </div>
   </div>
 </body></html>`;
 }
 
 // Email de "cita confirmada" con .ics y boton al formulario del negocio.
-function emailConfirmadaHTML({ nombre, cuando, urlFormulario, modalidadTxt }) {
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#2b2b2b">
-    <div style="text-align:center;padding:14px 0 6px">
-      <img src="${BASE}/logo-email.png" alt="Conecta NEX" width="150" style="max-width:150px;height:auto;display:inline-block">
-    </div>
-    <div style="background:#16a34a;color:#fff;padding:18px 24px;border-radius:12px 12px 0 0">
-      <h2 style="margin:0;color:#fff">Tu cita queda confirmada</h2>
-    </div>
-    <div style="border:1px solid #eee;border-top:0;padding:24px;border-radius:0 0 12px 12px">
-      <p>Hola ${nombre || ''},</p>
-      <p>Perfecto, <b>tu cita queda reservada en firme</b>:</p>
-      <table style="width:100%;border-collapse:collapse;margin:10px 0 16px">
-        <tr><td style="padding:7px 0;color:#888">Cuándo</td><td style="padding:7px 0;font-weight:bold">${cuando}</td></tr>
-        <tr><td style="padding:7px 0;color:#888">Cómo</td><td style="padding:7px 0">${modalidadTxt}</td></tr>
-      </table>
-      <p style="color:#444">Te adjuntamos el evento para que lo <b>añadas a tu calendario</b>. Te enviaremos un recordatorio antes.</p>
-      ${urlFormulario ? `
-      <div style="background:#f7f5ff;border:1px solid #e7e1fb;border-radius:12px;padding:16px;margin:16px 0">
-        <p style="margin:0 0 10px"><b>Para aprovechar la llamada al máximo</b>, cuéntanos un poco de tu negocio (2 minutos). Así llegamos con ideas concretas para ti.</p>
-        <a href="${urlFormulario}" style="display:inline-block;background:#5b3fa0;color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px">Cuéntanos de tu negocio</a>
-      </div>` : ''}
-      <p style="font-size:13px;color:#888">Si necesitas cambiar la fecha, responde a este correo y lo ajustamos.</p>
-      <p style="margin-top:18px">Un saludo,<br><b>Equipo Conecta NEX</b><br>
-      <span style="color:#888;font-size:13px">Calle Alberola 24, Alicante · conectanex.es</span></p>
-    </div>
-  </div>`;
+function emailConfirmadaHTML({ nombre, cuando, urlFormulario, modalidadTxt, formato }) {
+  const saludo = nombre ? `Hola ${escEmail(nombre)},` : 'Hola,';
+  const cuerpo = `
+    <p style="margin:0 0 14px">${saludo}</p>
+    <p style="margin:0 0 16px">Perfecto. Tu cita queda <b>reservada en firme</b>:</p>
+    ${tarjetaDatos([['Fecha y hora', escEmail(cuando)], ['Formato', escEmail(formato)]])}
+    <p style="margin:14px 0 16px">${escEmail(modalidadTxt)} Te enviaremos un recordatorio antes y te adjuntamos el evento para que lo añadas a tu calendario.</p>
+    ${urlFormulario ? `<div style="background:#f7f5ef;border:1px solid #efe9db;border-radius:12px;padding:18px;margin:6px 0 2px">
+      <p style="margin:0 0 4px;color:#3a3f46">Para sacar el máximo a la cita, cuéntanos un poco de tu negocio (2 minutos). Así llegamos con ideas concretas para ti.</p>
+      ${botonEmail(urlFormulario, 'Cuéntanos de tu negocio', '#0a5e53')}
+    </div>` : ''}
+    <p style="margin:16px 0 0;color:#707a83;font-size:13.5px">Si necesitas cambiar la fecha, responde a este correo y lo ajustamos.</p>
+    <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+  return envolverEmail({ titulo: 'Tu cita está confirmada', preheader: `Reservada: ${cuando}`, cuerpoHtml: cuerpo });
 }
 
 export default async function handler(req, res) {
@@ -128,7 +121,7 @@ export default async function handler(req, res) {
         await enviarEmail({
           to: cita.email,
           subject: `Cita confirmada — ${cuandoCorto} · Conecta NEX`,
-          html: emailConfirmadaHTML({ nombre: cita.nombre, cuando, urlFormulario, modalidadTxt: modalidadTextoLead(cita.modalidad, cita.enlace_reunion) }),
+          html: emailConfirmadaHTML({ nombre: cita.nombre, cuando, urlFormulario, modalidadTxt: modalidadTextoLead(cita.modalidad, cita.enlace_reunion), formato: modalidadLabel(cita.modalidad) }),
           attachments: [icsAdjunto(ics)],
           replyTo: process.env.REPLY_TO_EMAIL,
         });

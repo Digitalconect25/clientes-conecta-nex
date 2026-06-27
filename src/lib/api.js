@@ -102,6 +102,8 @@ export const api = {
   documentoCreate: (data) => request('POST', '/api/documentos', data),
   documentoUpdate: (data) => request('PUT', '/api/documentos', data),
   documentoDelete: (id) => request('DELETE', `/api/documentos?id=${id}`),
+  // Firma remota: enviar el documento al cliente para que lo firme él mismo
+  documentoEnviarFirma: (id, email) => request('POST', '/api/documentos', { accion: 'enviar_firma', id, email }),
 
   archivosList: (clienteId) => request('GET', `/api/archivos?cliente_id=${clienteId}`),
   archivoUpload: (data) => request('POST', '/api/archivos', data),

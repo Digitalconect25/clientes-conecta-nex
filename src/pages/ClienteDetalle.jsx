@@ -1130,6 +1130,24 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entre
     } catch (err) { alert('Error: ' + err.message); }
   }
 
+  // Firma remota: envia el documento al cliente para que lo firme el mismo (con evidencia).
+  async function enviarAFirmar(doc) {
+    const email = (cliente.email || '').trim() || prompt('Email del cliente para enviar a firmar:');
+    if (!email) return;
+    if (!confirm('Enviar "' + doc.nombre + '" a ' + email + ' para que lo firme online?')) return;
+    try {
+      const row = await api.documentoEnviarFirma(doc.id, email);
+      setDocumentos(documentos.map(d => d.id === doc.id ? { ...d, ...row } : d));
+      alert('Documento enviado a firmar ✓');
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+  function copiarEnlaceFirma(doc) {
+    const url = window.location.origin + '/firmar/' + doc.firma_token;
+    navigator.clipboard?.writeText(url);
+    alert('Enlace de firma copiado:\n' + url);
+  }
+  const FIRMA_EST = { enviado: 'Enviado, pendiente', visto: 'Visto, pendiente', rechazado: 'Rechazado' };
+
   return (
     <div>
       <h3>Documentos</h3>
@@ -1151,10 +1169,14 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entre
               <tr key={d.id}>
                 <td>{TIPOS_DOC.find(t => t.id === d.tipo)?.nombre || d.tipo}</td>
                 <td>{d.nombre}</td>
-                <td>{d.firmado ? `Si - ${new Date(d.fecha_firma).toLocaleDateString('es-ES')}` : 'No'}</td>
+                <td>{d.firmado
+                  ? `Si - ${new Date(d.fecha_firma).toLocaleDateString('es-ES')}${d.firmante_nombre ? ' · ' + d.firmante_nombre : ''}`
+                  : (FIRMA_EST[d.firma_estado] || 'No')}</td>
                 <td>{new Date(d.creado_en).toLocaleDateString('es-ES')}</td>
                 <td>
                   <button onClick={() => abrirGuardado(d)}>Ver</button>
+                  {!d.firmado && <button onClick={() => enviarAFirmar(d)} title="Enviar al cliente para que lo firme online">✍️ Firmar</button>}
+                  {!d.firmado && d.firma_token && <button onClick={() => copiarEnlaceFirma(d)} title="Copiar enlace de firma">Enlace</button>}
                   <button onClick={() => eliminar(d)} className="btn-peligro">X</button>
                 </td>
               </tr>

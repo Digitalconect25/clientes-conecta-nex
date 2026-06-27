@@ -16,6 +16,7 @@ import Bandeja from './pages/Bandeja.jsx';
 import Agendar from './pages/Agendar.jsx';
 import Solicitud from './pages/Solicitud.jsx';
 import Propuesta from './pages/Propuesta.jsx';
+import Firmar from './pages/Firmar.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
 import GeneradorQR from './pages/GeneradorQR.jsx';
 
@@ -38,7 +39,7 @@ export default function App() {
 
   // La ruta /acceso/:token es PUBLICA. Cualquier persona con el enlace
   // puede entrar (luego se le pedira el PIN). NO requiere login de admin.
-  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/');
+  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/');
   if (esRutaPublica) {
     return (
       <Routes>
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/agendar" element={<Agendar />} />
         <Route path="/solicitud" element={<Solicitud />} />
         <Route path="/propuesta/:token" element={<Propuesta />} />
+        <Route path="/firmar/:token" element={<Firmar />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );

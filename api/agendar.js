@@ -27,6 +27,16 @@ export function firmaCita(id) {
   return crypto.createHmac('sha256', secret).update('cita:' + id).digest('hex').slice(0, 24);
 }
 
+// Asegura las columnas que usa la reserva (la migracion principal vive en el
+// panel /api/citas, con login; aqui garantizamos que existan en el flujo publico).
+let _migCitas = false;
+async function asegurarCitas() {
+  if (_migCitas) return;
+  try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS modalidad text DEFAULT 'telefono'`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS enlace_reunion text DEFAULT ''`; } catch { /* noop */ }
+  _migCitas = true;
+}
+
 function fechaLarga(fecha) {
   try {
     const d = new Date(fecha + 'T12:00:00');
@@ -96,6 +106,7 @@ export default async function handler(req, res) {
       const nombre = String(b.nombre).trim();
       const email = String(b.email || '').trim();
       const nota = String(b.nota || '').trim();
+      await asegurarCitas();
       let nuevaId = null;
       try {
         const [row] = await sql`

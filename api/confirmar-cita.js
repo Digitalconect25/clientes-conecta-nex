@@ -90,6 +90,8 @@ export default async function handler(req, res) {
     return;
   }
   try {
+    try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS modalidad text DEFAULT 'telefono'`; } catch { /* noop */ }
+    try { await sql`ALTER TABLE citas ADD COLUMN IF NOT EXISTS enlace_reunion text DEFAULT ''`; } catch { /* noop */ }
     const [cita] = await sql`SELECT id, estado, to_char(fecha,'YYYY-MM-DD') AS fecha, hora, nombre, email, telefono, prospecto_id, COALESCE(modalidad,'telefono') AS modalidad, COALESCE(enlace_reunion,'') AS enlace_reunion FROM citas WHERE id = ${c}`;
     if (!cita) {
       res.status(404).send(pagina({ titulo: 'Cita no encontrada', mensaje: 'No hemos encontrado esta cita.', color: '#c0392b' }));

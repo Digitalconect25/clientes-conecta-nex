@@ -92,7 +92,9 @@ Catalogo:\n${listado}`;
 
 export default async function handler(req, res) {
   const auth = checkAuth(req);
-  if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
+  // La automatización (cron / generación tras cita) se autentica con CRON_SECRET en el body.
+  const cronOk = req.method === 'POST' && !!process.env.CRON_SECRET && req.body?.secret === process.env.CRON_SECRET;
+  if (!auth.ok && !cronOk) return jsonResponse(res, 401, { error: auth.error });
   try {
     await asegurarTabla();
 

@@ -20,8 +20,10 @@ export default function Dashboard() {
   if (cargando) return <div className="empty">Cargando...</div>;
 
   const totalClientes = clientes.length;
-  const enProceso = clientes.filter(c => c.estado_proyecto === 'En proceso').length;
-  const finalizados = clientes.filter(c => c.estado_proyecto === 'Finalizado' || c.estado_proyecto === 'Entregado').length;
+  // Normaliza igual que Proyectos (minúsculas, sin tildes) para tolerar variantes.
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const enProceso = clientes.filter(c => ['en curso', 'en revision por cliente'].includes(norm(c.estado_proyecto))).length;
+  const finalizados = clientes.filter(c => norm(c.estado_proyecto) === 'entregado y aceptado').length;
 
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);

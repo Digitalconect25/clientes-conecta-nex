@@ -5,10 +5,12 @@
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import { envolverEmail, botonEmail, escEmail } from './_emailLayout.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
 import { obtenerIp, limitar } from './_publico.js';
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 
 // Recomendacion de servicios con IA: devuelve { recomendacion, servicios:[ids] }.
 async function recomendar(sector, necesidad) {
@@ -121,6 +123,25 @@ export default async function handler(req, res) {
                   ${''}, ${'mejorable'}, ${obs}, ${'respondido'}, ${b.origen === 'anuncio' ? 'anuncio' : 'formulario'},
                   ${JSON.stringify(serviciosSel)}::jsonb)
           RETURNING id`;
+      }
+
+      // Acuse AUTOMATICO al lead que rellena el formulario (lo inicio el, es transaccional).
+      if (email && emailHabilitado()) {
+        try {
+          const cuerpo = `
+            <p style="margin:0 0 14px">Hola ${escEmail(nombre)},</p>
+            <p style="margin:0 0 16px">Gracias por contarnos sobre tu negocio. Hemos recibido tu solicitud y <b>te contactaremos muy pronto</b> con propuestas concretas para ti, sin compromiso.</p>
+            <p style="margin:0 0 4px">Si quieres adelantar, puedes reservar una llamada corta cuando te venga bien:</p>
+            ${botonEmail(`${BASE}/agendar?p=${row.id}`, 'Reservar una llamada')}
+            <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si tienes cualquier duda, responde a este correo.</p>
+            <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+          await enviarEmail({
+            to: email,
+            subject: 'Hemos recibido tu solicitud · Conecta NEX',
+            html: envolverEmail({ titulo: 'Gracias por tu solicitud', preheader: 'La hemos recibido, te contactamos pronto.', cuerpoHtml: cuerpo }),
+            replyTo: process.env.REPLY_TO_EMAIL,
+          });
+        } catch { /* no bloquea */ }
       }
 
       // Aviso a la agencia con el diagnostico de la IA

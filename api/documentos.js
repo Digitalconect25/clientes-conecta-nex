@@ -26,6 +26,7 @@ export async function asegurarColumnas() {
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_codigo_exp TIMESTAMPTZ`; } catch { /* noop */ }
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_img TEXT`; } catch { /* noop */ }
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_ref TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS doc_identidad BOOLEAN DEFAULT FALSE`; } catch { /* noop */ }
   _mig = true;
 }
 

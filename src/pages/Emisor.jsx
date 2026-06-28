@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import FirmaCanvas from '../components/FirmaCanvas.jsx';
 
 export default function Emisor() {
   const [datos, setDatos] = useState(null);
@@ -58,6 +59,18 @@ export default function Emisor() {
             {datos.logo_url && (
               <div style={{ marginTop: 10, padding: 15, background: 'var(--gris-1)', borderRadius: 6, textAlign: 'center' }}>
                 <img src={datos.logo_url} alt="Logo" style={{ maxHeight: 80, maxWidth: 300 }} onError={(e) => { e.target.style.display = 'none'; }} />
+              </div>
+            )}
+          </div>
+          <div style={{ gridColumn: 'span 2', marginTop: 6 }}>
+            <label>Tu firma (firma del Prestador en los contratos)</label>
+            <p style={{ fontSize: 12, color: 'var(--gris-5)', margin: '2px 0 8px' }}>Fírmala una vez con el ratón o el dedo. Se incrustará automáticamente como tu firma en los contratos cuando el cliente los firme.</p>
+            <div style={{ background: '#fff', border: '1px solid var(--gris-3)', borderRadius: 8, padding: 8, maxWidth: 440 }}>
+              <FirmaCanvas onChange={(d) => set('firma_emisor', d || '')} />
+            </div>
+            {datos.firma_emisor && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#047857' }}>✓ Firma guardada
+                <img src={datos.firma_emisor} alt="firma" style={{ display: 'block', maxHeight: 60, marginTop: 4, border: '1px solid var(--gris-2)', borderRadius: 4 }} />
               </div>
             )}
           </div>

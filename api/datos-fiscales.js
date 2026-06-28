@@ -21,6 +21,7 @@ async function asegurar() {
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_completados_en TIMESTAMPTZ`; } catch { /* noop */ }
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_consent_en TIMESTAMPTZ`; } catch { /* noop */ }
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_consent_ip TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS doc_identidad BOOLEAN DEFAULT FALSE`; } catch { /* noop */ }
   _mig = true;
 }
 
@@ -78,6 +79,7 @@ export default async function handler(req, res) {
           const nomArch = String(b.dni_nombre || etiqueta).slice(0, 180);
           try {
             await sql`INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido) VALUES (${c.id}, ${nomArch}, ${tipoArch}, ${buffer.length}, ${buffer})`;
+            try { await sql`UPDATE clientes SET doc_identidad = TRUE WHERE id = ${c.id}`; } catch { /* noop */ }
             adjunto = true;
           } catch (e) { console.error('datos-fiscales archivo:', e.message); }
         }

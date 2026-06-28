@@ -55,11 +55,13 @@ function bloqueFirmas(c, e, firmaImagenURL, labels) {
   const labDer = (labels && labels.der) || 'El Cliente';
   const firmaCliente = firmaImagenURL || c.firma_cliente;
   const imgFirma = firmaCliente ? `<img src="${firmaCliente}" style="max-width:200px;max-height:80px;display:block;margin:0 auto 5px"/>` : '<div style="height:60px"></div>';
+  // Firma del Prestador: imagen guardada en "Mis datos" (emisor.firma_emisor).
+  const imgPrestador = (e && e.firma_emisor) ? `<img src="${e.firma_emisor}" style="max-width:200px;max-height:80px;display:block;margin:0 auto 5px"/>` : '<div style="height:60px"></div>';
   const fechaFirma = c.fecha_firma ? `<div style="font-size:9pt;color:#666;margin-top:8px">Firmado digitalmente el ${new Date(c.fecha_firma).toLocaleDateString('es-ES')}</div>` : '';
   return `
     <div style="display:flex;justify-content:space-between;margin-top:50px;gap:40px">
       <div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:8px">
-        <div style="height:60px"></div>
+        ${imgPrestador}
         <strong>${labIzq}</strong><br>
         ${e.nombre}<br>
         NIF: ${e.nif}
@@ -244,7 +246,16 @@ ${b.ibanBl}
 <h3>Decimoquinta. Subsistencia</h3>
 <p>Si alguna clausula fuera declarada nula, ello no afectara a la validez del resto del contrato.</p>
 
-<h3>Decimosexta. Legislacion y jurisdiccion</h3>
+<h3>Decimosexta. Fuerza mayor</h3>
+<p>Ninguna parte respondera del incumplimiento de sus obligaciones cuando se deba a causas de fuerza mayor o caso fortuito (art. 1105 CC): catastrofes, cortes de suministro o de servicios de terceros, fallos generalizados de internet o de plataformas, ciberataques, decisiones de autoridad u otras circunstancias ajenas a su control razonable. La parte afectada lo comunicara sin demora y ambas negociaran de buena fe la continuacion o, en su caso, la resolucion del contrato sin penalizacion.</p>
+
+<h3>Decimoseptima. Derecho de desistimiento (clientes consumidores)</h3>
+<p>Cuando el Cliente sea consumidor y el contrato se haya celebrado a distancia o fuera de establecimiento, dispondra de CATORCE (14) dias naturales para desistir sin necesidad de justificacion (arts. 102 y siguientes del RDL 1/2007). Si solicita expresamente el inicio de la prestacion antes de que finalice ese plazo, abonara la parte proporcional del servicio ya prestado; y perdera el derecho de desistimiento una vez el servicio haya sido completamente ejecutado (art. 103.a RDL 1/2007). Para clientes profesionales o empresas no resulta de aplicacion el derecho de desistimiento.</p>
+
+<h3>Decimoctava. Integridad del acuerdo</h3>
+<p>El presente contrato, junto con la Hoja de Encargo, la Cesion de Derechos y Proteccion de Datos y el Contrato de Encargo de Tratamiento, constituye el acuerdo integro entre las partes sobre su objeto y deja sin efecto cualquier acuerdo o entendimiento verbal o escrito anterior. Cualquier modificacion debera constar por escrito y ser aceptada por ambas partes.</p>
+
+<h3>Decimonovena. Legislacion y jurisdiccion</h3>
 <p>El presente contrato se rige por la legislacion espanola. Para cualquier controversia, las partes se someten a los Juzgados y Tribunales de ${e.ciudad}, con renuncia expresa a su propio fuero. ${esConsumidor ? 'No obstante, cuando el Cliente tenga la consideracion de consumidor conforme al RDL 1/2007, sera competente el Juzgado del domicilio del consumidor.' : ''}</p>
 
 <p>Y en prueba de conformidad, ambas partes firman el presente contrato por duplicado y a un solo efecto.</p>

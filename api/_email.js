@@ -10,8 +10,12 @@ export async function enviarEmail({ to, cc, subject, html, attachments, replyTo 
   if (!emailHabilitado()) {
     throw new Error('Email no configurado. Anade RESEND_API_KEY y RESEND_FROM_EMAIL en Vercel.');
   }
+  // Remitente con NOMBRE visible ("Conecta NEX <...>") para que no salga "info".
+  const fromRaw = process.env.RESEND_FROM_EMAIL || '';
+  const fromName = process.env.RESEND_FROM_NAME || 'Conecta NEX';
+  const from = fromRaw.includes('<') ? fromRaw : `${fromName} <${fromRaw}>`;
   const body = {
-    from: process.env.RESEND_FROM_EMAIL,
+    from,
     to: Array.isArray(to) ? to : [to],
     subject,
     html,

@@ -109,24 +109,28 @@ export default function Firmar() {
               <div style={{ marginTop: 22, background: C.crema, border: '1px solid ' + C.linea, borderRadius: 12, padding: 18 }}>
                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Firmar el documento</div>
 
-                <label style={lab}>1. Tu firma (dibújala con el dedo o el ratón)</label>
+                <label style={lab}>Tu firma (dibújala con el dedo o el ratón)</label>
                 <div style={{ background: '#fff', border: '1px solid #d7ddd9', borderRadius: 10, padding: 6 }}>
                   <FirmaCanvas onChange={setFirmaImg} />
                 </div>
 
-                <label style={lab}>2. Nombre y apellidos</label>
+                <label style={lab}>Nombre y apellidos</label>
                 <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" style={field} />
 
-                <label style={lab}>3. Tu documento de identidad (DNI, NIE, Pasaporte o CIF) — foto o PDF</label>
-                <input type="file" accept="image/*,application/pdf" onChange={onFile} style={{ ...field, padding: 9 }} />
-                {archivo && <p style={{ fontSize: 12, color: C.teal, margin: '4px 0 0' }}>✓ {archivo.nombre} ({archivo.mb} MB)</p>}
+                {!doc.tiene_doc && (
+                  <>
+                    <label style={lab}>Adjunta tu documento de identidad (DNI, NIE, Pasaporte o CIF) — foto o PDF</label>
+                    <input type="file" accept="image/*,application/pdf" onChange={onFile} style={{ ...field, padding: 9 }} />
+                    {archivo && <p style={{ fontSize: 12, color: C.teal, margin: '4px 0 0' }}>✓ {archivo.nombre} ({archivo.mb} MB)</p>}
+                  </>
+                )}
 
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', margin: '16px 0 0', fontSize: 14, color: C.cuerpo, cursor: 'pointer' }}>
                   <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} style={{ flex: '0 0 auto', width: 18, height: 18, marginTop: 2 }} />
                   <span style={{ flex: 1, lineHeight: 1.5 }}>He leído y <b>acepto</b> el contenido de este documento (Hoja de Encargo, Protección de Datos y Contrato de Servicios). Entiendo que mi firma queda registrada con fecha, hora, IP y validación.</span>
                 </label>
 
-                <label style={lab}>4. Código de firma</label>
+                <label style={lab}>Código de firma</label>
                 {!codigoEnviado ? (
                   <button onClick={pedirCodigo} disabled={enviandoCodigo}
                     style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid ' + C.teal, background: '#fff', color: C.teal, fontWeight: 700, fontSize: 14.5, cursor: 'pointer' }}>

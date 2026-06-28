@@ -1,11 +1,21 @@
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
+export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
+
+let _mig = false;
+async function asegurar() {
+  if (_mig) return;
+  try { await sql`ALTER TABLE emisor ADD COLUMN IF NOT EXISTS firma_emisor TEXT`; } catch { /* noop */ }
+  _mig = true;
+}
+
 export default async function handler(req, res) {
   const auth = checkAuth(req);
   if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
 
   try {
+    await asegurar();
     if (req.method === 'GET') {
       const [row] = await sql`SELECT * FROM emisor WHERE id = 1`;
       return jsonResponse(res, 200, row || {});
@@ -27,7 +37,8 @@ export default async function handler(req, res) {
           telefono = ${e.telefono || ''},
           web = ${e.web || ''},
           iban = ${(e.iban || '').toUpperCase()},
-          logo_url = ${e.logo_url || ''}
+          logo_url = ${e.logo_url || ''},
+          firma_emisor = ${e.firma_emisor || ''}
         WHERE id = 1
         RETURNING *
       `;

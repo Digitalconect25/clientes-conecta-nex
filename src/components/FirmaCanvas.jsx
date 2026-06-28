@@ -49,9 +49,14 @@ export default function FirmaCanvas({ onFirmar, onCancelar, onChange }) {
       <div className="firma-canvas-wrapper">
         <SignatureCanvas
           ref={sigRef}
-          penColor="#1a1a1a"
+          penColor="#0b3d2e"
           backgroundColor="rgba(255,255,255,1)"
-          canvasProps={{ width: 700, height: 200 }}
+          minWidth={0.7}
+          maxWidth={2.6}
+          velocityFilterWeight={0.8}
+          dotSize={1.4}
+          throttle={8}
+          canvasProps={{ width: 700, height: 200, style: { width: '100%', height: 'auto', touchAction: 'none', display: 'block' } }}
           onBegin={() => setVacio(false)}
           onEnd={alSoltar}
         />

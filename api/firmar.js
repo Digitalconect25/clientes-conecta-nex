@@ -56,14 +56,14 @@ export default async function handler(req, res) {
     if (!tok) return jsonResponse(res, 400, { error: 'Falta token' });
     const [doc] = await sql`SELECT * FROM documentos WHERE firma_token = ${tok}`;
     if (!doc) return jsonResponse(res, 404, { error: 'Documento no encontrado o enlace caducado.' });
-    const [cli] = await sql`SELECT nombre FROM clientes WHERE id = ${doc.cliente_id}`;
+    const [cli] = await sql`SELECT nombre, doc_identidad FROM clientes WHERE id = ${doc.cliente_id}`;
 
     if (req.method === 'GET') {
       if (doc.firma_estado === 'enviado' && !doc.firmado) {
         await sql`UPDATE documentos SET firma_estado = 'visto', firma_vista_en = COALESCE(firma_vista_en, NOW()) WHERE id = ${doc.id}`;
         doc.firma_estado = 'visto';
       }
-      return jsonResponse(res, 200, publico(doc, cli?.nombre));
+      return jsonResponse(res, 200, { ...publico(doc, cli?.nombre), tiene_doc: !!cli?.doc_identidad });
     }
 
     if (req.method === 'POST') {
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
           const t = String(req.body.doc_tipo || 'application/octet-stream');
           const buf = Buffer.from(String(req.body.doc_base64), 'base64');
           if (TIPOS_DOC_OK.includes(t) && buf.length > 0 && buf.length <= 8 * 1024 * 1024) {
-            try { await sql`INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido) VALUES (${doc.cliente_id}, ${String(req.body.doc_nombre || 'Documento identidad ' + nombre).slice(0, 180)}, ${t}, ${buf.length}, ${buf})`; } catch (e) { console.error('doc firma:', e.message); }
+            try { await sql`INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido) VALUES (${doc.cliente_id}, ${String(req.body.doc_nombre || 'Documento identidad ' + nombre).slice(0, 180)}, ${t}, ${buf.length}, ${buf})`; await sql`UPDATE clientes SET doc_identidad = TRUE WHERE id = ${doc.cliente_id}`; } catch (e) { console.error('doc firma:', e.message); }
           }
         }
         if (MARCAR_CLIENTE.includes(doc.tipo)) {

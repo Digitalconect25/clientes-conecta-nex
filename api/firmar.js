@@ -7,7 +7,7 @@ import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
-import { envolverEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
+import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 import { asegurarColumnas } from './documentos.js';
 import { generarPorTipo } from '../src/lib/contratos.js';
 
@@ -133,6 +133,7 @@ export default async function handler(req, res) {
         }
         await acuseCliente(row, cli?.nombre, firmadoHtml).catch((e) => console.error('acuse firma:', e.message));
         await avisarAgencia(row, cli?.nombre, 'firmado', firmadoHtml).catch(() => {});
+        await solicitarValidacionAgencia(row, cli?.nombre).catch((e) => console.error('validacion req:', e.message));
         return jsonResponse(res, 200, { ok: true, estado: 'firmado', firmante: nombre, ref, signed_html: firmadoHtml });
       }
 
@@ -184,4 +185,22 @@ async function avisarAgencia(doc, clienteNombre, tipo, adjuntoHtml) {
     ${ok ? `<p style="background:#f0fdf4;border:1px solid #cfe9d8;border-radius:8px;padding:10px">Firmado por <b>${escEmail(doc.firmante_nombre || '')}</b><br>Nº de validación: <b>${escEmail(doc.firma_ref || '')}</b><br>Fecha (servidor): ${escEmail(String(doc.fecha_firma || ''))}<br>IP: ${escEmail(doc.firmante_ip || '')}<br>Hash SHA-256: <code style="font-size:11px">${escEmail(doc.firma_hash || '')}</code></p><p>Adjunto el documento firmado (copia para el expediente).</p>` : ''}
     <p style="color:#999;font-size:12px">Panel: <a href="${BASE}/clientes/${doc.cliente_id}">ficha del cliente</a></p></div>`;
   await enviarEmail({ to: destino, subject: `${ok ? '🟢' : '🟠'} ${doc.nombre} ${ok ? 'firmado' : 'rechazado'} — ${escEmail(clienteNombre || '')}`, html, attachments: ok && adjuntoHtml ? [adjuntoFirmado(adjuntoHtml)] : undefined });
+}
+
+// Tras firmar el cliente, envia a la EMPRESA un codigo para validar el contrato (doble firma).
+async function solicitarValidacionAgencia(doc, clienteNombre) {
+  const [em] = await sql`SELECT email FROM emisor WHERE id = 1`;
+  const destino = process.env.AGENCY_EMAIL || em?.email;
+  if (!destino || !emailHabilitado()) return;
+  const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const vtok = crypto.randomBytes(24).toString('base64url');
+  await sql`UPDATE documentos SET validacion_token = ${vtok}, validacion_codigo = ${codigo}, validacion_codigo_exp = NOW() + INTERVAL '7 days' WHERE id = ${doc.id}`;
+  const url = `${BASE}/validar/${vtok}`;
+  const cuerpo = `
+    <p style="margin:0 0 14px">El cliente <b>${escEmail(clienteNombre || '')}</b> ha firmado el documento <b>${escEmail(doc.nombre)}</b>.</p>
+    <p style="margin:0 0 12px">Para <b>validarlo como empresa</b> y dar por iniciado el encargo, entra y mete este código:</p>
+    <div style="font-size:28px;font-weight:800;letter-spacing:8px;color:#0c7b6d;text-align:center;background:#f0fdf4;border:1px solid #cfe9d8;border-radius:10px;padding:14px;margin:6px 0 12px">${codigo}</div>
+    ${botonEmail(url, 'Validar e iniciar el encargo')}
+    <p style="margin:14px 0 0;color:#707a83;font-size:13px">Evidencia del cliente: nº de validación ${escEmail(doc.firma_ref || '')} · IP ${escEmail(doc.firmante_ip || '')}.</p>`;
+  await enviarEmail({ to: destino, subject: `Valida el contrato firmado — ${escEmail(clienteNombre || '')} · Conecta NEX`, html: envolverEmail({ titulo: 'Valida el contrato', preheader: 'El cliente ha firmado; valida para iniciar los trabajos.', cuerpoHtml: cuerpo }), replyTo: process.env.REPLY_TO_EMAIL });
 }

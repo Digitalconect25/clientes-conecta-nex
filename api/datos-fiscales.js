@@ -99,7 +99,7 @@ export default async function handler(req, res) {
       // Al recibir los datos por primera vez, genera y envia el contrato a firmar.
       let contratoEnviado = false;
       if (prevEstado !== 'completado') {
-        try { await generarYenviarFirma(c.id, 'hoja', 'Hoja de Encargo'); contratoEnviado = true; }
+        try { await generarYenviarFirma(c.id, 'paquete', 'Contrato de servicios'); contratoEnviado = true; }
         catch (e) { console.error('autocontrato:', e.message); }
       }
       return jsonResponse(res, 200, { ok: true, contrato_enviado: contratoEnviado });

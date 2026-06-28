@@ -98,10 +98,10 @@ const CSS_BASE = `
 </style>
 `;
 
-export function generarHojaEncargo(c, e, firmaURL) {
+export function generarHojaEncargo(c, e, firmaURL, opts = {}) {
   const b = bloqueComun(c, e);
   const t = { base: c.base_imponible, iva: c.iva_importe, total: c.total };
-  return CSS_BASE + cabeceraLogo(e) + `
+  return (opts.soloCuerpo ? '' : CSS_BASE + cabeceraLogo(e)) + `
 <h1>HOJA DE ENCARGO</h1>
 <p class="sub">N de expediente: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
@@ -141,7 +141,7 @@ ${b.ibanBl}
 <p>El Cliente declara ser titular o estar legitimado para ceder dichos accesos, se compromete a facilitarlos en tiempo y forma y a comunicarlos de forma segura. El Prestador guardara confidencialidad sobre dichas credenciales, las empleara unicamente para el encargo y procedera a su devolucion o supresion a la finalizacion cuando asi lo solicite el Cliente.</p>
 <p>Cuando el tratamiento implique datos personales de los que el Cliente sea responsable, se regira por el <strong>Contrato de Encargo de Tratamiento (art. 28 RGPD)</strong> que se suscribe junto a este documento y forma parte inseparable del mismo.</p>
 
-${bloqueFirmas(c, e, firmaURL)}
+${opts.soloCuerpo ? '' : bloqueFirmas(c, e, firmaURL)}
 `;
 }
 
@@ -182,11 +182,11 @@ ${bloqueFirmas(c, e, firmaURL)}
 `;
 }
 
-export function generarContrato(c, e, firmaURL) {
+export function generarContrato(c, e, firmaURL, opts = {}) {
   const b = bloqueComun(c, e);
   const t = { base: c.base_imponible, iva: c.iva_importe, total: c.total };
   const esConsumidor = c.tipo_persona === 'Fisica';
-  return CSS_BASE + cabeceraLogo(e) + `
+  return (opts.soloCuerpo ? '' : CSS_BASE + cabeceraLogo(e)) + `
 <h1>CONTRATO DE PRESTACION DE SERVICIOS PROFESIONALES</h1>
 <p class="sub">N de contrato: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
@@ -256,15 +256,15 @@ ${b.ibanBl}
 
 <p>Y en prueba de conformidad, ambas partes firman el presente contrato por duplicado y a un solo efecto.</p>
 
-${bloqueFirmas(c, e, firmaURL)}
+${opts.soloCuerpo ? '' : bloqueFirmas(c, e, firmaURL)}
 `;
 }
 
 // Contrato de Encargo de Tratamiento (art. 28 RGPD). OJO: aqui los roles se
 // invierten -> el Cliente es el RESPONSABLE y el Prestador (agencia) el ENCARGADO.
-export function generarEncargoTratamiento(c, e, firmaURL) {
+export function generarEncargoTratamiento(c, e, firmaURL, opts = {}) {
   const b = bloqueComun(c, e);
-  return CSS_BASE + cabeceraLogo(e) + `
+  return (opts.soloCuerpo ? '' : CSS_BASE + cabeceraLogo(e)) + `
 <h1>CONTRATO DE ENCARGO DE TRATAMIENTO DE DATOS</h1>
 <p class="sub">Conforme al art. 28 del Reglamento (UE) 2016/679 (RGPD) y a la LO 3/2018 (LOPDGDD)<br>N de expediente: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
 
@@ -301,7 +301,7 @@ export function generarEncargoTratamiento(c, e, firmaURL) {
 <h2>6. Aceptacion</h2>
 <p>Las partes declaran haber leido y aceptan integramente el presente Contrato de Encargo de Tratamiento, que forma parte inseparable del contrato de prestacion de servicios suscrito entre ellas.</p>
 
-${bloqueFirmas(c, e, firmaURL, { izq: 'El Encargado (Prestador)', der: 'El Responsable (Cliente)' })}
+${opts.soloCuerpo ? '' : bloqueFirmas(c, e, firmaURL, { izq: 'El Encargado (Prestador)', der: 'El Responsable (Cliente)' })}
 `;
 }
 
@@ -544,10 +544,23 @@ ${bloqueFirmas(c, e, firmaURL)}
 `;
 }
 
+// Paquete completo: Hoja de Encargo + Encargo de Tratamiento (art. 28) + Contrato,
+// en un solo documento con UNA firma (con los datos del cliente y del emisor).
+export function generarPaqueteContratos(c, e, firmaURL) {
+  const sep = '<div style="page-break-before:always;border-top:2px solid #047857;margin:34px 0 0;padding-top:6px"></div>';
+  const nota = `<p style="margin-top:26px;font-size:10pt;color:#444"><strong>Firma conjunta:</strong> con una sola firma el Cliente declara haber leido y aceptar integramente los tres documentos anteriores (Hoja de Encargo, Contrato de Encargo de Tratamiento y Contrato de Prestacion de Servicios), que forman un todo inseparable.</p>`;
+  return CSS_BASE + cabeceraLogo(e)
+    + generarHojaEncargo(c, e, '', { soloCuerpo: true })
+    + sep + generarEncargoTratamiento(c, e, '', { soloCuerpo: true })
+    + sep + generarContrato(c, e, '', { soloCuerpo: true })
+    + nota + bloqueFirmas(c, e, firmaURL);
+}
+
 export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
   if (tipo === 'hoja') return generarHojaEncargo(cliente, emisor, firmaURL);
   if (tipo === 'cesion') return generarCesion(cliente, emisor, firmaURL);
   if (tipo === 'encargo_tratamiento') return generarEncargoTratamiento(cliente, emisor, firmaURL);
+  if (tipo === 'paquete') return generarPaqueteContratos(cliente, emisor, firmaURL);
   if (tipo === 'contrato') return generarContrato(cliente, emisor, firmaURL);
   if (tipo === 'acta') {
     return generarActaEntrega(
@@ -569,6 +582,7 @@ export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
 }
 
 export const TIPOS_DOC = [
+  { id: 'paquete', nombre: 'Contrato completo (Hoja + RGPD + Servicios)' },
   { id: 'hoja', nombre: 'Hoja de Encargo' },
   { id: 'cesion', nombre: 'Cesion de Derechos y Proteccion de Datos' },
   { id: 'encargo_tratamiento', nombre: 'Encargo de Tratamiento (art. 28 RGPD)' },

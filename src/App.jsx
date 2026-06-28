@@ -18,6 +18,7 @@ import Solicitud from './pages/Solicitud.jsx';
 import Propuesta from './pages/Propuesta.jsx';
 import Firmar from './pages/Firmar.jsx';
 import ValidarAgencia from './pages/ValidarAgencia.jsx';
+import FirmaEmpresa from './pages/FirmaEmpresa.jsx';
 import DatosFiscales from './pages/DatosFiscales.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
 import GeneradorQR from './pages/GeneradorQR.jsx';
@@ -41,7 +42,7 @@ export default function App() {
 
   // La ruta /acceso/:token es PUBLICA. Cualquier persona con el enlace
   // puede entrar (luego se le pedira el PIN). NO requiere login de admin.
-  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/') || location.pathname.startsWith('/validar/') || location.pathname.startsWith('/datos-fiscales/');
+  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/') || location.pathname.startsWith('/validar/') || location.pathname.startsWith('/firma-empresa/') || location.pathname.startsWith('/datos-fiscales/');
   if (esRutaPublica) {
     return (
       <Routes>
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/propuesta/:token" element={<Propuesta />} />
         <Route path="/firmar/:token" element={<Firmar />} />
         <Route path="/validar/:token" element={<ValidarAgencia />} />
+        <Route path="/firma-empresa/:token" element={<FirmaEmpresa />} />
         <Route path="/datos-fiscales/:token" element={<DatosFiscales />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

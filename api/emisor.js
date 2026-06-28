@@ -28,6 +28,30 @@ export default async function handler(req, res) {
       return jsonResponse(res, 200, { ok: true, url: `${BASE}/firma-empresa/${tok}` });
     }
 
+    // Corregir campos puntuales del emisor (solo los enviados; el resto se mantiene).
+    if (req.method === 'POST' && req.body?.accion === 'set_campos') {
+      const c = req.body.campos || {};
+      const norm = (v) => (v == null ? null : String(v));
+      const up = (v) => (v == null ? null : String(v).toUpperCase());
+      const [row] = await sql`
+        UPDATE emisor SET
+          nombre = COALESCE(${norm(c.nombre)}, nombre),
+          nif = COALESCE(${up(c.nif)}, nif),
+          nombre_comercial = COALESCE(${norm(c.nombre_comercial)}, nombre_comercial),
+          epigrafe = COALESCE(${norm(c.epigrafe)}, epigrafe),
+          direccion = COALESCE(${norm(c.direccion)}, direccion),
+          cp = COALESCE(${norm(c.cp)}, cp),
+          ciudad = COALESCE(${norm(c.ciudad)}, ciudad),
+          provincia = COALESCE(${norm(c.provincia)}, provincia),
+          email = COALESCE(${norm(c.email)}, email),
+          telefono = COALESCE(${norm(c.telefono)}, telefono),
+          web = COALESCE(${norm(c.web)}, web),
+          iban = COALESCE(${up(c.iban)}, iban)
+        WHERE id = 1
+        RETURNING id, nombre, nif, nombre_comercial, email, iban`;
+      return jsonResponse(res, 200, { ok: true, emisor: row });
+    }
+
     if (req.method === 'GET') {
       const [row] = await sql`SELECT * FROM emisor WHERE id = 1`;
       return jsonResponse(res, 200, row || {});

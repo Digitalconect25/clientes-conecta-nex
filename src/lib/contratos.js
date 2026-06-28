@@ -56,8 +56,10 @@ function bloqueComun(c, e) {
   return { lugarFecha, dirEm, dirCl, tipoDoc, tipoFrase, tabla, ibanBl, contBl, descBl, fpTxt, epi };
 }
 
-function bloqueFirmas(c, e, firmaImagenURL) {
+function bloqueFirmas(c, e, firmaImagenURL, labels) {
   const tipoDoc = c.tipo_persona === 'Juridica' ? 'CIF' : 'NIF';
+  const labIzq = (labels && labels.izq) || 'El Prestador';
+  const labDer = (labels && labels.der) || 'El Cliente';
   const firmaCliente = firmaImagenURL || c.firma_cliente;
   const imgFirma = firmaCliente ? `<img src="${firmaCliente}" style="max-width:200px;max-height:80px;display:block;margin:0 auto 5px"/>` : '<div style="height:60px"></div>';
   const fechaFirma = c.fecha_firma ? `<div style="font-size:9pt;color:#666;margin-top:8px">Firmado digitalmente el ${new Date(c.fecha_firma).toLocaleDateString('es-ES')}</div>` : '';
@@ -65,13 +67,13 @@ function bloqueFirmas(c, e, firmaImagenURL) {
     <div style="display:flex;justify-content:space-between;margin-top:50px;gap:40px">
       <div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:8px">
         <div style="height:60px"></div>
-        <strong>El Prestador</strong><br>
+        <strong>${labIzq}</strong><br>
         ${e.nombre}<br>
         NIF: ${e.nif}
       </div>
       <div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:8px">
         ${imgFirma}
-        <strong>El Cliente</strong><br>
+        <strong>${labDer}</strong><br>
         ${c.nombre}<br>
         ${tipoDoc}: ${c.nif}
         ${fechaFirma}
@@ -132,7 +134,12 @@ ${b.ibanBl}
 <p>El alcance se limita a lo descrito en el objeto. Cualquier modificacion sustancial sera presupuestada y aceptada por escrito antes de su ejecucion.</p>
 
 <h2>8. Politica de privacidad</h2>
-<p>Los datos personales se trataran conforme al RGPD. Responsable: ${e.nombre}, NIF ${e.nif}, ${e.email}. Finalidad: gestion contractual del encargo. Base legal: ejecucion contractual. Conservacion: durante la relacion comercial y los plazos legales.</p>
+<p>Los datos personales del Cliente se trataran conforme al RGPD (Reglamento UE 2016/679) y a la LO 3/2018 (LOPDGDD). Responsable: ${e.nombre}, NIF ${e.nif}, ${e.email}. Finalidad: gestion contractual del encargo. Base legal: ejecucion del contrato (art. 6.1.b RGPD). Conservacion: durante la relacion y los plazos legales. El Cliente puede ejercer sus derechos de acceso, rectificacion, supresion, oposicion, limitacion y portabilidad en la direccion indicada, y reclamar ante la Agencia Espanola de Proteccion de Datos.</p>
+
+<h2>9. Autorizacion de uso de datos y accesos</h2>
+<p>El Cliente <strong>autoriza expresamente</strong> al Prestador a acceder, utilizar y gestionar las cuentas, accesos, credenciales, perfiles, dominios, alojamientos y datos que resulten necesarios para ejecutar el encargo (entre otros: web y hosting, correo, ficha de Google, perfiles de redes sociales y herramientas de marketing, automatizacion y CRM), de forma exclusiva para las finalidades del presente encargo y mientras dure la relacion.</p>
+<p>El Cliente declara ser titular o estar legitimado para ceder dichos accesos, se compromete a facilitarlos en tiempo y forma y a comunicarlos de forma segura. El Prestador guardara confidencialidad sobre dichas credenciales, las empleara unicamente para el encargo y procedera a su devolucion o supresion a la finalizacion cuando asi lo solicite el Cliente.</p>
+<p>Cuando el tratamiento implique datos personales de los que el Cliente sea responsable, se regira por el <strong>Contrato de Encargo de Tratamiento (art. 28 RGPD)</strong> que se suscribe junto a este documento y forma parte inseparable del mismo.</p>
 
 ${bloqueFirmas(c, e, firmaURL)}
 `;
@@ -250,6 +257,51 @@ ${b.ibanBl}
 <p>Y en prueba de conformidad, ambas partes firman el presente contrato por duplicado y a un solo efecto.</p>
 
 ${bloqueFirmas(c, e, firmaURL)}
+`;
+}
+
+// Contrato de Encargo de Tratamiento (art. 28 RGPD). OJO: aqui los roles se
+// invierten -> el Cliente es el RESPONSABLE y el Prestador (agencia) el ENCARGADO.
+export function generarEncargoTratamiento(c, e, firmaURL) {
+  const b = bloqueComun(c, e);
+  return CSS_BASE + cabeceraLogo(e) + `
+<h1>CONTRATO DE ENCARGO DE TRATAMIENTO DE DATOS</h1>
+<p class="sub">Conforme al art. 28 del Reglamento (UE) 2016/679 (RGPD) y a la LO 3/2018 (LOPDGDD)<br>N de expediente: ${c.numero_contrato || c.numero_cliente}<br>${b.lugarFecha}</p>
+
+<h2>Reunidos</h2>
+<p>De una parte, <strong>${c.nombre}</strong>, con ${b.tipoDoc} ${c.nif} y domicilio en ${b.dirCl}${b.contBl}, en adelante "el Responsable del Tratamiento".</p>
+<p>De otra parte, <strong>${e.nombre}</strong>, con NIF ${e.nif} y domicilio profesional en ${b.dirEm}, profesional autonomo, en adelante "el Encargado del Tratamiento".</p>
+
+<h2>1. Objeto</h2>
+<p>El presente contrato regula el tratamiento de datos personales que el Encargado realiza por cuenta del Responsable como consecuencia de la prestacion de los servicios contratados (en adelante, "el Servicio"), conforme al art. 28 RGPD. Solo se autoriza a tratar los datos para prestar el Servicio.</p>
+
+<h2>2. Identificacion del tratamiento</h2>
+<p><strong>Finalidad:</strong> ejecutar los servicios encargados (diseno y mantenimiento web, marketing digital, gestion de redes y perfiles, automatizaciones e inteligencia artificial y servicios afines).</p>
+<p><strong>Naturaleza y operaciones:</strong> recogida, registro, consulta, conservacion, modificacion, comunicacion cuando proceda y supresion de datos en las plataformas y cuentas del Responsable.</p>
+<p><strong>Tipos de datos:</strong> identificativos y de contacto (nombre, email, telefono) y datos de clientes, contactos o usuarios del Responsable contenidos en sus plataformas. No se trataran categorias especiales de datos (art. 9 RGPD) salvo instruccion expresa y por escrito del Responsable.</p>
+<p><strong>Categorias de interesados:</strong> clientes, contactos, leads y usuarios del Responsable.</p>
+<p><strong>Duracion:</strong> la del contrato de prestacion de servicios. Finalizado este, se estara a lo previsto en la clausula 3.g).</p>
+
+<h2>3. Obligaciones del Encargado (art. 28.3 RGPD)</h2>
+<p>a) Tratar los datos unicamente siguiendo instrucciones documentadas del Responsable, incluidas las transferencias internacionales; si debiera tratarlos por imperativo legal, informara previamente al Responsable salvo prohibicion.</p>
+<p>b) Garantizar que las personas autorizadas para tratar los datos se comprometen a respetar la confidencialidad (arts. 28.3.b y 29 RGPD).</p>
+<p>c) Aplicar las medidas tecnicas y organizativas apropiadas para garantizar la seguridad del tratamiento (art. 32 RGPD): control de accesos, gestion segura de credenciales, cifrado cuando proceda, copias de seguridad y minimizacion de datos.</p>
+<p>d) No recurrir a otro encargado (subencargado) sin autorizacion previa del Responsable; los subencargados quedaran sujetos a las mismas obligaciones (arts. 28.2 y 28.4 RGPD). Se entienden autorizados con caracter general los proveedores tecnologicos necesarios para el Servicio (alojamiento, plataformas de IA y marketing, herramientas de automatizacion), velando el Encargado por que cumplan el RGPD.</p>
+<p>e) Asistir al Responsable para atender el ejercicio de derechos de los interesados (acceso, rectificacion, supresion, oposicion, limitacion y portabilidad) y para cumplir las obligaciones de los arts. 32 a 36 RGPD.</p>
+<p>f) Notificar al Responsable, sin dilacion indebida, las violaciones de seguridad de los datos de las que tenga conocimiento, con la informacion relevante para su gestion.</p>
+<p>g) A eleccion del Responsable, suprimir o devolver todos los datos personales una vez finalice la prestacion, y suprimir las copias existentes, salvo que deba conservarlos por imperativo legal (art. 28.3.g RGPD).</p>
+<p>h) Poner a disposicion del Responsable la informacion necesaria para demostrar el cumplimiento de estas obligaciones y permitir y contribuir a auditorias razonables (art. 28.3.h RGPD).</p>
+
+<h2>4. Obligaciones del Responsable</h2>
+<p>Entregar al Encargado los datos y accesos necesarios; impartir y documentar las instrucciones de tratamiento; garantizar la licitud y la base juridica del tratamiento; y haber informado a los interesados conforme a los arts. 13 y 14 RGPD.</p>
+
+<h2>5. Responsabilidad y legislacion aplicable</h2>
+<p>Cada parte respondera de los danos y perjuicios que cause por el incumplimiento de sus obligaciones (art. 82 RGPD). El presente contrato se rige por el RGPD, la LO 3/2018 (LOPDGDD) y demas normativa espanola y de la Union Europea aplicable. Para cualquier controversia, las partes se someten a los Juzgados y Tribunales de ${e.ciudad || 'Alicante'}.</p>
+
+<h2>6. Aceptacion</h2>
+<p>Las partes declaran haber leido y aceptan integramente el presente Contrato de Encargo de Tratamiento, que forma parte inseparable del contrato de prestacion de servicios suscrito entre ellas.</p>
+
+${bloqueFirmas(c, e, firmaURL, { izq: 'El Encargado (Prestador)', der: 'El Responsable (Cliente)' })}
 `;
 }
 
@@ -495,6 +547,7 @@ ${bloqueFirmas(c, e, firmaURL)}
 export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
   if (tipo === 'hoja') return generarHojaEncargo(cliente, emisor, firmaURL);
   if (tipo === 'cesion') return generarCesion(cliente, emisor, firmaURL);
+  if (tipo === 'encargo_tratamiento') return generarEncargoTratamiento(cliente, emisor, firmaURL);
   if (tipo === 'contrato') return generarContrato(cliente, emisor, firmaURL);
   if (tipo === 'acta') {
     return generarActaEntrega(
@@ -518,6 +571,7 @@ export function generarPorTipo(tipo, cliente, emisor, firmaURL, extras) {
 export const TIPOS_DOC = [
   { id: 'hoja', nombre: 'Hoja de Encargo' },
   { id: 'cesion', nombre: 'Cesion de Derechos y Proteccion de Datos' },
+  { id: 'encargo_tratamiento', nombre: 'Encargo de Tratamiento (art. 28 RGPD)' },
   { id: 'contrato', nombre: 'Contrato de Prestacion de Servicios' },
   { id: 'acta', nombre: 'Acta de Entrega' },
 ];

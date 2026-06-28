@@ -91,6 +91,9 @@ export const api = {
   servicioUpdate: (data) => request('PUT', '/api/servicios', data),
   servicioDelete: (id) => request('DELETE', `/api/servicios?id=${id}`),
 
+  // Embudo de contratación: cada cliente con su fase del circuito
+  embudoList: () => request('GET', '/api/embudo'),
+
   clientesList: () => request('GET', '/api/clientes'),
   clienteGet: (id) => request('GET', `/api/clientes?id=${id}`),
   clienteCreate: (data) => request('POST', '/api/clientes', data),

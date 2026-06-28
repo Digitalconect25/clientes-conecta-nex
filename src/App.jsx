@@ -6,6 +6,7 @@ import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Clientes from './pages/Clientes.jsx';
 import ClienteDetalle from './pages/ClienteDetalle.jsx';
+import Embudo from './pages/Embudo.jsx';
 import Catalogo from './pages/Catalogo.jsx';
 import Emisor from './pages/Emisor.jsx';
 import Proyectos from './pages/Proyectos.jsx';
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
+        <Route path="/embudo" element={<Embudo />} />
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />

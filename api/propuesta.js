@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
       if (accion === 'rechazar') {
         await sql`UPDATE propuestas SET estado = 'rechazada', rechazada_en = NOW(), actualizado_en = NOW() WHERE id = ${pr.id}`;
-        avisarAgencia(pr, 'rechazada').catch(() => {});
+        await avisarAgencia(pr, 'rechazada').catch(() => {});
         return jsonResponse(res, 200, { ok: true, estado: 'rechazada' });
       }
 
@@ -74,14 +74,14 @@ export default async function handler(req, res) {
         const [row] = await sql`UPDATE propuestas SET
             estado = 'aceptada', aceptada_en = NOW(), acept_nombre = ${nombre}, acept_ip = ${ip}, acept_user_agent = ${ua}, actualizado_en = NOW()
           WHERE id = ${pr.id} RETURNING *`;
-        // Acuse al cliente + aviso a la agencia (no bloquean la aceptación).
-        acuseCliente(row).catch(() => {});
-        avisarAgencia(row, 'aceptada').catch(() => {});
         if (row.prospecto_id) {
           try { await sql`UPDATE prospectos SET observaciones = COALESCE(observaciones,'') || ${'\n[Propuesta ' + (row.numero || '') + ' ACEPTADA: ' + EUR(row.total) + ' por ' + nombre + ']'}, prioridad = 'Alta', actualizado_en = NOW() WHERE id = ${row.prospecto_id}`; } catch { /* noop */ }
         }
-        // Fase D: crea el cliente con los servicios aceptados y le pide los datos fiscales (best-effort).
-        crearClienteYpedirDatos(row).catch((e) => console.error('faseD:', e.message));
+        // Fase D: crea el cliente con los servicios aceptados y le pide los datos fiscales.
+        // AWAIT: en serverless el trabajo async no garantiza completarse tras responder.
+        await crearClienteYpedirDatos(row).catch((e) => console.error('faseD:', e.message));
+        await acuseCliente(row).catch((e) => console.error('acuse:', e.message));
+        await avisarAgencia(row, 'aceptada').catch(() => {});
         return jsonResponse(res, 200, { ok: true, estado: 'aceptada' });
       }
 

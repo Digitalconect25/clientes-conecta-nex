@@ -46,7 +46,7 @@ export default async function handler(req, res) {
 
       if (accion === 'rechazar') {
         await sql`UPDATE documentos SET firma_estado = 'rechazado' WHERE id = ${doc.id}`;
-        avisarAgencia(doc, cli?.nombre, 'rechazado').catch(() => {});
+        await avisarAgencia(doc, cli?.nombre, 'rechazado').catch(() => {});
         return jsonResponse(res, 200, { ok: true, estado: 'rechazado' });
       }
 
@@ -64,8 +64,8 @@ export default async function handler(req, res) {
         if (MARCAR_CLIENTE.includes(doc.tipo)) {
           try { await sql`UPDATE clientes SET estado = 'Firmado', fecha_firma = NOW(), actualizado_en = NOW() WHERE id = ${doc.cliente_id}`; } catch { /* noop */ }
         }
-        acuseCliente(row, cli?.nombre).catch(() => {});
-        avisarAgencia(row, cli?.nombre, 'firmado').catch(() => {});
+        await acuseCliente(row, cli?.nombre).catch((e) => console.error('acuse firma:', e.message));
+        await avisarAgencia(row, cli?.nombre, 'firmado').catch(() => {});
         return jsonResponse(res, 200, { ok: true, estado: 'firmado', firmante: nombre });
       }
 

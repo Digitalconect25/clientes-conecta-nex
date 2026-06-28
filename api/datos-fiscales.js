@@ -97,12 +97,12 @@ export default async function handler(req, res) {
       } catch { /* no bloquea */ }
 
       // Al recibir los datos por primera vez, genera y envia el contrato a firmar.
-      let contratoEnviado = false;
+      let contratoEnviado = false, contratoUrl = '';
       if (prevEstado !== 'completado') {
-        try { await generarYenviarFirma(c.id, 'paquete', 'Contrato de servicios'); contratoEnviado = true; }
+        try { const r = await generarYenviarFirma(c.id, 'paquete', 'Contrato de servicios'); contratoEnviado = true; contratoUrl = r.url; }
         catch (e) { console.error('autocontrato:', e.message); }
       }
-      return jsonResponse(res, 200, { ok: true, contrato_enviado: contratoEnviado });
+      return jsonResponse(res, 200, { ok: true, contrato_enviado: contratoEnviado, contrato_url: contratoUrl });
     }
 
     return jsonResponse(res, 405, { error: 'Method not allowed' });

@@ -70,7 +70,7 @@ export default async function handler(req, res) {
       if (!(await limitar(obtenerIp(req), 'firmar', 12, 60))) return jsonResponse(res, 429, { error: 'Demasiadas peticiones. Espera un momento.' });
       const accion = String(req.body?.accion || '');
 
-      if (doc.firmado) return jsonResponse(res, 409, { error: 'Este documento ya está firmado.', firmado: true });
+      if (doc.firmado && accion !== 'guardar_pdf') return jsonResponse(res, 409, { error: 'Este documento ya está firmado.', firmado: true });
 
       // Envia un codigo de un solo uso (OTP) al email del firmante para validar la firma.
       if (accion === 'enviar_codigo') {
@@ -133,7 +133,18 @@ export default async function handler(req, res) {
         }
         await acuseCliente(row, cli?.nombre, firmadoHtml).catch((e) => console.error('acuse firma:', e.message));
         await avisarAgencia(row, cli?.nombre, 'firmado', firmadoHtml).catch(() => {});
-        return jsonResponse(res, 200, { ok: true, estado: 'firmado', firmante: nombre, ref });
+        return jsonResponse(res, 200, { ok: true, estado: 'firmado', firmante: nombre, ref, signed_html: firmadoHtml });
+      }
+
+      // El navegador del cliente genera el PDF del documento firmado y lo guarda en el CRM.
+      if (accion === 'guardar_pdf') {
+        const b64 = String(req.body?.pdf_base64 || '');
+        if (!b64) return jsonResponse(res, 400, { error: 'Falta el PDF' });
+        const buf = Buffer.from(b64, 'base64');
+        if (buf.length < 100 || buf.length > 12 * 1024 * 1024) return jsonResponse(res, 400, { error: 'PDF no válido' });
+        const nom = `Contrato firmado ${doc.firma_ref || ''} - ${doc.nombre}.pdf`.slice(0, 180);
+        try { await sql`INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido) VALUES (${doc.cliente_id}, ${nom}, ${'application/pdf'}, ${buf.length}, ${buf})`; } catch (e) { return jsonResponse(res, 500, { error: e.message }); }
+        return jsonResponse(res, 200, { ok: true });
       }
 
       return jsonResponse(res, 400, { error: 'Acción no válida' });

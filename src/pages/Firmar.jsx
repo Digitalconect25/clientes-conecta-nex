@@ -19,6 +19,25 @@ export default function Firmar() {
   const [enviandoCodigo, setEnviandoCodigo] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+
+  // Genera el PDF del documento firmado (en el navegador), lo guarda en el CRM y permite descargarlo.
+  async function hacerPDF(html) {
+    if (!html) return;
+    setGenerandoPdf(true);
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const el = document.createElement('div');
+      el.style.width = '794px'; el.innerHTML = html;
+      const opt = { margin: [10, 8, 10, 8], html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'] } };
+      const blob = await html2pdf().set(opt).from(el).output('blob');
+      setPdfUrl(URL.createObjectURL(blob));
+      const b64 = await new Promise((res2) => { const r = new FileReader(); r.onload = () => res2(String(r.result).split(',')[1] || ''); r.readAsDataURL(blob); });
+      fetch('/api/firmar?token=' + encodeURIComponent(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'guardar_pdf', pdf_base64: b64 }) }).catch(() => {});
+    } catch (e) { /* el email lleva el documento como respaldo */ }
+    finally { setGenerandoPdf(false); }
+  }
 
   useEffect(() => {
     fetch('/api/firmar?token=' + encodeURIComponent(token))
@@ -61,7 +80,7 @@ export default function Firmar() {
         body: JSON.stringify({ accion: 'firmar', nombre: nombre.trim(), acepto: true, codigo: codigo.trim(), firma_img: firmaImg, dni_unused: undefined, doc_base64: archivo?.base64, doc_nombre: archivo?.nombre, doc_tipo: archivo?.tipo }),
       });
       const j = await r.json();
-      if (r.ok && j.ok) setHecho(true);
+      if (r.ok && j.ok) { setHecho(true); hacerPDF(j.signed_html); }
       else setError(j.error || 'No se pudo firmar.');
     } catch { setError('No se pudo conectar.'); }
     finally { setEnviando(false); }
@@ -102,6 +121,8 @@ export default function Firmar() {
                 <div style={{ width: 54, height: 54, borderRadius: '50%', background: C.teal, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 8 }}>✓</div>
                 <div style={{ fontWeight: 700, fontSize: 17 }}>Documento firmado</div>
                 <p style={{ color: C.cuerpo, margin: '6px 0 0' }}>Gracias{doc.firmante_nombre ? ', ' + doc.firmante_nombre : (nombre ? ', ' + nombre : '')}. Tu firma ha quedado registrada con fecha, hora, IP y un número de validación. Te enviamos el <b>documento firmado</b> por email.</p>
+                {generandoPdf && <p style={{ color: C.tenue, fontSize: 13, marginTop: 12 }}>Preparando tu PDF…</p>}
+                {pdfUrl && <a href={pdfUrl} download="contrato-firmado.pdf" style={{ display: 'inline-block', marginTop: 14, background: C.teal, color: '#fff', textDecoration: 'none', fontWeight: 700, padding: '12px 22px', borderRadius: 10 }}>⬇ Descargar tu contrato (PDF)</a>}
               </div>
             ) : doc.firma_estado === 'rechazado' ? (
               <p style={{ marginTop: 20, color: C.tenue, textAlign: 'center' }}>Este documento se marcó como no aceptado. Si fue un error, escríbenos.</p>

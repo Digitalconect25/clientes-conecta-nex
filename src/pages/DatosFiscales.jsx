@@ -129,7 +129,7 @@ export default function DatosFiscales() {
                     <input value={d.telefono} onChange={(e) => set('telefono', e.target.value)} style={field} />
                   </label>
                 </div>
-                <label style={lab}>{juridica ? 'CIF o escritura (foto o PDF)' : 'DNI por las dos caras (foto o PDF)'}
+                <label style={lab}>{juridica ? 'CIF o escritura (foto o PDF)' : 'DNI, NIE o Pasaporte (foto o PDF)'}
                   <input type="file" accept="image/*,application/pdf" onChange={onFile} style={{ ...field, padding: 9 }} />
                 </label>
                 {archivo && <p style={{ fontSize: 12, color: C.teal, marginTop: 4 }}>✓ {archivo.nombre} ({archivo.mb} MB)</p>}

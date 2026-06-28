@@ -153,7 +153,7 @@ export default async function handler(req, res) {
         const cuerpo = `
           <p style="margin:0 0 14px">Hola ${escEmail(pr.destinatario_nombre || '')},</p>
           <p style="margin:0 0 16px">${escEmail(pr.intro || 'Te enviamos la propuesta que preparamos para tu negocio.')}</p>
-          ${tarjetaDatos([['Propuesta', escEmail(pr.numero || '')], ['Importe', EUR(pr.total)], ['Validez', `${pr.validez_dias} días`]])}
+          ${tarjetaDatos([['Propuesta', escEmail(pr.numero || '')], ['Base imponible', EUR(pr.total)], ['Total (IVA 21% incl.)', EUR(Number(pr.total) * 1.21)], ['Validez', `${pr.validez_dias} días`]])}
           <p style="margin:14px 0 4px">Puedes verla en detalle y, si te encaja, aceptarla desde aquí:</p>
           ${botonEmail(url, 'Ver y aceptar la propuesta')}
           <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si tienes cualquier duda, responde a este correo y lo vemos.</p>

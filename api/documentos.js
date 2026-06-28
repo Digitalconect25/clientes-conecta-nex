@@ -22,6 +22,10 @@ export async function asegurarColumnas() {
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_hash TEXT DEFAULT ''`; } catch { /* noop */ }
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_enviada_en TIMESTAMPTZ`; } catch { /* noop */ }
   try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_vista_en TIMESTAMPTZ`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_codigo TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_codigo_exp TIMESTAMPTZ`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_img TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE documentos ADD COLUMN IF NOT EXISTS firma_ref TEXT`; } catch { /* noop */ }
   _mig = true;
 }
 

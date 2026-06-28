@@ -80,8 +80,14 @@ export default function Propuesta() {
                   <div>Descuento</div><div>− {eur(p.descuento)}</div>
                 </div>
               )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderTop: '1px solid ' + C.linea, color: C.tenue, fontSize: 14 }}>
+                <div>Base imponible</div><div>{eur(p.total)}</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', color: C.tenue, fontSize: 14 }}>
+                <div>IVA (21%)</div><div>{eur(Number(p.total) * 0.21)}</div>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 16px', borderTop: '2px solid ' + C.linea, background: C.crema, fontWeight: 800, fontSize: 17 }}>
-                <div>Total</div><div>{eur(p.total)}</div>
+                <div>Total (IVA incl.)</div><div>{eur(Number(p.total) * 1.21)}</div>
               </div>
             </div>
 

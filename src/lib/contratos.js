@@ -26,18 +26,11 @@ function tablaServicios(servicios) {
 }
 
 function cabeceraLogo(e) {
-  // Orden de prioridad para encontrar el logo:
-  // 1. e.logo_data_url -> dataURL base64 precargado por el frontend (mejor para PDFs)
-  // 2. e.logo_url      -> URL personalizada que el usuario haya guardado en BD
-  // 3. fallback        -> /logo-conecta-nex.png con URL absoluta
-  let url = e.logo_data_url || e.logo_url || '';
-  if (!url && typeof window !== 'undefined' && window.location) {
-    url = window.location.origin + '/logo-conecta-nex.png';
-  } else if (!url) {
-    url = 'https://clientes.conectanex.com/logo-conecta-nex.png';
-  }
-  if (!url) return '';
-  return `<div style="text-align:center;margin-bottom:20px"><img src="${url}" alt="Conecta Nex" crossorigin="anonymous" style="max-height:80px;max-width:300px"/></div>`;
+  // Usa el dataURL precargado si lo hay (mejor para PDF); si no, el logo de marca
+  // logo-email.png (el que se sirve y muestra de forma fiable). Origen-aware.
+  const origen = (typeof window !== 'undefined' && window.location) ? window.location.origin : 'https://clientes.conectanex.com';
+  const url = (e && e.logo_data_url) || (origen + '/logo-email.png');
+  return `<div style="text-align:center;margin-bottom:20px"><img src="${url}" alt="Conecta Nex" style="max-height:80px;max-width:300px"/></div>`;
 }
 
 function bloqueComun(c, e) {

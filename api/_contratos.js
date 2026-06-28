@@ -11,7 +11,8 @@ const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // Genera el documento 'tipo' para el cliente, lo guarda y lo envia a firmar.
-export async function generarYenviarFirma(clienteId, tipo, nombreDoc) {
+// faltaDoc=true -> el email recuerda que adjunte su documento de identidad al firmar.
+export async function generarYenviarFirma(clienteId, tipo, nombreDoc, faltaDoc = false) {
   await asegurarFirmaCols();
   const [c] = await sql`SELECT * FROM clientes WHERE id = ${clienteId}`;
   if (!c) throw new Error('Cliente no encontrado');
@@ -29,6 +30,7 @@ export async function generarYenviarFirma(clienteId, tipo, nombreDoc) {
       <p style="margin:0 0 14px">Hola ${escEmail(c.nombre || '')},</p>
       <p style="margin:0 0 16px">Ya tenemos tus datos, ¡gracias! Te enviamos tu <b>${escEmail(nombreDoc)}</b> para que lo revises y, si estás de acuerdo, lo firmes online:</p>
       ${botonEmail(url, 'Ver y firmar el documento')}
+      ${faltaDoc ? `<p style="margin:16px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;font-size:14px"><b>Falta tu documento de identidad.</b> Para completar el contrato, adjunta una copia de tu <b>DNI, NIE, Pasaporte o CIF</b> en la misma página, junto al botón de firmar.</p>` : ''}
       <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Al firmar quedará registrada la fecha y hora. Si tienes cualquier duda, responde a este correo.</p>
       <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
     await enviarEmail({

@@ -10,6 +10,16 @@ export default function DatosFiscales() {
   const [d, setD] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+
+  function onFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) { setArchivo(null); return; }
+    if (f.size > 8 * 1024 * 1024) { setError('El archivo supera 8 MB. Sube una foto o PDF más ligero.'); e.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => { const r = String(reader.result || ''); setArchivo({ base64: r.split(',')[1] || '', nombre: f.name, tipo: f.type, mb: (f.size / 1048576).toFixed(1) }); setError(''); };
+    reader.readAsDataURL(f);
+  }
 
   useEffect(() => {
     fetch('/api/datos-fiscales?token=' + encodeURIComponent(token))
@@ -25,7 +35,8 @@ export default function DatosFiscales() {
     setError(''); setEnviando(true);
     try {
       const r = await fetch('/api/datos-fiscales?token=' + encodeURIComponent(token), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...d, dni_base64: archivo?.base64, dni_nombre: archivo?.nombre, dni_tipo: archivo?.tipo }),
       });
       const j = await r.json();
       if (r.ok && j.ok) setHecho(true); else setError(j.error || 'No se pudo guardar.');
@@ -113,6 +124,12 @@ export default function DatosFiscales() {
                     <input value={d.telefono} onChange={(e) => set('telefono', e.target.value)} style={field} />
                   </label>
                 </div>
+                <label style={lab}>{juridica ? 'CIF o escritura (foto o PDF)' : 'DNI por las dos caras (foto o PDF)'}
+                  <input type="file" accept="image/*,application/pdf" onChange={onFile} style={{ ...field, padding: 9 }} />
+                </label>
+                {archivo && <p style={{ fontSize: 12, color: C.teal, marginTop: 4 }}>✓ {archivo.nombre} ({archivo.mb} MB)</p>}
+                <p style={{ fontSize: 11.5, color: '#9aa6a0', marginTop: 4 }}>Lo usamos solo para identificarte en el contrato. Opcional ahora; si no, te lo pediremos al firmar.</p>
+
                 {error && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 10 }}>{error}</p>}
                 <button onClick={guardar} disabled={enviando}
                   style={{ marginTop: 18, width: '100%', padding: '14px', borderRadius: 10, border: 0, background: C.teal, color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: enviando ? 0.7 : 1 }}>

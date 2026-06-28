@@ -2,11 +2,12 @@
 //   GET  /api/propuesta?token=...                      -> datos para verla (marca 'vista')
 //   POST /api/propuesta?token=...  { accion:'aceptar', nombre }  -> acepta + evidencia
 //   POST /api/propuesta?token=...  { accion:'rechazar' }         -> rechaza
+import crypto from 'node:crypto';
 import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
-import { envolverEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
+import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
 const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const EUR = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -79,6 +80,8 @@ export default async function handler(req, res) {
         if (row.prospecto_id) {
           try { await sql`UPDATE prospectos SET observaciones = COALESCE(observaciones,'') || ${'\n[Propuesta ' + (row.numero || '') + ' ACEPTADA: ' + EUR(row.total) + ' por ' + nombre + ']'}, prioridad = 'Alta', actualizado_en = NOW() WHERE id = ${row.prospecto_id}`; } catch { /* noop */ }
         }
+        // Fase D: crea el cliente con los servicios aceptados y le pide los datos fiscales (best-effort).
+        crearClienteYpedirDatos(row).catch((e) => console.error('faseD:', e.message));
         return jsonResponse(res, 200, { ok: true, estado: 'aceptada' });
       }
 
@@ -119,4 +122,55 @@ async function avisarAgencia(pr, tipo) {
     ${ok ? `<p style="background:#f0fdf4;border:1px solid #cfe9d8;border-radius:8px;padding:10px">Aceptada por <b>${escEmail(pr.acept_nombre || '')}</b><br>Fecha (servidor): ${escEmail(String(pr.aceptada_en || ''))}<br>IP: ${escEmail(pr.acept_ip || '')}</p><p>Siguiente paso: convertir el lead en cliente con estos servicios.</p>` : ''}
     <p style="color:#999;font-size:12px">Panel: <a href="${BASE}/prospeccion">Prospección</a></p></div>`;
   await enviarEmail({ to: destino, subject: `${ok ? '🟢' : '🟠'} Propuesta ${pr.numero || ''} ${ok ? 'aceptada' : 'rechazada'} — ${EUR(pr.total)}`, html: cuerpo });
+}
+
+// Fase D: al aceptar, crea el cliente desde el prospecto con los servicios aceptados
+// y le envia el formulario de datos fiscales. Best-effort, no bloquea la aceptacion.
+async function crearClienteYpedirDatos(pr) {
+  if (!pr || pr.cliente_id) return;
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_token TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_estado TEXT DEFAULT 'pendiente'`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_completados_en TIMESTAMPTZ`; } catch { /* noop */ }
+
+  let prospecto = null;
+  if (pr.prospecto_id) [prospecto] = await sql`SELECT * FROM prospectos WHERE id = ${pr.prospecto_id}`;
+  if (prospecto?.cliente_id) { await sql`UPDATE propuestas SET cliente_id = ${prospecto.cliente_id} WHERE id = ${pr.id}`; return; }
+
+  const items = Array.isArray(pr.items_json) ? pr.items_json : [];
+  const servicios = items.map((it) => ({ nombre: it.nombre, precio: Number(it.precio || 0), cantidad: Number(it.cantidad || 1) }));
+  const base = servicios.reduce((s, it) => s + it.precio * it.cantidad, 0);
+  const ivaImporte = Math.round(base * 0.21 * 100) / 100;
+  const total = Math.round((base + ivaImporte) * 100) / 100;
+
+  const anio = new Date().getFullYear();
+  const [num] = await sql`INSERT INTO contadores (clave, valor) VALUES (${'cliente_' + anio}, 1)
+    ON CONFLICT (clave) DO UPDATE SET valor = contadores.valor + 1, actualizado_en = NOW() RETURNING valor`;
+  const numeroCliente = `CL-${anio}-${String(num.valor).padStart(4, '0')}`;
+  const nombreCli = (prospecto?.empresa || prospecto?.nombre || pr.destinatario_nombre || 'Cliente').trim();
+  const notas = `Creado al aceptar la propuesta ${pr.numero || ''} (aceptada por ${pr.acept_nombre || ''}). Total propuesta: ${EUR(pr.total)}.` + (Number(pr.descuento) > 0 ? ` Incluye descuento de ${EUR(pr.descuento)}.` : '');
+
+  const [cli] = await sql`
+    INSERT INTO clientes (numero_cliente, estado, tipo_persona, nombre, nif, contacto, ciudad, email, telefono,
+      servicios_json, iva, base_imponible, iva_importe, total, notas, estado_proyecto, porcentaje_avance, datos_estado)
+    VALUES (${numeroCliente}, 'Pendiente firma', 'Fisica', ${nombreCli}, '', ${prospecto?.nombre || ''}, ${prospecto?.ciudad || ''},
+      ${prospecto?.email || pr.destinatario_email || ''}, ${prospecto?.telefono || ''},
+      ${JSON.stringify(servicios)}::jsonb, 21, ${base}, ${ivaImporte}, ${total}, ${notas}, 'Sin iniciar', 0, 'pendiente')
+    RETURNING id, nombre, email`;
+
+  await sql`UPDATE propuestas SET cliente_id = ${cli.id} WHERE id = ${pr.id}`;
+  if (pr.prospecto_id) { try { await sql`UPDATE prospectos SET cliente_id = ${cli.id}, estado = 'convertido', actualizado_en = NOW() WHERE id = ${pr.prospecto_id}`; } catch { /* noop */ } }
+
+  const email = (cli.email || '').trim();
+  if (email && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && emailHabilitado()) {
+    const tok = crypto.randomBytes(24).toString('base64url');
+    await sql`UPDATE clientes SET datos_token = ${tok}, datos_estado = 'enviado' WHERE id = ${cli.id}`;
+    const url = `${BASE}/datos-fiscales/${tok}`;
+    const cuerpo = `
+      <p style="margin:0 0 14px">Hola ${escEmail(cli.nombre || '')},</p>
+      <p style="margin:0 0 16px">¡Gracias por aceptar la propuesta! Para preparar tu contrato solo necesitamos tus <b>datos fiscales</b> (y, si quieres, una foto de tu DNI/CIF). Es un minuto:</p>
+      ${botonEmail(url, 'Completar mis datos fiscales')}
+      <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Después te enviaremos el contrato para firmarlo online. Si tienes dudas, responde a este correo.</p>
+      <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+    await enviarEmail({ to: email, subject: 'Siguiente paso: tus datos para el contrato · Conecta NEX', html: envolverEmail({ titulo: 'Vamos a preparar tu contrato', preheader: 'Completa tus datos fiscales.', cuerpoHtml: cuerpo }), replyTo: process.env.REPLY_TO_EMAIL });
+  }
 }

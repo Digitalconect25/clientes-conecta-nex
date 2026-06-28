@@ -6,8 +6,11 @@ import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 
+export const config = { api: { bodyParser: { sizeLimit: '9mb' } } };
+
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
+const TIPOS_DOC_OK = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
 
 let _mig = false;
 async function asegurar() {
@@ -57,6 +60,23 @@ export default async function handler(req, res) {
           datos_estado = 'completado', datos_completados_en = NOW(), actualizado_en = NOW()
         WHERE id = ${c.id}`;
 
+      // Adjunto opcional: DNI (física) / CIF o escritura (jurídica) -> tabla archivos.
+      let adjunto = false;
+      if (b.dni_base64) {
+        const tipoArch = String(b.dni_tipo || 'application/octet-stream');
+        const buffer = Buffer.from(String(b.dni_base64), 'base64');
+        if (!TIPOS_DOC_OK.includes(tipoArch)) return jsonResponse(res, 400, { error: 'El documento debe ser una imagen (JPG/PNG) o un PDF.' });
+        if (buffer.length > 8 * 1024 * 1024) return jsonResponse(res, 400, { error: 'El archivo es demasiado grande (máx. 8 MB).' });
+        if (buffer.length > 0) {
+          const etiqueta = (tipo === 'Juridica' ? 'CIF-Escritura ' : 'DNI ') + nombre;
+          const nomArch = String(b.dni_nombre || etiqueta).slice(0, 180);
+          try {
+            await sql`INSERT INTO archivos (cliente_id, nombre, tipo, tamano, contenido) VALUES (${c.id}, ${nomArch}, ${tipoArch}, ${buffer.length}, ${buffer})`;
+            adjunto = true;
+          } catch (e) { console.error('datos-fiscales archivo:', e.message); }
+        }
+      }
+
       // Aviso a la agencia
       try {
         const [em] = await sql`SELECT email FROM emisor WHERE id = 1`;
@@ -65,7 +85,7 @@ export default async function handler(req, res) {
           await enviarEmail({
             to: destino,
             subject: `Datos fiscales completados — ${nombre}`,
-            html: `<div style="font-family:Arial,sans-serif;color:#222"><h2 style="color:#0c7b6d">Datos fiscales recibidos</h2><p><b>${nombre}</b> · ${tipo === 'Juridica' ? 'CIF' : 'NIF'} ${nif}</p><p>${b.direccion || ''} ${b.cp || ''} ${b.ciudad || ''} ${b.provincia || ''}</p><p>Ya puedes generar y enviar el contrato. <a href="${BASE}/clientes/${c.id}">Ficha del cliente</a></p></div>`,
+            html: `<div style="font-family:Arial,sans-serif;color:#222"><h2 style="color:#0c7b6d">Datos fiscales recibidos</h2><p><b>${nombre}</b> · ${tipo === 'Juridica' ? 'CIF' : 'NIF'} ${nif}</p><p>${b.direccion || ''} ${b.cp || ''} ${b.ciudad || ''} ${b.provincia || ''}</p>${adjunto ? '<p>📎 Adjuntó su documento de identidad (DNI/CIF), guardado en Archivos.</p>' : '<p style="color:#b8860b">No adjuntó DNI/CIF.</p>'}<p>Ya puedes generar y enviar el contrato. <a href="${BASE}/clientes/${c.id}">Ficha del cliente</a></p></div>`,
           });
         }
       } catch { /* no bloquea */ }

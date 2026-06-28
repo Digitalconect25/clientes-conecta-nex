@@ -5,6 +5,7 @@ import { sql } from './_db.js';
 import { jsonResponse } from './_auth.js';
 import { obtenerIp, limitar } from './_publico.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import { generarYenviarFirma } from './_contratos.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '9mb' } } };
 
@@ -18,6 +19,8 @@ async function asegurar() {
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_token TEXT`; } catch { /* noop */ }
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_estado TEXT DEFAULT 'pendiente'`; } catch { /* noop */ }
   try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_completados_en TIMESTAMPTZ`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_consent_en TIMESTAMPTZ`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_consent_ip TEXT`; } catch { /* noop */ }
   _mig = true;
 }
 
@@ -50,14 +53,17 @@ export default async function handler(req, res) {
       if (!nombre) return jsonResponse(res, 400, { error: tipo === 'Juridica' ? 'Falta la razón social.' : 'Falta tu nombre completo.' });
       if (!nif) return jsonResponse(res, 400, { error: tipo === 'Juridica' ? 'Falta el CIF.' : 'Falta el NIF/DNI.' });
       if (b.email && !RE_EMAIL.test(String(b.email))) return jsonResponse(res, 400, { error: 'Email no válido.' });
+      if (b.acepto_rgpd !== true) return jsonResponse(res, 400, { error: 'Debes marcar la casilla de aceptación del tratamiento de datos (RGPD) para continuar.' });
 
+      const prevEstado = c.datos_estado;
       await sql`UPDATE clientes SET
           tipo_persona = ${tipo}, nombre = ${nombre}, nif = ${nif}, contacto = ${String(b.contacto || '').trim()},
           direccion = ${String(b.direccion || '').trim()}, cp = ${String(b.cp || '').trim()},
           ciudad = ${String(b.ciudad || '').trim()}, provincia = ${String(b.provincia || '').trim() || 'Alicante'},
           pais = ${String(b.pais || '').trim() || 'España'},
           email = ${String(b.email || '').trim()}, telefono = ${String(b.telefono || '').trim()},
-          datos_estado = 'completado', datos_completados_en = NOW(), actualizado_en = NOW()
+          datos_estado = 'completado', datos_completados_en = NOW(),
+          datos_consent_en = NOW(), datos_consent_ip = ${obtenerIp(req)}, actualizado_en = NOW()
         WHERE id = ${c.id}`;
 
       // Adjunto opcional: DNI (física) / CIF o escritura (jurídica) -> tabla archivos.
@@ -90,7 +96,13 @@ export default async function handler(req, res) {
         }
       } catch { /* no bloquea */ }
 
-      return jsonResponse(res, 200, { ok: true });
+      // Al recibir los datos por primera vez, genera y envia el contrato a firmar.
+      let contratoEnviado = false;
+      if (prevEstado !== 'completado') {
+        try { await generarYenviarFirma(c.id, 'hoja', 'Hoja de Encargo'); contratoEnviado = true; }
+        catch (e) { console.error('autocontrato:', e.message); }
+      }
+      return jsonResponse(res, 200, { ok: true, contrato_enviado: contratoEnviado });
     }
 
     return jsonResponse(res, 405, { error: 'Method not allowed' });

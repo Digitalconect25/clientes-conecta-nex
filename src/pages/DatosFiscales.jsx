@@ -10,6 +10,8 @@ export default function DatosFiscales() {
   const [d, setD] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
+  const [contratoEnviado, setContratoEnviado] = useState(false);
+  const [acepto, setAcepto] = useState(false);
   const [archivo, setArchivo] = useState(null);
 
   function onFile(e) {
@@ -32,14 +34,15 @@ export default function DatosFiscales() {
   async function guardar() {
     if (!String(d.nombre || '').trim()) { setError(d.tipo_persona === 'Juridica' ? 'Escribe la razón social.' : 'Escribe tu nombre completo.'); return; }
     if (!String(d.nif || '').trim()) { setError(d.tipo_persona === 'Juridica' ? 'Escribe el CIF.' : 'Escribe el NIF/DNI.'); return; }
+    if (!acepto) { setError('Marca la casilla de aceptación del tratamiento de datos (RGPD) para continuar.'); return; }
     setError(''); setEnviando(true);
     try {
       const r = await fetch('/api/datos-fiscales?token=' + encodeURIComponent(token), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...d, dni_base64: archivo?.base64, dni_nombre: archivo?.nombre, dni_tipo: archivo?.tipo }),
+        body: JSON.stringify({ ...d, acepto_rgpd: true, dni_base64: archivo?.base64, dni_nombre: archivo?.nombre, dni_tipo: archivo?.tipo }),
       });
       const j = await r.json();
-      if (r.ok && j.ok) setHecho(true); else setError(j.error || 'No se pudo guardar.');
+      if (r.ok && j.ok) { setContratoEnviado(!!j.contrato_enviado); setHecho(true); } else setError(j.error || 'No se pudo guardar.');
     } catch { setError('No se pudo conectar.'); }
     finally { setEnviando(false); }
   }
@@ -72,7 +75,9 @@ export default function DatosFiscales() {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.teal, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 10 }}>✓</div>
                 <h2 style={{ margin: '0 0 6px' }}>¡Datos recibidos!</h2>
-                <p style={{ color: C.cuerpo }}>Gracias. Ya tenemos tus datos fiscales para preparar el contrato. Te lo enviaremos en breve para firmar.</p>
+                <p style={{ color: C.cuerpo }}>{contratoEnviado
+                  ? 'Gracias. Te acabamos de enviar el contrato a tu email para que lo revises y lo firmes online.'
+                  : 'Gracias. Ya tenemos tus datos para preparar el contrato; te lo enviaremos en breve para firmar.'}</p>
               </div>
             ) : (
               <>
@@ -129,6 +134,11 @@ export default function DatosFiscales() {
                 </label>
                 {archivo && <p style={{ fontSize: 12, color: C.teal, marginTop: 4 }}>✓ {archivo.nombre} ({archivo.mb} MB)</p>}
                 <p style={{ fontSize: 11.5, color: '#9aa6a0', marginTop: 4 }}>Lo usamos solo para identificarte en el contrato. Opcional ahora; si no, te lo pediremos al firmar.</p>
+
+                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', marginTop: 16, fontSize: 13.5, color: C.cuerpo, cursor: 'pointer', background: C.crema, border: '1px solid ' + C.linea, borderRadius: 10, padding: 12 }}>
+                  <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} style={{ marginTop: 3 }} />
+                  <span>He leído y <b>acepto</b> que Conecta NEX (Digital Conect) trate mis datos para gestionar el contrato y los servicios contratados, conforme al RGPD. Puedo ejercer mis derechos de acceso, rectificación y supresión escribiendo a la agencia.</span>
+                </label>
 
                 {error && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 10 }}>{error}</p>}
                 <button onClick={guardar} disabled={enviando}

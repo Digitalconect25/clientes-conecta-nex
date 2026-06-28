@@ -1,25 +1,25 @@
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 
-// Catálogo de servicios IA (calculadora de precios, adaptada a Conecta NEX).
-// El "precio" es el SETUP (implementación), ya rebajado un 5%; la cuota mensual
-// (también -5%) va en la descripción. Se cargan con la acción seed_ia.
+// Catálogo de servicios IA con PRECIOS DE MERCADO 2026 (España, pymes) para una
+// agencia joven: tercio bajo-medio del mercado real (análisis con fuentes).
+// El "precio" es el SETUP; la cuota mensual va en la descripción. Acción: seed_ia (upsert).
 const SERVICIOS_IA = [
-  ['Chatbots y asistentes IA', 'Chatbot IA — Básico', 1140, 'FAQ automático, respuestas simples, sin integraciones. Cuota: desde 142,50 €/mes. Entrega: 5-7 días.'],
-  ['Chatbots y asistentes IA', 'Chatbot IA — Intermedio', 2375, 'Integración con tu CRM, personalización avanzada y contexto de negocio. Cuota: desde 380 €/mes. Entrega: 10-15 días.'],
-  ['Chatbots y asistentes IA', 'Chatbot IA — Avanzado', 4750, 'Multilingüe, flujos complejos e integración con tus sistemas internos. Cuota: desde 760 €/mes. Entrega: 20-30 días.'],
-  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Básico', 1710, 'Atiende llamadas, toma datos y agenda citas sencillas. Cuota: desde 285 €/mes. Entrega: 7-10 días.'],
-  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Intermedio', 3325, 'Cualifica leads, transfiere de forma inteligente e integra tu calendario. Cuota: desde 570 €/mes. Entrega: 12-18 días.'],
-  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Avanzado', 5700, 'Varios departamentos, CRM completo y reporting avanzado. Cuota: desde 950 €/mes. Entrega: 25-35 días.'],
-  ['Automatización de procesos', 'Automatización — Básico', 760, '1-3 flujos simples (emails, notificaciones, respuestas automáticas). Cuota: desde 95 €/mes. Entrega: 3-5 días.'],
-  ['Automatización de procesos', 'Automatización — Intermedio', 1900, '5-10 flujos con integraciones (Make/n8n + apps externas). Cuota: desde 332,50 €/mes. Entrega: 10-15 días.'],
-  ['Automatización de procesos', 'Automatización — Avanzado', 4750, 'Ecosistema completo: múltiples workflows conectados con IA. Cuota: desde 665 €/mes. Entrega: 20-40 días.'],
-  ['Agentes IA a medida', 'Agente IA — Básico', 1425, 'Agente especializado en 1 tarea (análisis de documentos, generación de contenido). Cuota: desde 190 €/mes. Entrega: 5-8 días.'],
-  ['Agentes IA a medida', 'Agente IA — Intermedio', 2850, 'Agente multifunción con memoria contextual e integraciones. Cuota: desde 475 €/mes. Entrega: 12-20 días.'],
-  ['Agentes IA a medida', 'Agente IA — Avanzado', 6650, 'Agente autónomo con toma de decisiones, acceso a herramientas y aprendizaje. Cuota: desde 1.140 €/mes. Entrega: 30-50 días.'],
-  ['Generación de contenido con IA', 'Contenido IA — Básico', 855, 'Sistema de generación de posts y emails con plantillas. Cuota: desde 142,50 €/mes. Entrega: 3-5 días.'],
-  ['Generación de contenido con IA', 'Contenido IA — Intermedio', 2090, 'Multiplataforma, calendario automatizado y tono de marca. Cuota: desde 380 €/mes. Entrega: 8-12 días.'],
-  ['Generación de contenido con IA', 'Contenido IA — Avanzado', 5225, 'Ecosistema completo: generación + publicación + análisis + optimización. Cuota: desde 855 €/mes. Entrega: 15-25 días.'],
+  ['Chatbots y asistentes IA', 'Chatbot IA — Básico', 690, 'FAQ automático y atención simple en tu web, sin integraciones. Cuota: desde 79 €/mes. Entrega: 5-7 días.'],
+  ['Chatbots y asistentes IA', 'Chatbot IA — Intermedio', 1490, 'IA con tu información, captación de leads, WhatsApp y respuestas contextuales. Cuota: desde 149 €/mes. Entrega: 10-15 días.'],
+  ['Chatbots y asistentes IA', 'Chatbot IA — Avanzado', 2990, 'Multicanal (web+WhatsApp), RAG sobre tu documentación, integración con CRM y métricas. Cuota: desde 249 €/mes. Entrega: 20-30 días.'],
+  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Básico', 890, 'Atiende llamadas, responde dudas por voz y deriva a WhatsApp. Cuota: desde 99 €/mes (+ consumo de llamadas). Entrega: 7-10 días.'],
+  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Intermedio', 1990, 'Cualifica leads, agenda citas (calendario) y transferencia inteligente, 24/7. Cuota: desde 199 €/mes. Entrega: 12-18 días.'],
+  ['Recepcionista IA (llamadas)', 'Recepcionista IA — Avanzado', 3990, 'Voz de marca, varios departamentos, integración CRM/ERP y reportes de llamadas. Cuota: desde 349 €/mes. Entrega: 25-35 días.'],
+  ['Automatización de procesos', 'Automatización — Básico', 590, '2-4 flujos simples (formularios a CRM, emails, notificaciones, sincronización). Cuota: desde 69 €/mes. Entrega: 3-5 días.'],
+  ['Automatización de procesos', 'Automatización — Intermedio', 1790, '5-10 flujos con IA e integraciones (Make/n8n + tus apps). Cuota: desde 149 €/mes. Entrega: 10-15 días.'],
+  ['Automatización de procesos', 'Automatización — Avanzado', 3990, '10+ flujos conectados, procesamiento documental y orquestación con IA. Cuota: desde 249 €/mes. Entrega: 20-40 días.'],
+  ['Agentes IA a medida', 'Agente IA — Básico', 990, 'Agente de una función entrenado con tus datos (atención, RAG básico). Cuota: desde 99 €/mes. Entrega: 5-8 días.'],
+  ['Agentes IA a medida', 'Agente IA — Intermedio', 2990, 'Agente multifunción con memoria, RAG sobre tu documentación e integraciones. Cuota: desde 199 €/mes. Entrega: 12-20 días.'],
+  ['Agentes IA a medida', 'Agente IA — Avanzado', 5990, 'Agente sectorial con toma de decisiones, integraciones profundas y panel de gestión. Cuota: desde 349 €/mes. Entrega: 30-50 días.'],
+  ['Generación de contenido con IA', 'Contenido IA — Básico', 290, '8-12 piezas/mes en 1 plataforma, calendario editorial y tono de marca. Cuota: desde 249 €/mes. Entrega: 3-5 días.'],
+  ['Generación de contenido con IA', 'Contenido IA — Intermedio', 590, 'Multiplataforma, 15-20 piezas/mes, newsletter, copy de anuncios y repurposing. Cuota: desde 449 €/mes. Entrega: 8-12 días.'],
+  ['Generación de contenido con IA', 'Contenido IA — Avanzado', 1190, 'Motor completo: blog SEO + redes + email + guiones, con reporting mensual. Cuota: desde 799 €/mes. Entrega: 15-25 días.'],
 ];
 
 export default async function handler(req, res) {
@@ -39,14 +39,18 @@ export default async function handler(req, res) {
       // Cargar el catálogo IA (idempotente: omite los que ya existan por nombre).
       if (req.body?.accion === 'seed_ia') {
         if (!seedOk) return jsonResponse(res, 401, { error: 'no auth' });
-        let insertados = 0, omitidos = 0;
+        let insertados = 0, actualizados = 0;
         for (const [categoria, nombre, precio, descripcion] of SERVICIOS_IA) {
           const [ya] = await sql`SELECT id FROM servicios WHERE nombre = ${nombre} LIMIT 1`;
-          if (ya) { omitidos++; continue; }
-          await sql`INSERT INTO servicios (nombre, categoria, precio, descripcion) VALUES (${nombre}, ${categoria}, ${precio}, ${descripcion})`;
-          insertados++;
+          if (ya) {
+            await sql`UPDATE servicios SET categoria = ${categoria}, precio = ${precio}, descripcion = ${descripcion}, activo = TRUE WHERE id = ${ya.id}`;
+            actualizados++;
+          } else {
+            await sql`INSERT INTO servicios (nombre, categoria, precio, descripcion) VALUES (${nombre}, ${categoria}, ${precio}, ${descripcion})`;
+            insertados++;
+          }
         }
-        return jsonResponse(res, 200, { ok: true, insertados, omitidos, total: SERVICIOS_IA.length });
+        return jsonResponse(res, 200, { ok: true, insertados, actualizados, total: SERVICIOS_IA.length });
       }
 
       const { nombre, categoria, precio, descripcion } = req.body || {};

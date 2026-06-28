@@ -96,6 +96,8 @@ export const api = {
   clienteCreate: (data) => request('POST', '/api/clientes', data),
   clienteUpdate: (data) => request('PUT', '/api/clientes', data),
   clienteDelete: (id) => request('DELETE', `/api/clientes?id=${id}`),
+  // Pedir al cliente que rellene sus datos fiscales (envía email con enlace)
+  clientePedirDatos: (id, email) => request('POST', '/api/clientes', { accion: 'pedir_datos', id, email }),
 
   documentosList: (clienteId) => request('GET', `/api/documentos?cliente_id=${clienteId}`),
   documentoGet: (id) => request('GET', `/api/documentos?id=${id}`),

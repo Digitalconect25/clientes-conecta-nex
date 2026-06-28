@@ -1148,9 +1148,22 @@ function PanelDocumentos({ cliente, emisor, documentos, accesos, archivos, entre
   }
   const FIRMA_EST = { enviado: 'Enviado, pendiente', visto: 'Visto, pendiente', rechazado: 'Rechazado' };
 
+  // Pide al cliente que rellene sus datos fiscales desde un enlace público.
+  async function pedirDatosFiscales() {
+    const email = (cliente.email || '').trim() || prompt('Email del cliente para enviarle el formulario:');
+    if (!email) return;
+    if (!confirm('Enviar a ' + email + ' el formulario para que rellene sus datos fiscales?')) return;
+    try { await api.clientePedirDatos(cliente.id, email); alert('Formulario de datos fiscales enviado al cliente ✓'); }
+    catch (err) { alert('Error: ' + err.message); }
+  }
+
   return (
     <div>
       <h3>Documentos</h3>
+      <div style={{ background: '#f7f5ff', border: '1px solid #e7e1fb', borderRadius: 8, padding: '10px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: '#555' }}>¿Faltan los datos fiscales del cliente?</span>
+        <button onClick={pedirDatosFiscales}>📄 Pedir datos fiscales al cliente</button>
+      </div>
       <div className="botones-doc">
         {TIPOS_DOC.map(t => (
           <button key={t.id} onClick={() => abrirNuevo(t.id)}>

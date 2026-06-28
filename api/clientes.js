@@ -1,7 +1,21 @@
+import crypto from 'node:crypto';
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
+import { enviarEmail, emailHabilitado } from './_email.js';
+import { envolverEmail, botonEmail, escEmail } from './_emailLayout.js';
 
+const BASE = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const SERVICIOS_RECURRENTES = ['Plan Mantenimiento', 'Plan Crecimiento', 'Plan Cliente Activo', 'Bot WhatsApp con IA'];
+
+// Columnas para el formulario público de datos fiscales (el cliente los rellena).
+let _migDatos = false;
+async function asegurarDatos() {
+  if (_migDatos) return;
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_token TEXT`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_estado TEXT DEFAULT 'pendiente'`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS datos_completados_en TIMESTAMPTZ`; } catch { /* noop */ }
+  _migDatos = true;
+}
 
 async function siguienteNumero(clave, prefijo) {
   const anio = new Date().getFullYear();
@@ -120,9 +134,35 @@ function mergearCliente(actual, parcial) {
 
 export default async function handler(req, res) {
   const auth = checkAuth(req);
-  if (!auth.ok) return jsonResponse(res, 401, { error: auth.error });
+  // La automatización (tras aceptar propuesta) puede pedir datos con CRON_SECRET.
+  const cronOk = req.method === 'POST' && !!process.env.CRON_SECRET && req.body?.secret === process.env.CRON_SECRET;
+  if (!auth.ok && !cronOk) return jsonResponse(res, 401, { error: auth.error });
 
   try {
+    if (req.method === 'POST' && req.body?.accion === 'pedir_datos') {
+      await asegurarDatos();
+      const id = parseInt(req.body.id, 10);
+      if (!id) return jsonResponse(res, 400, { error: 'Falta id' });
+      const [cli] = await sql`SELECT id, nombre, email FROM clientes WHERE id = ${id}`;
+      if (!cli) return jsonResponse(res, 404, { error: 'Cliente no encontrado' });
+      const email = String(req.body.email || cli.email || '').trim();
+      const tok = crypto.randomBytes(24).toString('base64url');
+      await sql`UPDATE clientes SET datos_token = ${tok}, datos_estado = 'enviado', actualizado_en = NOW() WHERE id = ${id}`;
+      const url = `${BASE}/datos-fiscales/${tok}`;
+      if (email && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && emailHabilitado()) {
+        try {
+          const cuerpo = `
+            <p style="margin:0 0 14px">Hola ${escEmail(cli.nombre || '')},</p>
+            <p style="margin:0 0 16px">Para preparar tu contrato necesitamos tus <b>datos fiscales</b>. Es un formulario rápido y seguro:</p>
+            ${botonEmail(url, 'Completar mis datos fiscales')}
+            <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si tienes cualquier duda, responde a este correo.</p>
+            <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
+          await enviarEmail({ to: email, subject: 'Completa tus datos fiscales · Conecta NEX', html: envolverEmail({ titulo: 'Tus datos fiscales', preheader: 'Para preparar tu contrato.', cuerpoHtml: cuerpo }), replyTo: process.env.REPLY_TO_EMAIL });
+        } catch (e) { console.error('pedir_datos email:', e.message); }
+      }
+      return jsonResponse(res, 200, { ok: true, token: tok, url });
+    }
+
     if (req.method === 'GET') {
       if (req.query.id) {
         const [row] = await sql`SELECT * FROM clientes WHERE id = ${req.query.id}`;

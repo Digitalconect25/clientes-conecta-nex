@@ -214,6 +214,13 @@ export const api = {
   prospectosVaciar: (estado) => request('POST', '/api/prospectos', { accion: 'vaciar', estado: estado || null }),
   prospectoConvertir: (id, datos) => request('POST', '/api/prospectos', { accion: 'convertir', id, ...datos }),
   prospectoEmailPrueba: (email) => request('POST', '/api/prospectos', { accion: 'email_prueba', email }),
+  prospectoEventos: (id) => request('GET', `/api/prospectos?id=${id}&eventos=1`),
+  prospectosEvolucion: () => request('POST', '/api/prospectos', { accion: 'evolucion' }),
+
+  // Agente de captacion diaria (scrapeo por ciudad + evolucion del embudo)
+  captacionConfig: () => request('POST', '/api/prospectos', { accion: 'config_get' }),
+  captacionGuardar: (cfg) => request('POST', '/api/prospectos', { accion: 'config_set', ...cfg }),
+  captacionEjecutar: () => request('POST', '/api/prospectos', { accion: 'ciclo_diario', forzar: true }),
 
   // Propuestas comerciales (oferta servicios+precio -> el cliente la acepta)
   propuestasList: (prospectoId) => request('GET', `/api/propuestas?prospecto_id=${prospectoId}`),

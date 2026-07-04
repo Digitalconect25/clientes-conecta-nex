@@ -2,7 +2,7 @@
 // Registra el interes, le RESPONDE en automatico, avisa a la agencia y muestra pagina de gracias.
 import { sql } from './_db.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
-import { firmaInteres } from './prospectos.js';
+import { firmaInteres, registrarEvento } from './prospectos.js';
 
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
       return send(400, page('Enlace no válido', 'Este enlace no es correcto o ha caducado. Si quieres, responde directamente a nuestro correo.'));
     }
     try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_en timestamptz`; } catch { /* noop */ }
+    try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa text`; } catch { /* noop */ }
+    try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa_en timestamptz`; } catch { /* noop */ }
     const [p] = await sql`SELECT * FROM prospectos WHERE id = ${pid}`;
     if (!p) return send(404, page('No encontrado', 'No hemos podido localizar tu registro.'));
 
@@ -33,9 +35,12 @@ export default async function handler(req, res) {
     await sql`UPDATE prospectos SET
         estado = CASE WHEN estado = 'convertido' THEN estado ELSE 'respondido' END,
         interes_en = NOW(),
+        etapa = CASE WHEN etapa = 'cliente' OR estado = 'convertido' THEN etapa WHEN etapa = 'caliente' THEN etapa ELSE 'interesado' END,
+        etapa_en = NOW(),
         observaciones = ${(p.observaciones ? p.observaciones + '\n' : '') + '[El lead pidió ' + (tipo === 'analisis' ? 'ANÁLISIS' : 'CONSULTA') + ' gratis desde el email]'},
         actualizado_en = NOW()
       WHERE id = ${pid}`;
+    await registrarEvento(pid, 'interes', 'El lead pulsó "' + (tipo === 'info' ? 'Quiero información' : tipo === 'analisis' ? 'Quiero mi análisis gratis' : 'Quiero una consulta gratuita') + '" en el email');
 
     // Respuesta AUTOMATICA al prospecto (una sola vez, si tiene email valido).
     if (!yaPedido && emailHabilitado() && RE_EMAIL.test(String(p.email || ''))) {

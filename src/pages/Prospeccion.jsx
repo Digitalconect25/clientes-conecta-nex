@@ -151,8 +151,18 @@ export default function Prospeccion() {
   async function guardarCfg(form) {
     const f = form || cfgForm;
     setBusy(true);
-    try { const c = await api.captacionGuardar(f); setCfg(c); if (!form) alert('Configuración del agente guardada.'); }
-    catch (err) { alert('Error: ' + err.message); }
+    try {
+      const c = await api.captacionGuardar(f);
+      setCfg(c);
+      // Sincroniza el formulario con lo que persistio el backend (evita quedar en un
+      // estado optimista si, p. ej., el toggle se guardo pero algo mas se ajusto).
+      setCfgForm({ activo: !!c.activo, ciudad: c.ciudad || '', nichos: c.nichos || '', limite_diario: c.limite_diario || 10 });
+      if (!form) alert('Configuración del agente guardada.');
+    } catch (err) {
+      alert('Error: ' + err.message);
+      // El guardado fallo: revierte la UI al ultimo estado confirmado por el servidor.
+      if (cfg) setCfgForm({ activo: !!cfg.activo, ciudad: cfg.ciudad || '', nichos: cfg.nichos || '', limite_diario: cfg.limite_diario || 10 });
+    }
     finally { setBusy(false); }
   }
   async function ejecutarAgente() {
@@ -445,7 +455,9 @@ export default function Prospeccion() {
                   </tr>
                 );
               })}
-              {!lista.length && <tr><td colSpan={8} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Activa el agente de captacion, sube un CSV o anade uno arriba.</td></tr>}
+              {!lista.length
+                ? <tr><td colSpan={8} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Activa el agente de captacion, sube un CSV o anade uno arriba.</td></tr>
+                : !filtrada.length && <tr><td colSpan={8} style={{ padding: 12, color: '#67756c' }}>Ningun prospecto en este filtro. Prueba otra pestana o quita el filtro de etapa.</td></tr>}
             </tbody>
           </table>
         )}

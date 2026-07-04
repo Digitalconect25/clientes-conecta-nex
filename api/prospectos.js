@@ -132,6 +132,9 @@ const norm = (s) => (s === 'mejorable' ? 'mejorable' : 'sin_presencia');
 let _migP = false;
 async function ensureP() {
   if (_migP) return;
+  // Si algun CREATE/ALTER esencial falla (fallo transitorio de BD), NO cacheamos
+  // el exito: se reintentara en la siguiente llamada en lugar de servir 500 en frio.
+  let ok = true;
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { /* noop */ }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS seguimiento_en timestamptz`; } catch { /* noop */ }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { /* noop */ }
@@ -152,7 +155,7 @@ async function ensureP() {
       actualizado_en TIMESTAMPTZ DEFAULT NOW()
     )`;
     await sql`INSERT INTO captacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
-  } catch { /* noop */ }
+  } catch { ok = false; }
   try {
     await sql`CREATE TABLE IF NOT EXISTS prospectos_eventos (
       id SERIAL PRIMARY KEY,
@@ -162,8 +165,8 @@ async function ensureP() {
       creado_en TIMESTAMPTZ DEFAULT NOW()
     )`;
     await sql`CREATE INDEX IF NOT EXISTS idx_peventos_pid ON prospectos_eventos (prospecto_id, creado_en DESC)`;
-  } catch { /* noop */ }
-  _migP = true;
+  } catch { ok = false; }
+  _migP = ok;
 }
 
 // Historial de evolucion del prospecto (alta, emails, interes, cambios de etapa...).
@@ -232,12 +235,15 @@ export async function evolucionarEtapas() {
 // Configuracion del agente de captacion diaria (fila unica id=1).
 async function getCaptacion() {
   await ensureP();
-  let [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
-  if (!cfg) {
-    await sql`INSERT INTO captacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
-    [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
-  }
-  return cfg || { id: 1, activo: false, ciudad: '', nichos: '', limite_diario: 10, nicho_idx: 0 };
+  const DEF = { id: 1, activo: false, ciudad: '', nichos: '', limite_diario: 10, nicho_idx: 0 };
+  try {
+    let [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
+    if (!cfg) {
+      await sql`INSERT INTO captacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
+      [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
+    }
+    return cfg || DEF;
+  } catch { return DEF; } // tabla aun no creada (fallo transitorio): valores por defecto, sin 500
 }
 
 // Enriquecimiento: busca el email de contacto en la web del negocio.
@@ -543,7 +549,10 @@ export default async function handler(req, res) {
         const resumen = err
           ? `ERROR (${nicho} en ${ciudad}): ${err}`
           : `${nicho} en ${ciudad}: ${r.insertados} nuevos en frio (${r.duplicados} repetidos), ${r.enriquecidos} emails encontrados, ${r.redactados} borradores IA`;
-        await sql`UPDATE captacion_config SET nicho_idx = ${(cfg.nicho_idx || 0) + 1},
+        // Solo avanzamos al siguiente nicho si el scrapeo funciono; si fallo (p. ej.
+        // Bright Data caido), se reintenta el MISMO nicho en la proxima ejecucion.
+        const siguienteIdx = err ? (cfg.nicho_idx || 0) : (cfg.nicho_idx || 0) + 1;
+        await sql`UPDATE captacion_config SET nicho_idx = ${siguienteIdx},
           ultima_ejecucion = NOW(), ultimo_resultado = ${resumen.slice(0, 500)}, actualizado_en = NOW() WHERE id = 1`;
         if (err) return jsonResponse(res, 502, { error: err, nicho, ciudad });
         return jsonResponse(res, 200, { ok: true, nicho, ciudad, ...r, evolucionados });

@@ -40,10 +40,12 @@ export default async function handler(req, res) {
   const out = {};
   try {
     out.evolucion = await llamar('evolucionar', {}, 4000, 30000);    // 1) barato, primero
-    out.enviar_auto = await llamar('enviar_auto', { limite: 10 });   // 2) envia lo ya listo
-    out.seguimientos = await llamar('seguimientos', { limite: 8 });  // 3) follow-ups
-    out.redactar_pro = await llamar('redactar_pro', { limite: 6 });  // 4) refina los mas probables
-    out.ciclo_diario = await llamar('ciclo_diario');                 // 5) scrapeo del dia (lo mas pesado)
+    out.enriquecer = await llamar('enriquecer', { limite: 20 });     // 2) rescata emails de leads con web pero sin email
+    out.puntuar = await llamar('puntuar_todos');                     // 3) califica los que quedaron sin prioridad (importados/creados)
+    out.enviar_auto = await llamar('enviar_auto', { limite: 20 });   // 4) envia lo ya listo (mayor prioridad primero)
+    out.seguimientos = await llamar('seguimientos', { limite: 8 });  // 5) follow-ups
+    out.redactar_pro = await llamar('redactar_pro', { limite: 6 });  // 6) refina los mas probables
+    out.ciclo_diario = await llamar('ciclo_diario');                 // 7) scrapeo del dia (lo mas pesado, al final)
     return jsonResponse(res, 200, { ok: true, ...out });
   } catch (e) {
     return jsonResponse(res, 200, { ok: false, error: e.message, ...out });

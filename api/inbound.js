@@ -93,18 +93,21 @@ RESPUESTA: <email de respuesta breve, calido, espanol de Espana, sin emojis ni g
 Criterio de INTERES: alto = quiere avanzar, pide info/precio/cita o muestra ganas; medio = responde con dudas o tibio; bajo = no interesado, pide baja o responde negativo.`;
           const user = `Negocio: ${p.empresa || p.nombre || '(s/n)'}. Sector: ${p.sector || '(no indicado)'}.\nSu respuesta:\n"""${cuerpoTxt}"""`;
           const { texto: out } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.5, max_tokens: 500 });
-          const mi = out.match(/INTERES:\s*(alto|medio|bajo)/i);
+          // Normaliza acentos por si la IA escribe "INTERÉS"; acepta variantes de negativo.
+          const outN = out.normalize('NFD').replace(/[̀-ͯ]/g, '');
+          const mi = outN.match(/INTERES:\s*(alto|medio|bajo|ninguno|nulo|negativo)/i);
           const ma = out.match(/ANALISIS:\s*([\s\S]*?)\n\s*RESPUESTA:/i);
           const mr = out.match(/RESPUESTA:\s*([\s\S]*)$/i);
-          const grado = mi ? mi[1].toLowerCase() : '';
+          let grado = mi ? mi[1].toLowerCase() : '';
+          if (['ninguno', 'nulo', 'negativo'].includes(grado)) grado = 'bajo';
           ia = { interes: grado, analisis: ma ? ma[1].trim() : '', respuesta: mr ? mr[1].trim() : out.trim() };
-          const PRIO = { alto: 'Alta', medio: 'Media', bajo: 'Baja' };
-          const prioridad = PRIO[grado] || null;
           const gradoLabel = grado ? grado.charAt(0).toUpperCase() + grado.slice(1) : '';
           try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { /* noop */ }
           try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa text`; } catch { /* noop */ }
           try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa_en timestamptz`; } catch { /* noop */ }
           const obsPrev = p.observaciones ? p.observaciones + '\n\n' : '';
+          // NO tocamos 'prioridad' (es el ENCAJE calculado en frio): el interes va en su
+          // propia columna. Si no se detecta grado, etapa neutra 'contactado' (no 'interesado').
           await sql`UPDATE prospectos SET
               observaciones = ${obsPrev + '[Respondio el lead' + (gradoLabel ? ' · interes ' + gradoLabel : '') + '] ' + (ia.analisis || cuerpoTxt.slice(0, 200))},
               email_borrador = ${ia.respuesta || p.email_borrador || ''},
@@ -112,10 +115,9 @@ Criterio de INTERES: alto = quiere avanzar, pide info/precio/cita o muestra gana
               interes_grado = ${grado || null},
               etapa = CASE WHEN etapa = 'cliente' OR estado = 'convertido' THEN etapa
                            WHEN ${grado} = 'alto' THEN 'caliente'
-                           WHEN ${grado} = 'bajo' THEN 'contactado'
-                           ELSE 'interesado' END,
+                           WHEN ${grado} = 'medio' THEN 'interesado'
+                           ELSE 'contactado' END,
               etapa_en = NOW(),
-              prioridad = COALESCE(${prioridad}, prioridad),
               actualizado_en = NOW()
             WHERE id = ${prospecto_id}`;
           if (grado) await registrarEvento(prospecto_id, 'etapa', 'La IA cualifica su respuesta: interés ' + grado + (ia.analisis ? ' · ' + ia.analisis.slice(0, 180) : ''));

@@ -3,11 +3,21 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { fmtEuros } from '../lib/contratos.js';
 
+// Etapas del embudo de captacion (mismo criterio que la pagina de Captacion en frio).
+const ETAPAS = [
+  { k: 'frio', l: 'En frío', c: '#64748b', i: '🧊' },
+  { k: 'contactado', l: 'Contactado', c: '#2563eb', i: '✉️' },
+  { k: 'interesado', l: 'Interesado', c: '#b8860b', i: '⭐' },
+  { k: 'caliente', l: 'Caliente', c: '#ea580c', i: '🔥' },
+  { k: 'cliente', l: 'Cliente', c: '#16a34a', i: '🏆' },
+];
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [clientes, setClientes] = useState([]);
   const [pagos, setPagos] = useState([]);
   const [emisor, setEmisor] = useState(null);
+  const [capt, setCapt] = useState(null); // embudo de captacion (opcional)
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
@@ -15,6 +25,8 @@ export default function Dashboard() {
       .then(([cs, ps, em]) => { setClientes(cs); setPagos(ps); setEmisor(em); })
       .catch(console.error)
       .finally(() => setCargando(false));
+    // La captacion es opcional: si falla (tablas aun sin migrar) no rompe el Dashboard.
+    api.prospectosEvolucion().then(setCapt).catch(() => setCapt(null));
   }, []);
 
   if (cargando) return <div className="empty">Cargando...</div>;
@@ -66,6 +78,38 @@ export default function Dashboard() {
         <div className="stat-card"><div className="label">En proceso</div><div className="valor">{enProceso}</div></div>
         <div className="stat-card"><div className="label">Finalizados</div><div className="valor">{finalizados}</div></div>
       </div>
+
+      {capt && Array.isArray(capt.etapas) && (() => {
+        const m = {}; capt.etapas.forEach((e) => { m[e.etapa] = e.n; });
+        const totalLeads = capt.etapas.reduce((s, e) => s + Number(e.n || 0), 0);
+        const clientesCapt = m.cliente || 0;
+        const conv = totalLeads ? Math.round((clientesCapt / totalLeads) * 100) : 0;
+        if (!totalLeads) return null;
+        return (
+          <>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 25, flexWrap: 'wrap', gap: 8 }}>
+              <h2 style={{ margin: 0 }}>Captación de clientes</h2>
+              <Link to="/prospeccion" style={{ fontSize: 13, color: 'var(--verde)' }}>Ver captación en frío →</Link>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              {ETAPAS.map((et, idx) => (
+                <span key={et.k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {idx > 0 && <span style={{ color: '#c3ccc6' }}>→</span>}
+                  <button onClick={() => navigate('/prospeccion')} title="Ir a Captación en frío"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 92, background: '#fff', border: `2px solid ${et.c}`, borderRadius: 10, padding: '8px 12px', cursor: 'pointer' }}>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: et.c }}>{m[et.k] || 0}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: et.c }}>{et.i} {et.l}</span>
+                  </button>
+                </span>
+              ))}
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--verde)' }}>{conv}%</div>
+                <div style={{ fontSize: 11.5, color: 'var(--gris-5)' }}>conversión a cliente</div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       <h2 style={{ marginTop: 25 }}>Pagos</h2>
       <div className="dashboard-stats">

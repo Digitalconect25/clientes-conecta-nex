@@ -222,20 +222,6 @@ export const api = {
   captacionGuardar: (cfg) => request('POST', '/api/prospectos', { accion: 'config_set', ...cfg }),
   captacionEjecutar: () => request('POST', '/api/prospectos', { accion: 'ciclo_diario', forzar: true }),
 
-  // Contenido SEO (blog en WordPress via Royal MCP)
-  contenidoList: () => request('GET', '/api/contenido'),
-  contenidoGet: (id) => request('GET', `/api/contenido?id=${id}`),
-  contenidoIdeas: (contexto) => request('POST', '/api/contenido', { accion: 'ideas', contexto }),
-  contenidoGenerar: (tema) => request('POST', '/api/contenido', { accion: 'generar', tema }),
-  contenidoPublicar: (id) => request('POST', '/api/contenido', { accion: 'publicar', id }),
-  contenidoGenerarPublicar: (tema) => request('POST', '/api/contenido', { accion: 'generar_publicar', tema }),
-  contenidoActualizar: (data) => request('PUT', '/api/contenido', data),
-  contenidoBorrar: (id) => request('DELETE', `/api/contenido?id=${id}`),
-  contenidoTestWP: () => request('POST', '/api/contenido', { accion: 'test_wp' }),
-  contenidoConfig: () => request('POST', '/api/contenido', { accion: 'config_get' }),
-  contenidoConfigGuardar: (cfg) => request('POST', '/api/contenido', { accion: 'config_set', ...cfg }),
-  contenidoEjecutar: () => request('POST', '/api/contenido', { accion: 'ciclo', forzar: true }),
-
   // Propuestas comerciales (oferta servicios+precio -> el cliente la acepta)
   propuestasList: (prospectoId) => request('GET', `/api/propuestas?prospecto_id=${prospectoId}`),
   propuestaGenerarIA: (prospectoId) => request('POST', '/api/propuestas', { accion: 'generar_ia', prospecto_id: prospectoId }),

@@ -12,7 +12,6 @@ import Emisor from './pages/Emisor.jsx';
 import Proyectos from './pages/Proyectos.jsx';
 import Emails from './pages/Emails.jsx';
 import Prospeccion from './pages/Prospeccion.jsx';
-import Contenido from './pages/Contenido.jsx';
 import Agenda from './pages/Agenda.jsx';
 import Bandeja from './pages/Bandeja.jsx';
 import Agendar from './pages/Agendar.jsx';
@@ -80,7 +79,6 @@ export default function App() {
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />
-        <Route path="/contenido" element={<Contenido />} />
         <Route path="/agenda" element={<Agenda />} />
         <Route path="/bandeja" element={<Bandeja />} />
         <Route path="/catalogo" element={<Catalogo />} />

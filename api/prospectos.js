@@ -387,16 +387,21 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
       }
     }
   }
-  // Redactar el email en frio de cada nuevo prospecto.
+  // Redactar el email de VALOR de cada nuevo prospecto: diagnostico + solucion + plan
+  // de 120 dias (redactarPro investiga el negocio). Si la investigacion o la IA fallan,
+  // cae al email en frio mas ligero (generarFrio) para no dejar al lead sin borrador.
   let redactados = 0;
   if (generar && iaHabilitada() && nuevosIds.length) {
     const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
-    const out = await Promise.allSettled(filas.map((p) => generarFrio(p)));
+    const out = await Promise.allSettled(filas.map((p) => redactarConValor(p)));
     for (let i = 0; i < filas.length; i++) {
       const rr = out[i];
       if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
         try {
-          await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
+          const obs = rr.value.con_plan
+            ? (filas[i].observaciones ? filas[i].observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${rr.value.fuerte || '-'} | Problema: ${rr.value.debil || '-'}`
+            : filas[i].observaciones;
+          await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
           redactados++;
         } catch { /* sigue */ }
       }
@@ -440,33 +445,106 @@ export async function investigarNegocio(p) {
   return { web, serp };
 }
 
-// Agente PRO: investiga el negocio, saca punto fuerte y debil, y redacta un email PERSONALIZADO.
+// Las 4 fases del plan de 120 dias (etiquetas fijas de dias por fase).
+const PLAN_DIAS = ['Días 1-30', 'Días 31-60', 'Días 61-90', 'Días 91-120'];
+// Plan de respaldo (presencia digital de negocio local) por si la IA no devuelve las fases.
+const PLAN_FALLBACK = [
+  { titulo: 'Diagnóstico y cimientos', acciones: 'Auditamos tu presencia actual, ponemos a punto (o creamos) tu ficha de Google y tu web con las palabras que busca tu cliente en tu zona.', resuelve: 'Que empieces a aparecer cuando alguien busca tu servicio cerca de ti.' },
+  { titulo: 'Reputación y contenido', acciones: 'Activamos un sistema para conseguir reseñas reales, te damos de alta en los directorios que importan y publicamos contenido y fotos que generan confianza.', resuelve: 'Que quien te encuentre confíe y dé el paso de llamarte o escribirte.' },
+  { titulo: 'Visibilidad y captación', acciones: 'Trabajamos el SEO local y la aparición en la IA, cuidamos tus redes y, si encaja, lanzamos una captación medida.', resuelve: 'Que más gente te descubra y lleguen más contactos cada semana.' },
+  { titulo: 'Medición y escalado', acciones: 'Medimos llamadas y formularios, vemos qué trae clientes de verdad y reforzamos lo que funciona con un plan de continuidad.', resuelve: 'Saber con datos qué te da clientes y multiplicarlo mes a mes.' },
+];
+
+// Renderiza el plan de 120 dias (4 fases de 30 dias) como bloque HTML del email.
+function renderPlan120(fases, empresa) {
+  const COL = ['#0f7a39', '#0c7b6d', '#5b3fa0', '#b8860b'];
+  const bloques = (fases && fases.length ? fases : PLAN_FALLBACK).slice(0, 4).map((f, i) => `
+    <tr><td style="padding:0 0 10px">
+      <div style="border-left:4px solid ${COL[i % COL.length]};background:#f6faf7;border-radius:0 10px 10px 0;padding:11px 14px">
+        <div style="font-weight:700;color:${COL[i % COL.length]};font-size:14px">${PLAN_DIAS[i]} &middot; ${f.titulo || ''}</div>
+        <div style="color:#333;font-size:14px;line-height:1.55;margin-top:4px">${f.acciones || ''}</div>
+        ${f.resuelve ? `<div style="color:#555;font-size:13px;line-height:1.5;margin-top:6px"><b>Qué resuelve:</b> ${f.resuelve}</div>` : ''}
+      </div>
+    </td></tr>`).join('');
+  return `<div style="margin:20px 0 8px">
+    <div style="font-weight:800;font-size:16px;color:#10151f;margin-bottom:10px">Un plan de 120 días para ${empresa || 'tu negocio'}</div>
+    <table role="presentation" style="width:100%;border-collapse:collapse">${bloques}</table>
+  </div>`;
+}
+
+// Agente de VALOR: investiga el negocio, detecta su problema concreto de presencia
+// digital, explica la solucion y adjunta un plan de 120 dias (4 fases) con que resuelve
+// cada una. Es la propuesta de valor de la agencia, no un email generico.
 async function redactarPro(p) {
   const { web, serp } = await investigarNegocio(p);
-  const sys = `Eres el asistente de captacion de Conecta Nex; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. Tu tarea:
-1) Identifica UN punto fuerte real y concreto (algo que hacen bien: producto, trato, trayectoria, buenas resenas) y UN punto debil u oportunidad, sobre todo de PRESENCIA DIGITAL (sin web, pocas resenas, no aparece en Google ni en la IA, web anticuada).
-2) Escribe un email de PRIMER CONTACTO personalizado para ESE negocio: modesto, amable y honesto, SIN vender humo ni exagerar ni prometer resultados. Reconoce con sinceridad el punto fuerte (concreto, no generico), plantea con tacto el punto debil como oportunidad, y explica que AYUDAMOS A NEGOCIOS A MEJORAR SU PRESENCIA DIGITAL (aparecer en Google y en la IA, web y ficha al dia, resenas) para que les encuentren mas clientes. Ofrece ayuda sin presion (ensenarselo en una llamada corta).
-REGLAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), 120-180 palabras, sin mencionar precios, sin formulas vacias. NO INVENTES datos: si no sabes algo, no lo afirmes. No escribas botones ni enlaces.
-Devuelve EXACTAMENTE este formato:
+  const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
+  const sys = `Eres consultor de presencia digital de Conecta Nex (marca de Digital Conect); el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. NO escribas un email generico: haz un DIAGNOSTICO util y una PROPUESTA con un plan de 120 dias.
+Tareas:
+1) Detecta UN punto fuerte real y concreto (algo que hacen bien).
+2) Detecta EL PROBLEMA principal de su presencia digital (${sin ? 'no tienen web ni apenas presencia, no aparecen cuando buscan su servicio' : 'tienen algo pero mejorable: web anticuada, pocas resenas, no salen arriba en Google ni en la IA'}). Concreto y con tacto, sin culpabilizar.
+3) Explica COMO se soluciona y el VALOR que aporta a SU negocio (mas clientes que les encuentran), con realismo.
+4) Propon un PLAN DE 120 DIAS en 4 fases de 30 dias. Cada fase: acciones concretas y adaptadas a su sector, y QUE RESUELVE de su problema. Nada de humo ni cifras garantizadas.
+REGLAS ESTRICTAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), sin mencionar precios, sin formulas vacias ("quedo a tu disposicion"). NO INVENTES datos (resenas, cifras, competidores). No escribas botones ni enlaces. Frases claras y breves.
+Devuelve EXACTAMENTE este formato (respeta las etiquetas):
 FUERTE: <una frase>
-DEBIL: <una frase>
-ASUNTO: <asunto honesto, sin clickbait>
----
-<cuerpo del email en HTML simple con varios <p>>`;
+PROBLEMA: <una frase concreta>
+ASUNTO: <asunto honesto y util, sin clickbait, que mencione la idea de plan o solucion>
+INTRO: <2-3 frases: saludo natural, reconoce el punto fuerte y plantea el problema como oportunidad>
+SOLUCION: <2-3 frases: como lo solucionamos y el valor concreto para su negocio>
+FASE1: <titulo corto> | <acciones concretas dias 1-30> | <que resuelve>
+FASE2: <titulo corto> | <acciones concretas dias 31-60> | <que resuelve>
+FASE3: <titulo corto> | <acciones concretas dias 61-90> | <que resuelve>
+FASE4: <titulo corto> | <acciones concretas dias 91-120> | <que resuelve>
+RESULTADO: <1-2 frases: que resolveria en su negocio al terminar los 120 dias, realista>`;
   const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
 INFO DE SU WEB: ${web || '(no disponible)'}
 INFO DE GOOGLE: ${serp || '(no disponible)'}`;
-  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 950 });
-  const fuerte = ((texto.match(/FUERTE:\s*(.+)/i) || [])[1] || '').trim();
-  const debil = ((texto.match(/DEBIL:\s*(.+)/i) || [])[1] || '').trim();
-  let asunto = ((texto.match(/ASUNTO:\s*(.+)/i) || [])[1] || '').trim();
-  let cuerpo = texto;
-  const idx = texto.indexOf('---');
-  if (idx >= 0) cuerpo = texto.slice(idx + 3);
-  else { const ma = texto.match(/ASUNTO:.*/i); if (ma) cuerpo = texto.slice(texto.indexOf(ma[0]) + ma[0].length); }
-  cuerpo = cuerpo.replace(/^\s*-{3,}\s*/, '').trim();
-  if (!asunto) asunto = `Una idea para ${p.empresa || 'tu negocio'}`;
-  return { asunto, cuerpo, fuerte, debil };
+  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 1700 });
+
+  const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
+  const fuerte = campo(/FUERTE:\s*(.+)/i);
+  const problema = campo(/PROBLEMA:\s*(.+)/i);
+  let asunto = campo(/ASUNTO:\s*(.+)/i);
+  const intro = campo(/INTRO:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/INTRO:\s*(.+)/i);
+  const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*FASE1:/i) || campo(/SOLUCION:\s*(.+)/i);
+  const resultado = campo(/RESULTADO:\s*([\s\S]*)$/i);
+
+  // Parsea las 4 fases "titulo | acciones | que resuelve"; usa el respaldo si falta alguna.
+  const fases = [];
+  for (let i = 1; i <= 4; i++) {
+    const linea = campo(new RegExp(`FASE${i}:\\s*(.+)`, 'i'));
+    if (linea) {
+      const partes = linea.split('|').map((s) => s.trim());
+      fases.push({ titulo: partes[0] || PLAN_FALLBACK[i - 1].titulo, acciones: partes[1] || PLAN_FALLBACK[i - 1].acciones, resuelve: partes[2] || PLAN_FALLBACK[i - 1].resuelve });
+    } else {
+      fases.push(PLAN_FALLBACK[i - 1]);
+    }
+  }
+
+  const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const parr = (s) => esc(s).split(/\n{2,}/).filter(Boolean).map((t) => `<p>${t.replace(/\n/g, '<br>')}</p>`).join('');
+  const introHtml = intro ? parr(intro) : `<p>Hola, buenos días:</p><p>Buscando por internet di con ${esc(p.empresa || 'tu negocio')} y me llamó la atención.</p>`;
+  const problemaHtml = problema
+    ? `<p style="background:#fff6ec;border-left:4px solid #ea580c;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Lo que veo:</b> ${esc(problema)}</p>`
+    : '';
+  const solucionHtml = solucion ? parr(solucion) : '';
+  const resultadoHtml = resultado
+    ? `<p style="background:#f0faf3;border-left:4px solid #16a34a;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Qué resolvería en tu negocio:</b> ${esc(resultado)}</p>`
+    : '';
+  const cuerpo = `${introHtml}${problemaHtml}${solucionHtml}${renderPlan120(fases, p.empresa)}${resultadoHtml}<p>Si te encaja, te lo explico en una llamada corta y sin compromiso, y te paso este plan por escrito adaptado a tu caso.</p><p>Un saludo,<br>Lázaro &middot; Conecta Nex</p>`;
+
+  if (!asunto) asunto = `Un plan de 120 días para ${p.empresa || 'tu negocio'}`;
+  return { asunto, cuerpo, fuerte, debil: problema, con_plan: true };
+}
+
+// Email de valor con plan de 120 dias; si la investigacion o la IA fallan, cae al
+// email en frio mas ligero para que el lead nunca se quede sin borrador.
+async function redactarConValor(p) {
+  try {
+    const r = await redactarPro(p);
+    if (r && r.cuerpo) return r;
+  } catch { /* cae al frio */ }
+  return generarFrio(p);
 }
 
 export const maxDuration = 60;
@@ -612,8 +690,13 @@ export default async function handler(req, res) {
         if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada (GROQ_API_KEY).' });
         const [p] = await sql`SELECT * FROM prospectos WHERE id = ${b.id}`;
         if (!p) return jsonResponse(res, 404, { error: 'No encontrado' });
-        const r = await generarFrio({ ...p, ...b });
-        const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
+        // Email en frio ligero solo si se pide expresamente (rapido:true); por defecto,
+        // el email de VALOR con diagnostico + solucion + plan de 120 dias.
+        const r = b.rapido ? await generarFrio({ ...p, ...b }) : await redactarConValor({ ...p, ...b });
+        const obs = r.con_plan
+          ? (p.observaciones ? p.observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${r.fuerte || '-'} | Problema: ${r.debil || '-'}`
+          : p.observaciones;
+        const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
       }
 
@@ -704,7 +787,8 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, { ok: true, ...r });
       }
 
-      // Agente PRO: investiga cada negocio en internet y redacta un email PERSONALIZADO (fuerte/debil).
+      // Agente de valor: investiga cada negocio y redacta el email con diagnostico,
+      // solucion y plan de 120 dias. Salta los que ya tienen el plan redactado.
       if (accion === 'redactar_pro') {
         if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
         const limite = Math.min(parseInt(b.limite, 10) || 4, 6);
@@ -712,19 +796,19 @@ export default async function handler(req, res) {
           ? await sql`SELECT * FROM prospectos WHERE id = ${b.id}`
           : await sql`
               SELECT * FROM prospectos
-              WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')
+              WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')
               ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
               LIMIT ${limite}`;
         const res2 = await Promise.allSettled(filas.map(async (p) => {
           const r = await redactarPro(p);
-          const obs = (p.observaciones ? p.observaciones + '\n' : '') + `[PRO] Fuerte: ${r.fuerte || '-'} | Debil: ${r.debil || '-'}`;
+          const obs = (p.observaciones ? p.observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${r.fuerte || '-'} | Problema: ${r.debil || '-'}`;
           await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${p.id}`;
           return true;
         }));
         const redactados = res2.filter((x) => x.status === 'fulfilled').length;
         const [{ pendientes }] = await sql`
           SELECT COUNT(*)::int AS pendientes FROM prospectos
-          WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')`;
+          WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')`;
         return jsonResponse(res, 200, { ok: true, redactados, pendientes });
       }
 

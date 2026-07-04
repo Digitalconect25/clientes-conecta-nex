@@ -100,13 +100,16 @@ Notas internas del negocio: ${obs.slice(0, 900)}.
 Catalogo:\n${listado}`;
   const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.55, max_tokens: 900 });
   const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
+  // Si un campo salio vacio, el fallback puede engullir la seccion siguiente: si el
+  // valor empieza por otra etiqueta conocida, lo tratamos como vacio.
+  const sano = (v) => (/^\s*(?:IDS|PROBLEMA|SOLUCION|PLAZO|INTRO)\s*:/i.test(v) ? '' : v);
   // IDS va primero (asi no se pierde si la respuesta se trunca). Cortes multilinea con flag /s en los fallbacks.
   const mids = texto.match(/IDS:\s*([0-9,\s]+)/i);
-  const problema = campo(/PROBLEMA:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/PROBLEMA:\s*([\s\S]+?)(?=\n\s*(?:SOLUCION|PLAZO|INTRO|IDS):|$)/i) || campo(/PROBLEMA:\s*(.+)/is);
-  const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*PLAZO:/i) || campo(/SOLUCION:\s*([\s\S]+?)(?=\n\s*(?:PLAZO|INTRO|IDS):|$)/i) || campo(/SOLUCION:\s*(.+)/is);
-  const plazo = campo(/PLAZO:\s*(.+)/i);
+  const problema = sano(campo(/PROBLEMA:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/PROBLEMA:\s*([\s\S]+?)(?=\n\s*(?:SOLUCION|PLAZO|INTRO|IDS):|$)/i) || campo(/PROBLEMA:\s*(.+)/is));
+  const solucion = sano(campo(/SOLUCION:\s*([\s\S]*?)\n\s*PLAZO:/i) || campo(/SOLUCION:\s*([\s\S]+?)(?=\n\s*(?:PLAZO|INTRO|IDS):|$)/i) || campo(/SOLUCION:\s*(.+)/is));
+  const plazo = sano(campo(/PLAZO:\s*(.+)/i));
   const mi = texto.match(/INTRO:\s*([\s\S]*?)(?=\n\s*IDS:|$)/i);
-  const intro = mi ? mi[1].trim() : campo(/INTRO:\s*(.+)/is);
+  const intro = sano(mi ? mi[1].trim() : campo(/INTRO:\s*(.+)/is));
   const ids = mids ? mids[1].split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => validos.has(n)) : [];
   const items = ids.map((id) => {
     const s = validos.get(id);

@@ -113,18 +113,19 @@ async function generarFrio(p) {
   const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
   const sys = `Eres el asistente de captacion de Conecta Nex, marca de Digital Conect. El emisor es Lazaro Carrazana. Escribe un email de PRIMER CONTACTO EN FRIO a un negocio, calido y consultivo, que el lector lea entero. NO suena a venta ni a plantilla.
 GUION EN ORDEN (parrafos cortos, varios):
-1) SALUDO cordial (usa el nombre del contacto si lo hay; si no, "Hola, buenos dias" o similar).
+1) SALUDO cordial: usa el nombre REAL del propietario/contacto SOLO si te lo doy en los datos; si no lo tienes, saluda de forma calida sin nombre ("Hola, buenos dias" o "Hola, equipo de <negocio>"). NUNCA inventes ni adivines el nombre de la persona.
 2) INTRODUCCION humana: explica que, buscando por internet, has dado con su negocio. Puedes mencionar su sector y su ciudad de forma natural (la del NEGOCIO, no la tuya).
-3) OBSERVACION: ${sin
-    ? 'comenta con tacto que apenas tienen presencia online y que, cuando alguien busca su servicio en Google o se lo pregunta a la IA, no aparecen, sin culpabilizar ni alarmar.'
-    : 'reconoce que ya tienen algo de presencia online, pero que se puede mejorar para que les encuentren mas y aparezcan cuando la gente busca su servicio.'}
-4) PROPUESTA DE VALOR (lo importante): explica con calma que AYUDAMOS A NEGOCIOS A MEJORAR SU PRESENCIA DIGITAL: que aparezcan en Google y en la IA cuando alguien busca su servicio, con web y ficha de Google al dia, buenas resenas y redes cuidadas, para que les encuentren y lleguen mas clientes. Explica el beneficio en su negocio concreto, con ejemplos realistas.
+3) DIAGNOSTICO (lo mas importante): identifica EL DOLOR/NECESIDAD principal y REAL de ESE negocio segun su sector. No te quedes solo en la presencia online: piensa que problema concreto le hace perder clientes. Ejemplos segun el caso: ${sin
+    ? 'no aparecen cuando alguien busca su servicio en Google o en la IA; no tienen forma facil de que el cliente reserve o contacte.'
+    : 'tienen algo de presencia pero mejorable; quiza pierden clientes porque no pueden reservar/pedir cita online, o es dificil contactar con ellos, o no aparecen arriba cuando buscan su servicio.'} Elige el dolor mas probable para SU sector (restaurante/peluqueria/clinica -> reservas y citas online; taller/tienda -> que les encuentren y contacten facil; etc.) y planteatelo con tacto, sin culpabilizar ni alarmar.
+4) COMO AYUDAMOS (la solucion a SU dolor): explica con calma que en Conecta Nex ayudamos a los negocios a CONSEGUIR Y ATENDER MEJOR A SUS CLIENTES. Segun su necesidad: que les encuentren en Google y en la IA (web y ficha al dia, resenas), un SISTEMA DE RESERVAS/CITAS online, canales de CONTACTO faciles (WhatsApp, formulario, chat) y captacion de clientes. Centra el email en resolver SU problema concreto, con beneficios realistas para su negocio.
 5) CIERRE suave, sin presion: ofrece ensenarselo en una llamada corta o resolver dudas, dejando la puerta abierta.
 REGLAS ESTRICTAS:
 - Espanol de Espana, profesional, cercano y humano. Tono tranquilo y consultivo, NUNCA agresivo ni con prisa.
 - NO digas en que ciudad estamos nosotros ni te describas como "agencia de [ciudad]". Habla de lo que hacemos, no de donde estamos.
 - NUNCA uses guion largo (em-dash). Usa guion corto (-) o comas. NO uses emojis.
-- NO inventes datos (cifras, nombres de competidores, detalles falsos). NO prometas resultados garantizados ni afirmaciones irreales.
+- HONESTIDAD TOTAL: NO inventes NINGUN dato (nombre del propietario, cifras, resenas, numero de clientes, competidores, detalles). Si no lo sabes, no lo digas. NO prometas resultados garantizados ni afirmaciones irreales. NADA de vender humo: solo lo que de verdad hacemos.
+- Tono legal y sincero: es una comunicacion comercial honesta a un negocio; nunca engañes ni exageres.
 - Nada de formulas vacias ("no dudes en contactarnos", "quedo a tu disposicion", "es un placer").
 - Extension: entre 150 y 220 palabras (ni telegrama ni testamento). NO menciones precios.
 - NO escribas tu los botones ni enlaces (se anaden aparte). Solo el texto.
@@ -477,10 +478,10 @@ export async function investigarNegocio(p) {
 const PLAN_DIAS = ['Días 1-30', 'Días 31-60', 'Días 61-90', 'Días 91-120'];
 // Plan de respaldo (presencia digital de negocio local) por si la IA no devuelve las fases.
 const PLAN_FALLBACK = [
-  { titulo: 'Diagnóstico y cimientos', acciones: 'Auditamos tu presencia actual, ponemos a punto (o creamos) tu ficha de Google y tu web con las palabras que busca tu cliente en tu zona.', resuelve: 'Que empieces a aparecer cuando alguien busca tu servicio cerca de ti.' },
-  { titulo: 'Reputación y contenido', acciones: 'Activamos un sistema para conseguir reseñas reales, te damos de alta en los directorios que importan y publicamos contenido y fotos que generan confianza.', resuelve: 'Que quien te encuentre confíe y dé el paso de llamarte o escribirte.' },
-  { titulo: 'Visibilidad y captación', acciones: 'Trabajamos el SEO local y la aparición en la IA, cuidamos tus redes y, si encaja, lanzamos una captación medida.', resuelve: 'Que más gente te descubra y lleguen más contactos cada semana.' },
-  { titulo: 'Medición y escalado', acciones: 'Medimos llamadas y formularios, vemos qué trae clientes de verdad y reforzamos lo que funciona con un plan de continuidad.', resuelve: 'Saber con datos qué te da clientes y multiplicarlo mes a mes.' },
+  { titulo: 'Diagnóstico y cimientos', acciones: 'Auditamos cómo te encuentran y te contactan hoy, y ponemos a punto (o creamos) tu ficha de Google y tu web con las palabras que busca tu cliente en tu zona.', resuelve: 'Que empieces a aparecer cuando alguien busca tu servicio cerca de ti.' },
+  { titulo: 'Contacto y reservas', acciones: 'Ponemos canales fáciles para que el cliente te contacte o reserve sin llamar (WhatsApp, formulario o sistema de reservas/citas online) y un flujo claro para atenderle.', resuelve: 'Que no pierdas clientes por no poder reservar o contactar contigo fácilmente.' },
+  { titulo: 'Reputación y visibilidad', acciones: 'Activamos un sistema de reseñas reales, cuidamos tus redes y trabajamos el SEO local y la aparición en la IA para que te descubran más.', resuelve: 'Que quien te encuentre confíe y que más gente te descubra cada semana.' },
+  { titulo: 'Medición y escalado', acciones: 'Medimos llamadas, reservas y formularios, vemos qué trae clientes de verdad y reforzamos lo que funciona con un plan de continuidad.', resuelve: 'Saber con datos qué te da clientes y multiplicarlo mes a mes.' },
 ];
 
 // Renderiza el plan de 120 dias (4 fases de 30 dias) como bloque HTML del email.
@@ -508,13 +509,14 @@ function renderPlan120(fases, empresa) {
 async function redactarPro(p) {
   const { web, serp } = await investigarNegocio(p);
   const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
-  const sys = `Eres consultor de presencia digital de Conecta Nex (marca de Digital Conect); el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. NO escribas un email generico: haz un DIAGNOSTICO util y una PROPUESTA con un plan de 120 dias.
+  const sys = `Eres consultor de Conecta Nex (marca de Digital Conect), agencia de marketing; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. NO escribas un email generico: haz un DIAGNOSTICO util centrado en SU dolor y una PROPUESTA con un plan de 120 dias.
 Tareas:
 1) Detecta UN punto fuerte real y concreto (algo que hacen bien).
-2) Detecta EL PROBLEMA principal de su presencia digital (${sin ? 'no tienen web ni apenas presencia, no aparecen cuando buscan su servicio' : 'tienen algo pero mejorable: web anticuada, pocas resenas, no salen arriba en Google ni en la IA'}). Concreto y con tacto, sin culpabilizar.
-3) Explica COMO se soluciona y el VALOR que aporta a SU negocio (mas clientes que les encuentran), con realismo.
-4) Propon un PLAN DE 120 DIAS en 4 fases de 30 dias. Cada fase: acciones concretas y adaptadas a su sector, y QUE RESUELVE de su problema. Nada de humo ni cifras garantizadas.
-REGLAS ESTRICTAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), sin mencionar precios, sin formulas vacias ("quedo a tu disposicion"). NO INVENTES datos (resenas, cifras, competidores). No escribas botones ni enlaces. Frases claras y breves.
+2) Detecta EL DOLOR/NECESIDAD principal y REAL de ESTE negocio, el que le hace perder clientes. No te limites a la presencia online: segun su sector puede ser que no aparecen cuando buscan su servicio, que no tienen SISTEMA DE RESERVAS/CITAS online, que es dificil CONTACTAR con ellos (sin WhatsApp/formulario), o que no captan clientes. ${sin ? 'Parten casi sin presencia.' : 'Tienen algo pero mejorable.'} Elige el dolor mas probable de su sector, concreto y con tacto, sin culpabilizar.
+3) Explica COMO lo resolvemos (que les encuentren en Google/IA, o un sistema de reservas/citas, o canales de contacto faciles, o captacion) y el VALOR real para SU negocio (mas clientes que reservan/contactan), con realismo.
+4) Propon un PLAN DE 120 DIAS en 4 fases de 30 dias, adaptado a SU dolor concreto. Cada fase: acciones concretas y QUE RESUELVE de su problema. Nada de humo ni cifras garantizadas.
+REGLAS ESTRICTAS: espanol de Espana, calido, humano y consultivo, sin emojis, sin guion largo (em-dash), sin mencionar precios, sin formulas vacias ("quedo a tu disposicion").
+HONESTIDAD TOTAL: NO inventes NINGUN dato (nombre del propietario, resenas, cifras, numero de clientes, competidores). Si no lo sabes, no lo afirmes. Sincero y legal, sin vender humo ni exagerar; solo lo que de verdad hacemos. En el saludo usa el nombre real del propietario SOLO si te lo doy; si no, saluda sin nombre y NUNCA lo inventes. No escribas botones ni enlaces. Frases claras y breves.
 Devuelve EXACTAMENTE este formato (respeta las etiquetas):
 FUERTE: <una frase>
 PROBLEMA: <una frase concreta>
@@ -801,7 +803,7 @@ export default async function handler(req, res) {
         let redactados = 0;
         for (const p of filas) {
           try {
-            const sys = `Eres el asistente de Conecta Nex. Escribe un SEGUIMIENTO breve y cordial a un negocio al que ya escribimos hace unos dias y no ha respondido. Espanol de Espana, sin presion, sin emojis, sin guion largo. Recuerda con tacto el correo anterior, aporta un motivo util para responder y deja la puerta abierta. 60-110 palabras. Devuelve EXACTAMENTE: "ASUNTO: <asunto>" en la primera linea, luego "---", luego el cuerpo en HTML con <p>.`;
+            const sys = `Eres el asistente de Conecta Nex. Escribe un SEGUIMIENTO breve y cordial a un negocio al que ya escribimos hace unos dias y no ha respondido. Espanol de Espana, sin presion, sin emojis, sin guion largo. Recuerda con tacto el correo anterior, aporta un motivo util para responder y deja la puerta abierta. 60-110 palabras. HONESTIDAD TOTAL: no inventes ningun dato ni el nombre del propietario (usa su nombre solo si te lo doy; si no, saluda sin nombre); sincero y legal, sin vender humo. Devuelve EXACTAMENTE: "ASUNTO: <asunto>" en la primera linea, luego "---", luego el cuerpo en HTML con <p>.`;
             const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Asunto del email anterior: ${p.asunto || '-'}.`;
             const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 500 });
             let asunto = '', cuerpo = texto;

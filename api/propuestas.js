@@ -86,10 +86,11 @@ async function generarConIA(p) {
   const probPrevio = (probMatch && probMatch !== '-') ? probMatch : '';
   const sys = `Eres asesor comercial de Conecta Nex (agencia de marketing y presencia digital, Alicante). Prepara una PROPUESTA HUMANIZADA y ESPECIFICA para ESTE negocio en concreto: NADA de texto generico ni de plantilla. Parte del PROBLEMA REAL de este negocio, explica COMO lo resuelves para SU caso y en QUE PLAZO (adaptado al tamano de SU problema, no un plazo fijo), y elige SOLO servicios del catalogo de abajo (nunca inventes servicios ni precios).
 Espanol de Espana, tono humano, cercano y consultivo, sin emojis, sin guion largo (em-dash), sin prometer resultados garantizados ni cifras inventadas. Menciona detalles concretos de su sector, ciudad o situacion para que se note que es para el.
+HONESTIDAD TOTAL: NO inventes NINGUN dato (nombre del propietario, resenas, cifras, numero de clientes, competidores). Si no lo sabes, no lo afirmes. Sincero y legal, sin vender humo ni exagerar. En el saludo, usa el nombre real del propietario SOLO si te lo doy; si no, no lo inventes.
 Devuelve EXACTAMENTE este formato (respeta las etiquetas y este ORDEN):
 IDS: <ids de 2 a 4 servicios del catalogo separados por comas, p.ej. 3, 5, 7>
-PROBLEMA: <1-2 frases: el problema principal y CONCRETO de presencia digital de ESTE negocio (usa el problema ya detectado si te lo doy), con tacto>
-SOLUCION: <2-3 frases: como lo resolvemos con esta propuesta, aterrizado a SU caso concreto>
+PROBLEMA: <1-2 frases: el DOLOR/NECESIDAD principal y CONCRETO de ESTE negocio que le hace perder clientes (usa el problema ya detectado si te lo doy). No solo presencia online: puede ser que no aparecen al buscarlos, que no tienen reservas/citas online, que es dificil contactar con ellos, o que no captan clientes. Con tacto>
+SOLUCION: <2-3 frases: como lo resolvemos con esta propuesta (que les encuentren, sistema de reservas/citas, canales de contacto faciles o captacion), aterrizado a SU caso concreto>
 PLAZO: <plazo realista ADAPTADO a la magnitud de SU problema, en semanas o meses, p.ej. "unas 4 a 6 semanas" o "unos 3 meses"; breve>
 INTRO: <2-3 frases calidas y personales que conectan SU problema con la propuesta>`;
   const user = `Negocio: ${p.empresa || p.nombre || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.

@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { fmtEuros } from '../lib/contratos.js';
 
-// Etapas del embudo de captacion (mismo criterio que la pagina de Captacion en frio).
+// Etapas del embudo de captacion (mismo criterio y orden que la pagina de Captacion en frio).
 const ETAPAS = [
   { k: 'frio', l: 'En frío', c: '#64748b', i: '🧊' },
   { k: 'contactado', l: 'Contactado', c: '#2563eb', i: '✉️' },
+  { k: 'seguimiento', l: 'Seguimiento', c: '#7c3aed', i: '🔁' },
   { k: 'interesado', l: 'Interesado', c: '#b8860b', i: '⭐' },
   { k: 'caliente', l: 'Caliente', c: '#ea580c', i: '🔥' },
   { k: 'cliente', l: 'Cliente', c: '#16a34a', i: '🏆' },
@@ -80,9 +81,11 @@ export default function Dashboard() {
       </div>
 
       {capt && Array.isArray(capt.etapas) && (() => {
-        const m = {}; capt.etapas.forEach((e) => { m[e.etapa] = e.n; });
+        const m = {}; capt.etapas.forEach((e) => { m[e.etapa] = Number(e.n || 0); });
         const totalLeads = capt.etapas.reduce((s, e) => s + Number(e.n || 0), 0);
+        const descartados = m.descartado || 0;
         const clientesCapt = m.cliente || 0;
+        // Conversion sobre los leads captados (incluye descartados: son leads que entraron).
         const conv = totalLeads ? Math.round((clientesCapt / totalLeads) * 100) : 0;
         if (!totalLeads) return null;
         return (
@@ -96,7 +99,7 @@ export default function Dashboard() {
                 <span key={et.k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {idx > 0 && <span style={{ color: '#c3ccc6' }}>→</span>}
                   <button onClick={() => navigate('/prospeccion')} title="Ir a Captación en frío"
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 92, background: '#fff', border: `2px solid ${et.c}`, borderRadius: 10, padding: '8px 12px', cursor: 'pointer' }}>
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 88, background: '#fff', border: `2px solid ${et.c}`, borderRadius: 10, padding: '8px 10px', cursor: 'pointer' }}>
                     <span style={{ fontSize: 22, fontWeight: 800, color: et.c }}>{m[et.k] || 0}</span>
                     <span style={{ fontSize: 11.5, fontWeight: 600, color: et.c }}>{et.i} {et.l}</span>
                   </button>
@@ -107,6 +110,11 @@ export default function Dashboard() {
                 <div style={{ fontSize: 11.5, color: 'var(--gris-5)' }}>conversión a cliente</div>
               </div>
             </div>
+            {descartados > 0 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--gris-5)' }}>
+                Incluye {descartados} descartado(s) en el total de {totalLeads} leads.
+              </div>
+            )}
           </>
         );
       })()}

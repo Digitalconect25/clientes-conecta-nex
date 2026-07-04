@@ -80,29 +80,33 @@ async function generarConIA(p) {
   // Extrae el problema YA detectado de este negocio (lo guarda el agente de captacion
   // en las notas: "[PLAN 120d] ... | Problema: ..." o el analisis de su respuesta).
   const obs = String(p.observaciones || '');
-  const probPrevio = ((obs.match(/Problema:\s*([^\n|]+)/i) || [])[1] || '').trim();
+  // Problema ya detectado del negocio. `[^\n]+` (no cortamos en '|') y descartamos el
+  // guion de relleno '-' que marcarPlan escribe cuando no habia problema concreto.
+  const probMatch = ((obs.match(/Problema:\s*([^\n]+)/i) || [])[1] || '').trim();
+  const probPrevio = (probMatch && probMatch !== '-') ? probMatch : '';
   const sys = `Eres asesor comercial de Conecta Nex (agencia de marketing y presencia digital, Alicante). Prepara una PROPUESTA HUMANIZADA y ESPECIFICA para ESTE negocio en concreto: NADA de texto generico ni de plantilla. Parte del PROBLEMA REAL de este negocio, explica COMO lo resuelves para SU caso y en QUE PLAZO (adaptado al tamano de SU problema, no un plazo fijo), y elige SOLO servicios del catalogo de abajo (nunca inventes servicios ni precios).
 Espanol de Espana, tono humano, cercano y consultivo, sin emojis, sin guion largo (em-dash), sin prometer resultados garantizados ni cifras inventadas. Menciona detalles concretos de su sector, ciudad o situacion para que se note que es para el.
-Devuelve EXACTAMENTE este formato (respeta las etiquetas):
+Devuelve EXACTAMENTE este formato (respeta las etiquetas y este ORDEN):
+IDS: <ids de 2 a 4 servicios del catalogo separados por comas, p.ej. 3, 5, 7>
 PROBLEMA: <1-2 frases: el problema principal y CONCRETO de presencia digital de ESTE negocio (usa el problema ya detectado si te lo doy), con tacto>
 SOLUCION: <2-3 frases: como lo resolvemos con esta propuesta, aterrizado a SU caso concreto>
 PLAZO: <plazo realista ADAPTADO a la magnitud de SU problema, en semanas o meses, p.ej. "unas 4 a 6 semanas" o "unos 3 meses"; breve>
-INTRO: <2-3 frases calidas y personales que conectan SU problema con la propuesta>
-IDS: <ids de 2 a 4 servicios separados por comas, p.ej. 3, 5, 7>`;
+INTRO: <2-3 frases calidas y personales que conectan SU problema con la propuesta>`;
   const user = `Negocio: ${p.empresa || p.nombre || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
 Situacion: ${p.situacion === 'mejorable' ? 'tiene algo de presencia pero mejorable' : 'sin apenas presencia online'}.
 ${probPrevio ? 'PROBLEMA YA DETECTADO de este negocio (usalo como base): ' + probPrevio : ''}
 Le interesa (del formulario): ${yaInteresa || '(no indicado)'}.
 Notas internas del negocio: ${obs.slice(0, 900)}.
 Catalogo:\n${listado}`;
-  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.55, max_tokens: 700 });
+  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.55, max_tokens: 900 });
   const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
-  const problema = campo(/PROBLEMA:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/PROBLEMA:\s*(.+)/i);
-  const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*PLAZO:/i) || campo(/SOLUCION:\s*(.+)/i);
-  const plazo = campo(/PLAZO:\s*(.+)/i);
-  const mi = texto.match(/INTRO:\s*([\s\S]*?)\n\s*IDS:/i);
+  // IDS va primero (asi no se pierde si la respuesta se trunca). Cortes multilinea con flag /s en los fallbacks.
   const mids = texto.match(/IDS:\s*([0-9,\s]+)/i);
-  const intro = mi ? mi[1].trim() : campo(/INTRO:\s*(.+)/i);
+  const problema = campo(/PROBLEMA:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/PROBLEMA:\s*([\s\S]+?)(?=\n\s*(?:SOLUCION|PLAZO|INTRO|IDS):|$)/i) || campo(/PROBLEMA:\s*(.+)/is);
+  const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*PLAZO:/i) || campo(/SOLUCION:\s*([\s\S]+?)(?=\n\s*(?:PLAZO|INTRO|IDS):|$)/i) || campo(/SOLUCION:\s*(.+)/is);
+  const plazo = campo(/PLAZO:\s*(.+)/i);
+  const mi = texto.match(/INTRO:\s*([\s\S]*?)(?=\n\s*IDS:|$)/i);
+  const intro = mi ? mi[1].trim() : campo(/INTRO:\s*(.+)/is);
   const ids = mids ? mids[1].split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => validos.has(n)) : [];
   const items = ids.map((id) => {
     const s = validos.get(id);
@@ -148,6 +152,8 @@ export default async function handler(req, res) {
           if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
           const r = await generarConIA(p);
           intro = r.intro; items = r.items; problema = r.problema; solucion = r.solucion; plazo = r.plazo;
+          // Sin servicios no hay propuesta (evita crear una a 0 EUR por una respuesta IA truncada/invalida).
+          if (!items.length) return jsonResponse(res, 502, { error: 'La IA no seleccionó servicios del catálogo. Reintenta, o crea la propuesta en blanco y añade las líneas a mano.' });
         }
         const descuento = Number(b.descuento || 0);
         const total = calcularTotal(items, descuento);
@@ -172,9 +178,11 @@ export default async function handler(req, res) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return jsonResponse(res, 400, { error: 'Falta un email válido del destinatario.' });
         const tok = pr.token || token();
         const url = `${BASE}/propuesta/${tok}`;
-        // Bloques humanizados: solo se muestran si la propuesta los tiene.
-        const bloque = (color, etiqueta, texto) => texto
-          ? `<div style="background:${color}1a;border-left:4px solid ${color};border-radius:0 8px 8px 0;padding:11px 14px;margin:0 0 12px"><b style="color:${color}">${etiqueta}</b><br>${escEmail(texto)}</div>`
+        // Texto de la IA a HTML: escapa y respeta los saltos de linea (<br>).
+        const multi = (t) => escEmail(t).replace(/\n/g, '<br>');
+        // Fondo tenue por bloque en hex de 6 digitos (los de 8 con alfa no los pinta Outlook escritorio).
+        const bloque = (color, fondo, etiqueta, texto) => texto
+          ? `<div style="background:${fondo};border-left:4px solid ${color};border-radius:0 8px 8px 0;padding:11px 14px;margin:0 0 12px"><b style="color:${color}">${etiqueta}</b><br>${multi(texto)}</div>`
           : '';
         const servicios = Array.isArray(pr.items_json) ? pr.items_json : [];
         const listaServicios = servicios.length
@@ -182,10 +190,10 @@ export default async function handler(req, res) {
           : '';
         const cuerpo = `
           <p style="margin:0 0 14px">Hola ${escEmail(pr.destinatario_nombre || '')},</p>
-          <p style="margin:0 0 16px">${escEmail(pr.intro || 'Le damos una vuelta a la presencia digital de tu negocio y te contamos cómo mejorarla.')}</p>
-          ${bloque('#ea580c', 'Lo que vemos', pr.problema)}
-          ${bloque('#0c7b6d', 'Cómo lo resolvemos', pr.solucion)}
-          ${bloque('#5b3fa0', 'En cuánto tiempo', pr.plazo)}
+          <p style="margin:0 0 16px">${multi(pr.intro || 'Le damos una vuelta a la presencia digital de tu negocio y te contamos cómo mejorarla.')}</p>
+          ${bloque('#ea580c', '#fff6ec', 'Lo que vemos', pr.problema)}
+          ${bloque('#0c7b6d', '#eef8f5', 'Cómo lo resolvemos', pr.solucion)}
+          ${bloque('#5b3fa0', '#f3f0fa', 'En cuánto tiempo', pr.plazo)}
           ${listaServicios}
           ${tarjetaDatos([['Propuesta', escEmail(pr.numero || '')], ['Base imponible', EUR(pr.total)], ['Total (IVA 21% incl.)', EUR(Number(pr.total) * 1.21)], ['Validez', `${pr.validez_dias} días`]])}
           <p style="margin:14px 0 4px">Puedes verla en detalle y, si te encaja, aceptarla desde aquí:</p>

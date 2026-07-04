@@ -4,6 +4,33 @@ import { llamarIA, iaHabilitada } from './_groq.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import crypto from 'node:crypto';
 
+// Escapa texto para incrustarlo en el HTML del email sin romper el maquetado.
+const escHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Ejecuta `fn` sobre `items` con concurrencia acotada (evita saturar el rate-limit
+// de Groq y el presupuesto de tiempo de la funcion). Devuelve resultados estilo allSettled.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length || 1) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      try { out[idx] = { status: 'fulfilled', value: await fn(items[idx], idx) }; }
+      catch (e) { out[idx] = { status: 'rejected', reason: e }; }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Anade (deduplicado) el marcador [PLAN 120d] a las observaciones: quita cualquier
+// linea previa del marcador para no apilar duplicados en generaciones repetidas.
+function marcarPlan(observaciones, fuerte, problema) {
+  const base = String(observaciones || '').split('\n').filter((l) => !/^\[PLAN 120d\]/.test(l)).join('\n').trim();
+  const linea = `[PLAN 120d] Fuerte: ${fuerte || '-'} | Problema: ${problema || '-'}`;
+  return (base ? base + '\n' : '') + linea;
+}
+
 // ── Pie legal (LSSI-CE): identificacion del emisor + opcion de baja ──────────
 async function getEmisor() {
   const [e] = await sql`SELECT * FROM emisor WHERE id = 1`;
@@ -358,11 +385,12 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
     insertados++; nuevosIds.push(row.id);
     await registrarEvento(row.id, 'alta', `Captado por scrapeo: ${nicho} en ${zona} (lead en frio)`);
   }
-  // Puntuar los nuevos con IA (prioridad Alta/Media/Baja).
+  // Puntuar los nuevos con IA (prioridad Alta/Media/Baja). Concurrencia acotada
+  // para no chocar con el rate-limit de Groq ni agotar el presupuesto de tiempo.
   let puntuados = 0;
   if (puntuar && iaHabilitada() && nuevosIds.length) {
     const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
-    const out = await Promise.allSettled(filas.map((p) => puntuarLead(p)));
+    const out = await mapLimit(filas, 4, (p) => puntuarLead(p));
     for (let i = 0; i < filas.length; i++) {
       const rr = out[i];
       if (rr.status === 'fulfilled' && rr.value) {
@@ -393,14 +421,12 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
   let redactados = 0;
   if (generar && iaHabilitada() && nuevosIds.length) {
     const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
-    const out = await Promise.allSettled(filas.map((p) => redactarConValor(p)));
+    const out = await mapLimit(filas, 3, (p) => redactarConValor(p));
     for (let i = 0; i < filas.length; i++) {
       const rr = out[i];
       if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
         try {
-          const obs = rr.value.con_plan
-            ? (filas[i].observaciones ? filas[i].observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${rr.value.fuerte || '-'} | Problema: ${rr.value.debil || '-'}`
-            : filas[i].observaciones;
+          const obs = rr.value.con_plan ? marcarPlan(filas[i].observaciones, rr.value.fuerte, rr.value.debil) : filas[i].observaciones;
           await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
           redactados++;
         } catch { /* sigue */ }
@@ -412,19 +438,21 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
 
 // Investiga un negocio en internet: texto de su web + ficha/reseñas de Google (Bright Data).
 export async function investigarNegocio(p) {
-  let web = '', serp = '';
-  if (p.website) {
+  // Web y SERP EN PARALELO (antes eran secuenciales, ~34s por lead).
+  const traerWeb = async () => {
+    if (!p.website) return '';
     try {
       const url = /^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website;
       const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
-      web = (await r.text())
+      return (await r.text())
         .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
         .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 2500);
-    } catch { /* noop */ }
-  }
-  try {
-    const key = process.env.BRIGHTDATA_KEY;
-    if (key) {
+    } catch { return ''; }
+  };
+  const traerSerp = async () => {
+    try {
+      const key = process.env.BRIGHTDATA_KEY;
+      if (!key) return '';
       const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
       const q = encodeURIComponent(`${p.empresa} ${p.ciudad || ''} opiniones`);
       const url = `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`;
@@ -434,14 +462,14 @@ export async function investigarNegocio(p) {
       });
       let data = await rr.json().catch(() => null);
       if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
-      if (data) {
-        const sp = (data.snack_pack || [])[0];
-        const org = (data.organic || data.organic_results || []).slice(0, 4)
-          .map((o) => `${o.title || ''}: ${o.description || o.snippet || ''}`).join(' | ');
-        serp = `${sp ? `Google: ${sp.rating || '?'} estrellas (${sp.reviews_cnt || sp.reviews || '?'} resenas). ` : ''}${org}`.slice(0, 1500);
-      }
-    }
-  } catch { /* noop */ }
+      if (!data) return '';
+      const sp = (data.snack_pack || [])[0];
+      const org = (data.organic || data.organic_results || []).slice(0, 4)
+        .map((o) => `${o.title || ''}: ${o.description || o.snippet || ''}`).join(' | ');
+      return `${sp ? `Google: ${sp.rating || '?'} estrellas (${sp.reviews_cnt || sp.reviews || '?'} resenas). ` : ''}${org}`.slice(0, 1500);
+    } catch { return ''; }
+  };
+  const [web, serp] = await Promise.all([traerWeb(), traerSerp()]);
   return { web, serp };
 }
 
@@ -458,16 +486,18 @@ const PLAN_FALLBACK = [
 // Renderiza el plan de 120 dias (4 fases de 30 dias) como bloque HTML del email.
 function renderPlan120(fases, empresa) {
   const COL = ['#0f7a39', '#0c7b6d', '#5b3fa0', '#b8860b'];
+  // Escapamos titulo/acciones/resuelve (vienen de la IA) y el nombre de empresa
+  // (viene del scrapeo) para que un '<' no rompa el HTML del email.
   const bloques = (fases && fases.length ? fases : PLAN_FALLBACK).slice(0, 4).map((f, i) => `
     <tr><td style="padding:0 0 10px">
       <div style="border-left:4px solid ${COL[i % COL.length]};background:#f6faf7;border-radius:0 10px 10px 0;padding:11px 14px">
-        <div style="font-weight:700;color:${COL[i % COL.length]};font-size:14px">${PLAN_DIAS[i]} &middot; ${f.titulo || ''}</div>
-        <div style="color:#333;font-size:14px;line-height:1.55;margin-top:4px">${f.acciones || ''}</div>
-        ${f.resuelve ? `<div style="color:#555;font-size:13px;line-height:1.5;margin-top:6px"><b>Qué resuelve:</b> ${f.resuelve}</div>` : ''}
+        <div style="font-weight:700;color:${COL[i % COL.length]};font-size:14px">${PLAN_DIAS[i]} &middot; ${escHtml(f.titulo)}</div>
+        <div style="color:#333;font-size:14px;line-height:1.55;margin-top:4px">${escHtml(f.acciones)}</div>
+        ${f.resuelve ? `<div style="color:#555;font-size:13px;line-height:1.5;margin-top:6px"><b>Qué resuelve:</b> ${escHtml(f.resuelve)}</div>` : ''}
       </div>
     </td></tr>`).join('');
   return `<div style="margin:20px 0 8px">
-    <div style="font-weight:800;font-size:16px;color:#10151f;margin-bottom:10px">Un plan de 120 días para ${empresa || 'tu negocio'}</div>
+    <div style="font-weight:800;font-size:16px;color:#10151f;margin-bottom:10px">Un plan de 120 días para ${escHtml(empresa || 'tu negocio')}</div>
     <table role="presentation" style="width:100%;border-collapse:collapse">${bloques}</table>
   </div>`;
 }
@@ -499,7 +529,7 @@ RESULTADO: <1-2 frases: que resolveria en su negocio al terminar los 120 dias, r
   const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
 INFO DE SU WEB: ${web || '(no disponible)'}
 INFO DE GOOGLE: ${serp || '(no disponible)'}`;
-  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 1700 });
+  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 1700, timeout_ms: 28000 });
 
   const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
   const fuerte = campo(/FUERTE:\s*(.+)/i);
@@ -509,32 +539,45 @@ INFO DE GOOGLE: ${serp || '(no disponible)'}`;
   const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*FASE1:/i) || campo(/SOLUCION:\s*(.+)/i);
   const resultado = campo(/RESULTADO:\s*([\s\S]*)$/i);
 
-  // Parsea las 4 fases "titulo | acciones | que resuelve"; usa el respaldo si falta alguna.
+  // Parsea las 4 fases "titulo | acciones | que resuelve" (captura multilinea hasta la
+  // siguiente etiqueta; el split preserva el resto tras el 2o '|' en 'que resuelve').
   const fases = [];
+  let fasesReales = 0;
   for (let i = 1; i <= 4; i++) {
-    const linea = campo(new RegExp(`FASE${i}:\\s*(.+)`, 'i'));
-    if (linea) {
-      const partes = linea.split('|').map((s) => s.trim());
-      fases.push({ titulo: partes[0] || PLAN_FALLBACK[i - 1].titulo, acciones: partes[1] || PLAN_FALLBACK[i - 1].acciones, resuelve: partes[2] || PLAN_FALLBACK[i - 1].resuelve });
+    const bloque = campo(new RegExp(`FASE${i}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:FASE${i + 1}:|RESULTADO:)|$)`, 'i'))
+      || campo(new RegExp(`FASE${i}:\\s*(.+)`, 'i'));
+    if (bloque) {
+      const partes = bloque.split('|');
+      const titulo = (partes[0] || '').trim();
+      const acciones = (partes[1] || '').replace(/\n+/g, ' ').trim();
+      const resuelve = partes.slice(2).join('|').replace(/\n+/g, ' ').trim();
+      if (acciones) fasesReales++;
+      fases.push({
+        titulo: titulo || PLAN_FALLBACK[i - 1].titulo,
+        acciones: acciones || PLAN_FALLBACK[i - 1].acciones,
+        resuelve: resuelve || PLAN_FALLBACK[i - 1].resuelve,
+      });
     } else {
       fases.push(PLAN_FALLBACK[i - 1]);
     }
   }
+  // El email es un "plan real" si la IA aporto contenido propio (problema o >=2 fases);
+  // si salio todo generico, marcamos con_plan=false para permitir un reintento posterior.
+  const conPlan = !!problema || fasesReales >= 2;
 
-  const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const parr = (s) => esc(s).split(/\n{2,}/).filter(Boolean).map((t) => `<p>${t.replace(/\n/g, '<br>')}</p>`).join('');
-  const introHtml = intro ? parr(intro) : `<p>Hola, buenos días:</p><p>Buscando por internet di con ${esc(p.empresa || 'tu negocio')} y me llamó la atención.</p>`;
+  const parr = (s) => escHtml(s).split(/\n{2,}/).filter(Boolean).map((t) => `<p>${t.replace(/\n/g, '<br>')}</p>`).join('');
+  const introHtml = intro ? parr(intro) : `<p>Hola, buenos días:</p><p>Buscando por internet di con ${escHtml(p.empresa || 'tu negocio')} y me llamó la atención.</p>`;
   const problemaHtml = problema
-    ? `<p style="background:#fff6ec;border-left:4px solid #ea580c;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Lo que veo:</b> ${esc(problema)}</p>`
+    ? `<p style="background:#fff6ec;border-left:4px solid #ea580c;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Lo que veo:</b> ${escHtml(problema)}</p>`
     : '';
   const solucionHtml = solucion ? parr(solucion) : '';
   const resultadoHtml = resultado
-    ? `<p style="background:#f0faf3;border-left:4px solid #16a34a;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Qué resolvería en tu negocio:</b> ${esc(resultado)}</p>`
+    ? `<p style="background:#f0faf3;border-left:4px solid #16a34a;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Qué resolvería en tu negocio:</b> ${escHtml(resultado)}</p>`
     : '';
   const cuerpo = `${introHtml}${problemaHtml}${solucionHtml}${renderPlan120(fases, p.empresa)}${resultadoHtml}<p>Si te encaja, te lo explico en una llamada corta y sin compromiso, y te paso este plan por escrito adaptado a tu caso.</p><p>Un saludo,<br>Lázaro &middot; Conecta Nex</p>`;
 
   if (!asunto) asunto = `Un plan de 120 días para ${p.empresa || 'tu negocio'}`;
-  return { asunto, cuerpo, fuerte, debil: problema, con_plan: true };
+  return { asunto, cuerpo, fuerte, debil: problema, con_plan: conPlan };
 }
 
 // Email de valor con plan de 120 dias; si la investigacion o la IA fallan, cae al
@@ -544,7 +587,10 @@ async function redactarConValor(p) {
     const r = await redactarPro(p);
     if (r && r.cuerpo) return r;
   } catch { /* cae al frio */ }
-  return generarFrio(p);
+  // El fallback tambien dentro de try: si generarFrio falla (p. ej. rate-limit de Groq),
+  // no rechazamos la promesa; devolvemos null y el llamador deja el lead sin borrador
+  // (se reintenta en otra pasada) en vez de propagar el error.
+  try { return await generarFrio(p); } catch { return null; }
 }
 
 export const maxDuration = 60;
@@ -693,9 +739,8 @@ export default async function handler(req, res) {
         // Email en frio ligero solo si se pide expresamente (rapido:true); por defecto,
         // el email de VALOR con diagnostico + solucion + plan de 120 dias.
         const r = b.rapido ? await generarFrio({ ...p, ...b }) : await redactarConValor({ ...p, ...b });
-        const obs = r.con_plan
-          ? (p.observaciones ? p.observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${r.fuerte || '-'} | Problema: ${r.debil || '-'}`
-          : p.observaciones;
+        if (!r || !r.cuerpo) return jsonResponse(res, 502, { error: 'La IA no pudo redactar ahora (reintenta en un momento).' });
+        const obs = r.con_plan ? marcarPlan(p.observaciones, r.fuerte, r.debil) : p.observaciones;
         const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
       }
@@ -799,13 +844,15 @@ export default async function handler(req, res) {
               WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')
               ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
               LIMIT ${limite}`;
-        const res2 = await Promise.allSettled(filas.map(async (p) => {
-          const r = await redactarPro(p);
-          const obs = (p.observaciones ? p.observaciones + '\n' : '') + `[PLAN 120d] Fuerte: ${r.fuerte || '-'} | Problema: ${r.debil || '-'}`;
+        // redactarConValor garantiza borrador (cae a frio) y nunca lanza; concurrencia acotada.
+        const res2 = await mapLimit(filas, 3, async (p) => {
+          const r = await redactarConValor(p);
+          if (!r || !r.cuerpo) return false;
+          const obs = marcarPlan(p.observaciones, r.fuerte, r.debil);
           await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${p.id}`;
           return true;
-        }));
-        const redactados = res2.filter((x) => x.status === 'fulfilled').length;
+        });
+        const redactados = res2.filter((x) => x.status === 'fulfilled' && x.value).length;
         const [{ pendientes }] = await sql`
           SELECT COUNT(*)::int AS pendientes FROM prospectos
           WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')`;
@@ -819,7 +866,9 @@ export default async function handler(req, res) {
         const limite = Math.min(parseInt(b.limite, 10) || 5, 10);
         // Ventana de revision: no auto-enviar a leads recien captados (por defecto 2h).
         // Evita mandar un correo si el email extraido de la web es erroneo o no procede.
-        const minHoras = Math.max(0, parseInt(b.min_horas, 10) || 2);
+        // Distinguimos NaN (no indicado -> 2h) de 0 (envio inmediato explicito).
+        const mh = parseInt(b.min_horas, 10);
+        const minHoras = Number.isNaN(mh) ? 2 : Math.max(0, mh);
         const em = await getEmisor();
         const filas = await sql`
           SELECT * FROM prospectos
@@ -845,7 +894,13 @@ export default async function handler(req, res) {
             enviados++;
           } catch (e) { console.error('enviar_auto:', e.message); }
         }
-        const [{ pendientes }] = await sql`SELECT COUNT(*)::int AS pendientes FROM prospectos WHERE estado = 'nuevo' AND email <> '' AND email_borrador <> ''`;
+        // El contador refleja los que REALMENTE se pueden auto-enviar: misma ventana de
+        // revision y formato de email valido que la SELECT de envio.
+        const [{ pendientes }] = await sql`
+          SELECT COUNT(*)::int AS pendientes FROM prospectos
+          WHERE estado = 'nuevo' AND email <> '' AND email_borrador <> ''
+            AND creado_en < NOW() - (${minHoras} * INTERVAL '1 hour')
+            AND email ~* '^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]{2,}$'`;
         return jsonResponse(res, 200, { ok: true, enviados, pendientes });
       }
 

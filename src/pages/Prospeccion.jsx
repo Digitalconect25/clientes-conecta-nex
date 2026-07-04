@@ -136,8 +136,9 @@ export default function Prospeccion() {
 
   useEffect(() => { cargar(); cargarCfg(); }, []);
 
-  // Al cambiar de filtro, olvida los marcados que dejan de ser visibles: evita
-  // borrar sin querer prospectos ocultos que quedaron seleccionados de otra vista.
+  // Olvida los marcados que dejan de ser visibles (al cambiar de filtro O cuando la
+  // lista se recarga/reclasifica): evita borrar sin querer prospectos ocultos que
+  // quedaron seleccionados. Depende tambien de `lista` porque `filtrada` deriva de ella.
   useEffect(() => {
     setMarcados((prev) => {
       if (!prev.size) return prev;
@@ -146,7 +147,7 @@ export default function Prospeccion() {
       return n.size === prev.size ? prev : n;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vista, etapaFiltro]);
+  }, [vista, etapaFiltro, lista]);
 
   async function cargar() {
     setCargando(true);
@@ -168,20 +169,36 @@ export default function Prospeccion() {
       setCfgForm({ activo: !!c.activo, ciudad: c.ciudad || '', nichos: c.nichos || '', limite_diario: c.limite_diario || 10 });
     } catch { /* el panel del agente queda con valores por defecto */ }
   }
-  async function guardarCfg(form) {
-    const f = form || cfgForm;
+  async function guardarCfg() {
     setBusy(true);
     try {
-      const c = await api.captacionGuardar(f);
+      const c = await api.captacionGuardar(cfgForm);
       setCfg(c);
-      // Sincroniza el formulario con lo que persistio el backend (evita quedar en un
-      // estado optimista si, p. ej., el toggle se guardo pero algo mas se ajusto).
       setCfgForm({ activo: !!c.activo, ciudad: c.ciudad || '', nichos: c.nichos || '', limite_diario: c.limite_diario || 10 });
-      if (!form) alert('Configuración del agente guardada.');
+      alert('Configuración del agente guardada.');
     } catch (err) {
       alert('Error: ' + err.message);
-      // El guardado fallo: revierte la UI al ultimo estado confirmado por el servidor.
-      if (cfg) setCfgForm({ activo: !!cfg.activo, ciudad: cfg.ciudad || '', nichos: cfg.nichos || '', limite_diario: cfg.limite_diario || 10 });
+      // Revierte al ultimo estado confirmado por el servidor; si no hay cfg (carga inicial
+      // fallida), al menos deja 'activo' en false para no mostrarlo activo sin persistir.
+      setCfgForm((prev) => cfg
+        ? { activo: !!cfg.activo, ciudad: cfg.ciudad || '', nichos: cfg.nichos || '', limite_diario: cfg.limite_diario || 10 }
+        : { ...prev, activo: false });
+    }
+    finally { setBusy(false); }
+  }
+  // Activar/desactivar el agente NO debe arrastrar ediciones sin guardar de ciudad/nichos:
+  // se persiste solo el flag sobre la config confirmada (cfg), conservando lo tecleado.
+  async function toggleActivo(activo) {
+    setCfgForm((f) => ({ ...f, activo })); // optimista
+    const base = cfg || cfgForm;
+    setBusy(true);
+    try {
+      const c = await api.captacionGuardar({ activo, ciudad: base.ciudad || '', nichos: base.nichos || '', limite_diario: base.limite_diario || 10 });
+      setCfg(c);
+      setCfgForm((f) => ({ ...f, activo: !!c.activo })); // solo el flag; conserva ediciones
+    } catch (err) {
+      alert('Error: ' + err.message);
+      setCfgForm((f) => ({ ...f, activo: cfg ? !!cfg.activo : false })); // revierte siempre el flag
     }
     finally { setBusy(false); }
   }
@@ -297,8 +314,8 @@ export default function Prospeccion() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <h3 style={{ margin: 0 }}>🤖 Agente de captación diaria</h3>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: cfgForm.activo ? '#0f7a39' : '#67756c', cursor: 'pointer' }}>
-            <input type="checkbox" checked={cfgForm.activo}
-              onChange={(e) => { const f = { ...cfgForm, activo: e.target.checked }; setCfgForm(f); guardarCfg(f); }} />
+            <input type="checkbox" checked={cfgForm.activo} disabled={busy}
+              onChange={(e) => toggleActivo(e.target.checked)} />
             {cfgForm.activo ? 'Activo (scrapea cada mañana)' : 'Desactivado'}
           </label>
         </div>

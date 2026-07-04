@@ -1,18 +1,18 @@
 // Vercel Cron (8:00 lun-sab): ciclo diario del AGENTE DE CAPTACION.
-// ORDEN IMPORTANTE: primero los pasos ligeros y garantizados, y el scrapeo pesado
-// (ciclo_diario) al FINAL, para que un timeout del scrapeo no impida enviar,
-// hacer seguimientos ni recalcular la evolucion.
-//   1) enviar_auto: envia los leads YA listos (los scrapeados en dias anteriores,
-//      con su email de valor + plan de 120 dias redactado). Asi hay una ventana
-//      natural de ~24h entre que se capta un lead y se le escribe (revisable).
-//   2) seguimientos: follow-ups a quien no respondio en unos dias.
-//   3) redactar_pro: refina/personaliza los mas probables (diagnostico + plan).
-//   4) evolucionar: recalcula la evolucion del embudo (frio -> caliente -> cliente).
-//   5) ciclo_diario: scrapea la ciudad con el nicho que toque (lo mas pesado).
-// Seguridad: Vercel Cron envia "Authorization: Bearer CRON_SECRET" si esta en el entorno.
+// ORDEN: primero lo barato/garantizado y el scrapeo pesado (ciclo_diario) al FINAL,
+// para que un timeout del scrapeo no impida enviar, seguir ni recalcular el embudo.
+//   1) evolucionar: recalcula el embudo (barato) -> siempre corre.
+//   2) enviar_auto: envia los leads YA listos (captados en dias previos, con su email
+//      de valor + plan de 120 dias). Ventana natural de ~24h entre captacion y contacto.
+//   3) seguimientos: follow-ups a quien no respondio.
+//   4) redactar_pro: refina/personaliza los mas probables (diagnostico + plan).
+//   5) ciclo_diario: scrapea la ciudad con el nicho que toque (lo mas pesado, al final).
+// El presupuesto de tiempo (BUDGET) se reparte: cada paso recibe un timeout = lo que
+// queda del presupuesto (con un tope por paso), y si no queda margen NO se arranca.
 import { jsonResponse } from './_auth.js';
 
-export const maxDuration = 60;
+// maxDuration alto para dar cabida a la cadena; Vercel lo capa al maximo del plan.
+export const maxDuration = 300;
 
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
@@ -22,22 +22,28 @@ export default async function handler(req, res) {
 
   const base = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
   const t0 = Date.now();
-  // Presupuesto de tiempo: no arrancar un paso nuevo si quedan < 8s del limite del handler.
-  const margen = () => (Date.now() - t0) < 52000;
-  const llamar = (accion, extra = {}) => fetch(`${base}/api/prospectos`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accion, secret, ...extra }),
-    signal: AbortSignal.timeout(45000), // ningun sub-request acapara todo el presupuesto
-  }).then((r) => r.json().catch(() => ({}))).catch((e) => ({ error: e.message }));
+  const BUDGET = (maxDuration - 15) * 1000;       // reserva 15s para cerrar la respuesta
+  const restante = () => BUDGET - (Date.now() - t0);
+  // Timeout de cada sub-request: lo que queda del presupuesto, con tope de 60s
+  // (cada /api/prospectos tiene su propio maxDuration=60) y minimo util de 6s.
+  const llamar = (accion, extra = {}, minMs = 6000, topeMs = 60000) => {
+    const to = Math.min(restante(), topeMs);
+    if (to < minMs) return Promise.resolve({ saltado: 'sin margen de tiempo' });
+    return fetch(`${base}/api/prospectos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion, secret, ...extra }),
+      signal: AbortSignal.timeout(to),
+    }).then((r) => r.json().catch(() => ({}))).catch((e) => ({ error: e.message }));
+  };
 
   const out = {};
   try {
-    if (margen()) out.enviar_auto = await llamar('enviar_auto', { limite: 10 }); // 1) envia lo ya listo (leads de dias previos)
-    if (margen()) out.seguimientos = await llamar('seguimientos', { limite: 8 }); // 2) follow-ups
-    if (margen()) out.redactar_pro = await llamar('redactar_pro', { limite: 6 }); // 3) refina los mas probables
-    if (margen()) out.evolucion = await llamar('evolucionar');                    // 4) recalcula el embudo
-    if (margen()) out.ciclo_diario = await llamar('ciclo_diario');                // 5) scrapeo del dia (lo mas pesado, al final)
+    out.evolucion = await llamar('evolucionar', {}, 4000, 30000);    // 1) barato, primero
+    out.enviar_auto = await llamar('enviar_auto', { limite: 10 });   // 2) envia lo ya listo
+    out.seguimientos = await llamar('seguimientos', { limite: 8 });  // 3) follow-ups
+    out.redactar_pro = await llamar('redactar_pro', { limite: 6 });  // 4) refina los mas probables
+    out.ciclo_diario = await llamar('ciclo_diario');                 // 5) scrapeo del dia (lo mas pesado)
     return jsonResponse(res, 200, { ok: true, ...out });
   } catch (e) {
     return jsonResponse(res, 200, { ok: false, error: e.message, ...out });

@@ -681,18 +681,18 @@ function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(null);
   const [items, setItems] = useState([]);
-  const [meta, setMeta] = useState({ intro: '', descuento: 0, validez_dias: 15, notas: '' });
+  const [meta, setMeta] = useState({ intro: '', problema: '', solucion: '', plazo: '', descuento: 0, validez_dias: 15, notas: '' });
 
   useEffect(() => { cargar(); }, []);
   async function cargar() { try { const r = await api.propuestasList(prospecto.id); setLista(r.propuestas || []); } catch { setLista([]); } }
-  function abrir(pr) { setEdit(pr); setItems(pr.items_json || []); setMeta({ intro: pr.intro || '', descuento: Number(pr.descuento || 0), validez_dias: pr.validez_dias || 15, notas: pr.notas || '' }); }
+  function abrir(pr) { setEdit(pr); setItems(pr.items_json || []); setMeta({ intro: pr.intro || '', problema: pr.problema || '', solucion: pr.solucion || '', plazo: pr.plazo || '', descuento: Number(pr.descuento || 0), validez_dias: pr.validez_dias || 15, notas: pr.notas || '' }); }
   async function generarIA() { setBusy(true); try { const row = await api.propuestaGenerarIA(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
   async function crearVacia() { setBusy(true); try { const row = await api.propuestaCrear(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
 
   const subtotal = items.reduce((s, it) => s + Number(it.precio || 0) * Number(it.cantidad || 1), 0);
   const total = Math.max(0, subtotal - Number(meta.descuento || 0));
   const setItem = (i, k, v) => setItems(items.map((it, j) => j === i ? { ...it, [k]: v } : it));
-  const payload = () => ({ id: edit.id, intro: meta.intro, descuento: Number(meta.descuento || 0), validez_dias: Number(meta.validez_dias || 15), notas: meta.notas, items: items.map((it) => ({ servicio_id: it.servicio_id, nombre: it.nombre, descripcion: it.descripcion || '', cantidad: Number(it.cantidad || 1), precio: Number(it.precio || 0), subtotal: Number(it.precio || 0) * Number(it.cantidad || 1) })) });
+  const payload = () => ({ id: edit.id, intro: meta.intro, problema: meta.problema, solucion: meta.solucion, plazo: meta.plazo, descuento: Number(meta.descuento || 0), validez_dias: Number(meta.validez_dias || 15), notas: meta.notas, items: items.map((it) => ({ servicio_id: it.servicio_id, nombre: it.nombre, descripcion: it.descripcion || '', cantidad: Number(it.cantidad || 1), precio: Number(it.precio || 0), subtotal: Number(it.precio || 0) * Number(it.cantidad || 1) })) });
 
   async function guardar(aviso = true) { setBusy(true); try { const row = await api.propuestaUpdate(payload()); await cargar(); setEdit(row); if (aviso) alert('Propuesta guardada ✓'); return row; } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
   async function enviar() {
@@ -747,8 +747,21 @@ function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
             <button onClick={() => setEdit(null)} style={{ fontSize: 12, padding: '4px 10px' }}>Cerrar editor</button>
           </div>
           <label style={{ display: 'block', marginTop: 8, fontSize: 13 }}>Introducción
-            <textarea value={meta.intro} onChange={(e) => setMeta({ ...meta, intro: e.target.value })} style={{ ...inp, minHeight: 70 }} placeholder="Texto personalizado para el cliente" />
+            <textarea value={meta.intro} onChange={(e) => setMeta({ ...meta, intro: e.target.value })} style={{ ...inp, minHeight: 60 }} placeholder="Texto personalizado para el cliente" />
           </label>
+          {/* Diagnostico humanizado: se genera con la IA a partir del problema del negocio, editable */}
+          <div style={{ background: '#fff', border: '1px solid #ece7da', borderRadius: 8, padding: 10, margin: '10px 0' }}>
+            <div style={{ fontSize: 12.5, color: '#67756c', marginBottom: 6 }}>Propuesta humanizada (se rellena con "Generar con IA" según el problema del negocio; edítalo si quieres):</div>
+            <label style={{ display: 'block', fontSize: 13 }}>🔶 El problema que ves en su negocio
+              <textarea value={meta.problema} onChange={(e) => setMeta({ ...meta, problema: e.target.value })} style={{ ...inp, minHeight: 44 }} placeholder="Ej: no apareces en Google cuando buscan tu servicio en tu zona" />
+            </label>
+            <label style={{ display: 'block', fontSize: 13, marginTop: 6 }}>🟢 Cómo lo resolvéis
+              <textarea value={meta.solucion} onChange={(e) => setMeta({ ...meta, solucion: e.target.value })} style={{ ...inp, minHeight: 44 }} placeholder="Ej: ponemos al día tu ficha y tu web con las palabras que busca tu cliente" />
+            </label>
+            <label style={{ display: 'block', fontSize: 13, marginTop: 6 }}>🟣 En cuánto tiempo (plazo según el problema)
+              <input value={meta.plazo} onChange={(e) => setMeta({ ...meta, plazo: e.target.value })} style={inp} placeholder="Ej: unas 4 a 6 semanas" />
+            </label>
+          </div>
           <div style={{ fontSize: 13, fontWeight: 600, margin: '10px 0 4px' }}>Líneas</div>
           {items.map((it, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 90px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>

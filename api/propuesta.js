@@ -23,6 +23,7 @@ function caducada(pr) {
 function publica(pr) {
   return {
     numero: pr.numero, titulo: pr.titulo, intro: pr.intro,
+    problema: pr.problema || '', solucion: pr.solucion || '', plazo: pr.plazo || '',
     items: pr.items_json || [], descuento: Number(pr.descuento || 0), total: Number(pr.total || 0),
     notas: pr.notas, validez_dias: pr.validez_dias, estado: pr.estado,
     destinatario_nombre: pr.destinatario_nombre,

@@ -62,7 +62,31 @@ export default function Propuesta() {
             <h1 style={{ margin: '4px 0 2px', fontSize: 24, color: C.ink }}>{p.titulo}</h1>
             <div style={{ height: 3, width: 44, background: C.teal, borderRadius: 3, margin: '12px 0 18px' }} />
             {p.destinatario_nombre && <p style={{ margin: '0 0 10px' }}>Hola {p.destinatario_nombre},</p>}
-            {p.intro && <p style={{ margin: '0 0 18px', lineHeight: 1.65, color: C.cuerpo }}>{p.intro}</p>}
+            {p.intro && <p style={{ margin: '0 0 16px', lineHeight: 1.65, color: C.cuerpo }}>{p.intro}</p>}
+
+            {/* Diagnostico humanizado: problema -> solucion -> plazo */}
+            {(p.problema || p.solucion || p.plazo) && (
+              <div style={{ margin: '0 0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {p.problema && (
+                  <div style={{ background: '#fff6ec', borderLeft: '4px solid #ea580c', borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                    <div style={{ fontWeight: 700, color: '#ea580c', fontSize: 13.5, marginBottom: 2 }}>Lo que vemos</div>
+                    <div style={{ color: C.cuerpo, lineHeight: 1.6 }}>{p.problema}</div>
+                  </div>
+                )}
+                {p.solucion && (
+                  <div style={{ background: '#eef8f5', borderLeft: '4px solid ' + C.teal, borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                    <div style={{ fontWeight: 700, color: C.tealDark, fontSize: 13.5, marginBottom: 2 }}>Cómo lo resolvemos</div>
+                    <div style={{ color: C.cuerpo, lineHeight: 1.6 }}>{p.solucion}</div>
+                  </div>
+                )}
+                {p.plazo && (
+                  <div style={{ background: '#f3f0fa', borderLeft: '4px solid #5b3fa0', borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
+                    <div style={{ fontWeight: 700, color: '#5b3fa0', fontSize: 13.5, marginBottom: 2 }}>En cuánto tiempo</div>
+                    <div style={{ color: C.cuerpo, lineHeight: 1.6 }}>{p.plazo}</div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Items */}
             <div style={{ border: '1px solid ' + C.linea, borderRadius: 12, overflow: 'hidden' }}>

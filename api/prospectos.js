@@ -4,6 +4,33 @@ import { llamarIA, iaHabilitada } from './_groq.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import crypto from 'node:crypto';
 
+// Escapa texto para incrustarlo en el HTML del email sin romper el maquetado.
+const escHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Ejecuta `fn` sobre `items` con concurrencia acotada (evita saturar el rate-limit
+// de Groq y el presupuesto de tiempo de la funcion). Devuelve resultados estilo allSettled.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length || 1) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      try { out[idx] = { status: 'fulfilled', value: await fn(items[idx], idx) }; }
+      catch (e) { out[idx] = { status: 'rejected', reason: e }; }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Anade (deduplicado) el marcador [PLAN 120d] a las observaciones: quita cualquier
+// linea previa del marcador para no apilar duplicados en generaciones repetidas.
+function marcarPlan(observaciones, fuerte, problema) {
+  const base = String(observaciones || '').split('\n').filter((l) => !/^\[PLAN 120d\]/.test(l)).join('\n').trim();
+  const linea = `[PLAN 120d] Fuerte: ${fuerte || '-'} | Problema: ${problema || '-'}`;
+  return (base ? base + '\n' : '') + linea;
+}
+
 // ── Pie legal (LSSI-CE): identificacion del emisor + opcion de baja ──────────
 async function getEmisor() {
   const [e] = await sql`SELECT * FROM emisor WHERE id = 1`;
@@ -128,14 +155,122 @@ Persona de contacto: ${p.nombre || '(desconocida)'}.`;
 const ESTADOS = ['nuevo', 'email_enviado', 'respondido', 'convertido', 'descartado'];
 const norm = (s) => (s === 'mejorable' ? 'mejorable' : 'sin_presencia');
 
-// Auto-migracion: columna de prioridad (idempotente, una vez por instancia).
+// Auto-migracion: columnas de prioridad y evolucion + tablas del agente (idempotente, una vez por instancia).
 let _migP = false;
 async function ensureP() {
   if (_migP) return;
+  // Si algun CREATE/ALTER esencial falla (fallo transitorio de BD), NO cacheamos
+  // el exito: se reintentara en la siguiente llamada en lugar de servir 500 en frio.
+  let ok = true;
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { /* noop */ }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS seguimiento_en timestamptz`; } catch { /* noop */ }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { /* noop */ }
-  _migP = true;
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_en timestamptz`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS origen text`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa text`; } catch { /* noop */ }
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa_en timestamptz`; } catch { /* noop */ }
+  try {
+    await sql`CREATE TABLE IF NOT EXISTS captacion_config (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      activo BOOLEAN DEFAULT FALSE,
+      ciudad TEXT DEFAULT '',
+      nichos TEXT DEFAULT '',
+      limite_diario INTEGER DEFAULT 10,
+      nicho_idx INTEGER DEFAULT 0,
+      ultima_ejecucion TIMESTAMPTZ,
+      ultimo_resultado TEXT DEFAULT '',
+      actualizado_en TIMESTAMPTZ DEFAULT NOW()
+    )`;
+    await sql`INSERT INTO captacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
+  } catch { ok = false; }
+  try {
+    await sql`CREATE TABLE IF NOT EXISTS prospectos_eventos (
+      id SERIAL PRIMARY KEY,
+      prospecto_id INTEGER,
+      tipo TEXT DEFAULT '',
+      detalle TEXT DEFAULT '',
+      creado_en TIMESTAMPTZ DEFAULT NOW()
+    )`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_peventos_pid ON prospectos_eventos (prospecto_id, creado_en DESC)`;
+  } catch { ok = false; }
+  _migP = ok;
+}
+
+// Historial de evolucion del prospecto (alta, emails, interes, cambios de etapa...).
+let _migE = false;
+export async function registrarEvento(pid, tipo, detalle) {
+  try {
+    if (!_migE) {
+      await sql`CREATE TABLE IF NOT EXISTS prospectos_eventos (
+        id SERIAL PRIMARY KEY,
+        prospecto_id INTEGER,
+        tipo TEXT DEFAULT '',
+        detalle TEXT DEFAULT '',
+        creado_en TIMESTAMPTZ DEFAULT NOW()
+      )`;
+      _migE = true;
+    }
+    await sql`INSERT INTO prospectos_eventos (prospecto_id, tipo, detalle)
+      VALUES (${pid}, ${tipo}, ${String(detalle || '').slice(0, 300)})`;
+  } catch { /* el evento es informativo, no bloquea la operacion */ }
+}
+
+// Recalcula la ETAPA de evolucion de cada prospecto a partir de sus senales
+// (frio -> contactado -> seguimiento -> interesado -> caliente -> cliente) y
+// deja constancia de cada transicion en prospectos_eventos.
+export async function evolucionarEtapas() {
+  await ensureP();
+  // Senales externas de "caliente": cita agendada o propuesta aceptada.
+  const calientes = new Set();
+  const [reg] = await sql`SELECT to_regclass('public.citas') AS citas, to_regclass('public.propuestas') AS propuestas`;
+  if (reg && reg.citas) {
+    try {
+      for (const r of await sql`SELECT DISTINCT prospecto_id FROM citas WHERE prospecto_id IS NOT NULL AND estado IN ('pendiente','confirmada','hecha')`) calientes.add(r.prospecto_id);
+    } catch { /* noop */ }
+  }
+  if (reg && reg.propuestas) {
+    try {
+      for (const r of await sql`SELECT DISTINCT prospecto_id FROM propuestas WHERE prospecto_id IS NOT NULL AND estado = 'aceptada'`) calientes.add(r.prospecto_id);
+    } catch { /* noop */ }
+  }
+  const cal = [...calientes];
+  const cambios = await sql`
+    WITH calc AS (
+      SELECT p.id, COALESCE(p.etapa, '') AS anterior,
+        CASE
+          WHEN p.estado = 'convertido' OR p.cliente_id IS NOT NULL THEN 'cliente'
+          WHEN p.estado = 'descartado' THEN 'descartado'
+          WHEN p.id = ANY(${cal}::int[]) OR p.interes_grado = 'alto' THEN 'caliente'
+          WHEN p.estado = 'respondido' AND p.interes_grado = 'bajo' THEN 'contactado'
+          WHEN p.estado = 'respondido' OR p.interes_en IS NOT NULL THEN 'interesado'
+          WHEN p.estado = 'email_enviado' AND p.seguimiento_en IS NOT NULL THEN 'seguimiento'
+          WHEN p.estado = 'email_enviado' THEN 'contactado'
+          ELSE 'frio'
+        END AS nueva
+      FROM prospectos p
+    ), upd AS (
+      UPDATE prospectos p SET etapa = c.nueva, etapa_en = NOW()
+      FROM calc c WHERE c.id = p.id AND c.anterior <> c.nueva
+      RETURNING p.id, c.anterior, c.nueva
+    )
+    INSERT INTO prospectos_eventos (prospecto_id, tipo, detalle)
+    SELECT id, 'etapa', CASE WHEN anterior = '' THEN 'Entra en el embudo como ' || nueva ELSE 'Evoluciona: ' || anterior || ' -> ' || nueva END
+    FROM upd RETURNING prospecto_id`;
+  return cambios.length;
+}
+
+// Configuracion del agente de captacion diaria (fila unica id=1).
+async function getCaptacion() {
+  await ensureP();
+  const DEF = { id: 1, activo: false, ciudad: '', nichos: '', limite_diario: 10, nicho_idx: 0 };
+  try {
+    let [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
+    if (!cfg) {
+      await sql`INSERT INTO captacion_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
+      [cfg] = await sql`SELECT * FROM captacion_config WHERE id = 1`;
+    }
+    return cfg || DEF;
+  } catch { return DEF; } // tabla aun no creada (fallo transitorio): valores por defecto, sin 500
 }
 
 // Enriquecimiento: busca el email de contacto en la web del negocio.
@@ -229,21 +364,95 @@ async function descubrirBrightData(nicho, zona, limite) {
   return out;
 }
 
+// Pipeline completo de captacion: scrapea negocios del nicho en la zona, inserta
+// los nuevos (sin duplicar), la IA los prioriza, busca su email en la web y
+// redacta el primer contacto en frio. Lo usan 'descubrir' (manual) y 'ciclo_diario' (agente).
+async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enriquecer = true, generar = true, origen = 'descubierto' }) {
+  const negocios = await descubrirBrightData(nicho, zona, limite);
+  let insertados = 0, duplicados = 0; const nuevosIds = [];
+  for (const n of negocios) {
+    const existe = await sql`
+      SELECT 1 FROM prospectos
+      WHERE (website <> '' AND lower(website) = ${n.website.toLowerCase()})
+         OR (lower(empresa) = ${n.empresa.toLowerCase()} AND lower(ciudad) = ${zona.toLowerCase()})
+      LIMIT 1`;
+    if (existe.length) { duplicados++; continue; }
+    const [row] = await sql`
+      INSERT INTO prospectos (empresa, nombre, email, telefono, sector, ciudad, website, situacion, observaciones, estado, origen, etapa, etapa_en)
+      VALUES (${n.empresa}, ${''}, ${''}, ${n.telefono}, ${nicho}, ${zona}, ${n.website},
+              ${n.website ? 'mejorable' : 'sin_presencia'}, ${'Descubierto automaticamente (Bright Data).'}, ${'nuevo'}, ${origen}, ${'frio'}, NOW())
+      RETURNING id`;
+    insertados++; nuevosIds.push(row.id);
+    await registrarEvento(row.id, 'alta', `Captado por scrapeo: ${nicho} en ${zona} (lead en frio)`);
+  }
+  // Puntuar los nuevos con IA (prioridad Alta/Media/Baja). Concurrencia acotada
+  // para no chocar con el rate-limit de Groq ni agotar el presupuesto de tiempo.
+  let puntuados = 0;
+  if (puntuar && iaHabilitada() && nuevosIds.length) {
+    const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
+    const out = await mapLimit(filas, 4, (p) => puntuarLead(p));
+    for (let i = 0; i < filas.length; i++) {
+      const rr = out[i];
+      if (rr.status === 'fulfilled' && rr.value) {
+        try {
+          await sql`UPDATE prospectos SET prioridad = ${rr.value.prioridad},
+            observaciones = ${(filas[i].observaciones ? filas[i].observaciones + '\n' : '') + '[Prioridad IA: ' + rr.value.prioridad + '] ' + rr.value.motivo}
+            WHERE id = ${filas[i].id}`;
+          puntuados++;
+        } catch { /* sigue */ }
+      }
+    }
+  }
+  // Enriquecer: buscar el email de contacto en la web de cada nuevo prospecto.
+  let enriquecidos = 0;
+  if (enriquecer && nuevosIds.length) {
+    const conWeb = await sql`SELECT id, website FROM prospectos WHERE id = ANY(${nuevosIds}) AND website <> '' AND (email IS NULL OR email = '')`;
+    const mails = await Promise.allSettled(conWeb.map((p) => enriquecerEmailWeb(p.website)));
+    for (let i = 0; i < conWeb.length; i++) {
+      const rr = mails[i];
+      if (rr.status === 'fulfilled' && rr.value) {
+        try { await sql`UPDATE prospectos SET email = ${rr.value} WHERE id = ${conWeb[i].id}`; enriquecidos++; } catch { /* sigue */ }
+      }
+    }
+  }
+  // Redactar el email de VALOR de cada nuevo prospecto: diagnostico + solucion + plan
+  // de 120 dias (redactarPro investiga el negocio). Si la investigacion o la IA fallan,
+  // cae al email en frio mas ligero (generarFrio) para no dejar al lead sin borrador.
+  let redactados = 0;
+  if (generar && iaHabilitada() && nuevosIds.length) {
+    const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
+    const out = await mapLimit(filas, 3, (p) => redactarConValor(p));
+    for (let i = 0; i < filas.length; i++) {
+      const rr = out[i];
+      if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
+        try {
+          const obs = rr.value.con_plan ? marcarPlan(filas[i].observaciones, rr.value.fuerte, rr.value.debil) : filas[i].observaciones;
+          await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
+          redactados++;
+        } catch { /* sigue */ }
+      }
+    }
+  }
+  return { descubiertos: negocios.length, insertados, duplicados, puntuados, enriquecidos, redactados };
+}
+
 // Investiga un negocio en internet: texto de su web + ficha/reseñas de Google (Bright Data).
 export async function investigarNegocio(p) {
-  let web = '', serp = '';
-  if (p.website) {
+  // Web y SERP EN PARALELO (antes eran secuenciales, ~34s por lead).
+  const traerWeb = async () => {
+    if (!p.website) return '';
     try {
       const url = /^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website;
       const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
-      web = (await r.text())
+      return (await r.text())
         .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
         .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 2500);
-    } catch { /* noop */ }
-  }
-  try {
-    const key = process.env.BRIGHTDATA_KEY;
-    if (key) {
+    } catch { return ''; }
+  };
+  const traerSerp = async () => {
+    try {
+      const key = process.env.BRIGHTDATA_KEY;
+      if (!key) return '';
       const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
       const q = encodeURIComponent(`${p.empresa} ${p.ciudad || ''} opiniones`);
       const url = `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`;
@@ -253,44 +462,135 @@ export async function investigarNegocio(p) {
       });
       let data = await rr.json().catch(() => null);
       if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
-      if (data) {
-        const sp = (data.snack_pack || [])[0];
-        const org = (data.organic || data.organic_results || []).slice(0, 4)
-          .map((o) => `${o.title || ''}: ${o.description || o.snippet || ''}`).join(' | ');
-        serp = `${sp ? `Google: ${sp.rating || '?'} estrellas (${sp.reviews_cnt || sp.reviews || '?'} resenas). ` : ''}${org}`.slice(0, 1500);
-      }
-    }
-  } catch { /* noop */ }
+      if (!data) return '';
+      const sp = (data.snack_pack || [])[0];
+      const org = (data.organic || data.organic_results || []).slice(0, 4)
+        .map((o) => `${o.title || ''}: ${o.description || o.snippet || ''}`).join(' | ');
+      return `${sp ? `Google: ${sp.rating || '?'} estrellas (${sp.reviews_cnt || sp.reviews || '?'} resenas). ` : ''}${org}`.slice(0, 1500);
+    } catch { return ''; }
+  };
+  const [web, serp] = await Promise.all([traerWeb(), traerSerp()]);
   return { web, serp };
 }
 
-// Agente PRO: investiga el negocio, saca punto fuerte y debil, y redacta un email PERSONALIZADO.
+// Las 4 fases del plan de 120 dias (etiquetas fijas de dias por fase).
+const PLAN_DIAS = ['Días 1-30', 'Días 31-60', 'Días 61-90', 'Días 91-120'];
+// Plan de respaldo (presencia digital de negocio local) por si la IA no devuelve las fases.
+const PLAN_FALLBACK = [
+  { titulo: 'Diagnóstico y cimientos', acciones: 'Auditamos tu presencia actual, ponemos a punto (o creamos) tu ficha de Google y tu web con las palabras que busca tu cliente en tu zona.', resuelve: 'Que empieces a aparecer cuando alguien busca tu servicio cerca de ti.' },
+  { titulo: 'Reputación y contenido', acciones: 'Activamos un sistema para conseguir reseñas reales, te damos de alta en los directorios que importan y publicamos contenido y fotos que generan confianza.', resuelve: 'Que quien te encuentre confíe y dé el paso de llamarte o escribirte.' },
+  { titulo: 'Visibilidad y captación', acciones: 'Trabajamos el SEO local y la aparición en la IA, cuidamos tus redes y, si encaja, lanzamos una captación medida.', resuelve: 'Que más gente te descubra y lleguen más contactos cada semana.' },
+  { titulo: 'Medición y escalado', acciones: 'Medimos llamadas y formularios, vemos qué trae clientes de verdad y reforzamos lo que funciona con un plan de continuidad.', resuelve: 'Saber con datos qué te da clientes y multiplicarlo mes a mes.' },
+];
+
+// Renderiza el plan de 120 dias (4 fases de 30 dias) como bloque HTML del email.
+function renderPlan120(fases, empresa) {
+  const COL = ['#0f7a39', '#0c7b6d', '#5b3fa0', '#b8860b'];
+  // Escapamos titulo/acciones/resuelve (vienen de la IA) y el nombre de empresa
+  // (viene del scrapeo) para que un '<' no rompa el HTML del email.
+  const bloques = (fases && fases.length ? fases : PLAN_FALLBACK).slice(0, 4).map((f, i) => `
+    <tr><td style="padding:0 0 10px">
+      <div style="border-left:4px solid ${COL[i % COL.length]};background:#f6faf7;border-radius:0 10px 10px 0;padding:11px 14px">
+        <div style="font-weight:700;color:${COL[i % COL.length]};font-size:14px">${PLAN_DIAS[i]} &middot; ${escHtml(f.titulo)}</div>
+        <div style="color:#333;font-size:14px;line-height:1.55;margin-top:4px">${escHtml(f.acciones)}</div>
+        ${f.resuelve ? `<div style="color:#555;font-size:13px;line-height:1.5;margin-top:6px"><b>Qué resuelve:</b> ${escHtml(f.resuelve)}</div>` : ''}
+      </div>
+    </td></tr>`).join('');
+  return `<div style="margin:20px 0 8px">
+    <div style="font-weight:800;font-size:16px;color:#10151f;margin-bottom:10px">Un plan de 120 días para ${escHtml(empresa || 'tu negocio')}</div>
+    <table role="presentation" style="width:100%;border-collapse:collapse">${bloques}</table>
+  </div>`;
+}
+
+// Agente de VALOR: investiga el negocio, detecta su problema concreto de presencia
+// digital, explica la solucion y adjunta un plan de 120 dias (4 fases) con que resuelve
+// cada una. Es la propuesta de valor de la agencia, no un email generico.
 async function redactarPro(p) {
   const { web, serp } = await investigarNegocio(p);
-  const sys = `Eres el asistente de captacion de Conecta Nex; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. Tu tarea:
-1) Identifica UN punto fuerte real y concreto (algo que hacen bien: producto, trato, trayectoria, buenas resenas) y UN punto debil u oportunidad, sobre todo de PRESENCIA DIGITAL (sin web, pocas resenas, no aparece en Google ni en la IA, web anticuada).
-2) Escribe un email de PRIMER CONTACTO personalizado para ESE negocio: modesto, amable y honesto, SIN vender humo ni exagerar ni prometer resultados. Reconoce con sinceridad el punto fuerte (concreto, no generico), plantea con tacto el punto debil como oportunidad, y explica que AYUDAMOS A NEGOCIOS A MEJORAR SU PRESENCIA DIGITAL (aparecer en Google y en la IA, web y ficha al dia, resenas) para que les encuentren mas clientes. Ofrece ayuda sin presion (ensenarselo en una llamada corta).
-REGLAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), 120-180 palabras, sin mencionar precios, sin formulas vacias. NO INVENTES datos: si no sabes algo, no lo afirmes. No escribas botones ni enlaces.
-Devuelve EXACTAMENTE este formato:
+  const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
+  const sys = `Eres consultor de presencia digital de Conecta Nex (marca de Digital Conect); el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. NO escribas un email generico: haz un DIAGNOSTICO util y una PROPUESTA con un plan de 120 dias.
+Tareas:
+1) Detecta UN punto fuerte real y concreto (algo que hacen bien).
+2) Detecta EL PROBLEMA principal de su presencia digital (${sin ? 'no tienen web ni apenas presencia, no aparecen cuando buscan su servicio' : 'tienen algo pero mejorable: web anticuada, pocas resenas, no salen arriba en Google ni en la IA'}). Concreto y con tacto, sin culpabilizar.
+3) Explica COMO se soluciona y el VALOR que aporta a SU negocio (mas clientes que les encuentran), con realismo.
+4) Propon un PLAN DE 120 DIAS en 4 fases de 30 dias. Cada fase: acciones concretas y adaptadas a su sector, y QUE RESUELVE de su problema. Nada de humo ni cifras garantizadas.
+REGLAS ESTRICTAS: espanol de Espana, calido y consultivo, sin emojis, sin guion largo (em-dash), sin mencionar precios, sin formulas vacias ("quedo a tu disposicion"). NO INVENTES datos (resenas, cifras, competidores). No escribas botones ni enlaces. Frases claras y breves.
+Devuelve EXACTAMENTE este formato (respeta las etiquetas):
 FUERTE: <una frase>
-DEBIL: <una frase>
-ASUNTO: <asunto honesto, sin clickbait>
----
-<cuerpo del email en HTML simple con varios <p>>`;
+PROBLEMA: <una frase concreta>
+ASUNTO: <asunto honesto y util, sin clickbait, que mencione la idea de plan o solucion>
+INTRO: <2-3 frases: saludo natural, reconoce el punto fuerte y plantea el problema como oportunidad>
+SOLUCION: <2-3 frases: como lo solucionamos y el valor concreto para su negocio>
+FASE1: <titulo corto> | <acciones concretas dias 1-30> | <que resuelve>
+FASE2: <titulo corto> | <acciones concretas dias 31-60> | <que resuelve>
+FASE3: <titulo corto> | <acciones concretas dias 61-90> | <que resuelve>
+FASE4: <titulo corto> | <acciones concretas dias 91-120> | <que resuelve>
+RESULTADO: <1-2 frases: que resolveria en su negocio al terminar los 120 dias, realista>`;
   const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
 INFO DE SU WEB: ${web || '(no disponible)'}
 INFO DE GOOGLE: ${serp || '(no disponible)'}`;
-  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 950 });
-  const fuerte = ((texto.match(/FUERTE:\s*(.+)/i) || [])[1] || '').trim();
-  const debil = ((texto.match(/DEBIL:\s*(.+)/i) || [])[1] || '').trim();
-  let asunto = ((texto.match(/ASUNTO:\s*(.+)/i) || [])[1] || '').trim();
-  let cuerpo = texto;
-  const idx = texto.indexOf('---');
-  if (idx >= 0) cuerpo = texto.slice(idx + 3);
-  else { const ma = texto.match(/ASUNTO:.*/i); if (ma) cuerpo = texto.slice(texto.indexOf(ma[0]) + ma[0].length); }
-  cuerpo = cuerpo.replace(/^\s*-{3,}\s*/, '').trim();
-  if (!asunto) asunto = `Una idea para ${p.empresa || 'tu negocio'}`;
-  return { asunto, cuerpo, fuerte, debil };
+  const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 1700, timeout_ms: 28000 });
+
+  const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
+  const fuerte = campo(/FUERTE:\s*(.+)/i);
+  const problema = campo(/PROBLEMA:\s*(.+)/i);
+  let asunto = campo(/ASUNTO:\s*(.+)/i);
+  const intro = campo(/INTRO:\s*([\s\S]*?)\n\s*SOLUCION:/i) || campo(/INTRO:\s*(.+)/i);
+  const solucion = campo(/SOLUCION:\s*([\s\S]*?)\n\s*FASE1:/i) || campo(/SOLUCION:\s*(.+)/i);
+  const resultado = campo(/RESULTADO:\s*([\s\S]*)$/i);
+
+  // Parsea las 4 fases "titulo | acciones | que resuelve" (captura multilinea hasta la
+  // siguiente etiqueta; el split preserva el resto tras el 2o '|' en 'que resuelve').
+  const fases = [];
+  let fasesReales = 0;
+  for (let i = 1; i <= 4; i++) {
+    const bloque = campo(new RegExp(`FASE${i}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:FASE${i + 1}:|RESULTADO:)|$)`, 'i'))
+      || campo(new RegExp(`FASE${i}:\\s*(.+)`, 'i'));
+    if (bloque) {
+      const partes = bloque.split('|');
+      const titulo = (partes[0] || '').trim();
+      const acciones = (partes[1] || '').replace(/\n+/g, ' ').trim();
+      const resuelve = partes.slice(2).join('|').replace(/\n+/g, ' ').trim();
+      if (acciones) fasesReales++;
+      fases.push({
+        titulo: titulo || PLAN_FALLBACK[i - 1].titulo,
+        acciones: acciones || PLAN_FALLBACK[i - 1].acciones,
+        resuelve: resuelve || PLAN_FALLBACK[i - 1].resuelve,
+      });
+    } else {
+      fases.push(PLAN_FALLBACK[i - 1]);
+    }
+  }
+  // El email es un "plan real" si la IA aporto contenido propio (problema o >=2 fases);
+  // si salio todo generico, marcamos con_plan=false para permitir un reintento posterior.
+  const conPlan = !!problema || fasesReales >= 2;
+
+  const parr = (s) => escHtml(s).split(/\n{2,}/).filter(Boolean).map((t) => `<p>${t.replace(/\n/g, '<br>')}</p>`).join('');
+  const introHtml = intro ? parr(intro) : `<p>Hola, buenos días:</p><p>Buscando por internet di con ${escHtml(p.empresa || 'tu negocio')} y me llamó la atención.</p>`;
+  const problemaHtml = problema
+    ? `<p style="background:#fff6ec;border-left:4px solid #ea580c;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Lo que veo:</b> ${escHtml(problema)}</p>`
+    : '';
+  const solucionHtml = solucion ? parr(solucion) : '';
+  const resultadoHtml = resultado
+    ? `<p style="background:#f0faf3;border-left:4px solid #16a34a;border-radius:0 8px 8px 0;padding:10px 12px;margin:14px 0"><b>Qué resolvería en tu negocio:</b> ${escHtml(resultado)}</p>`
+    : '';
+  const cuerpo = `${introHtml}${problemaHtml}${solucionHtml}${renderPlan120(fases, p.empresa)}${resultadoHtml}<p>Si te encaja, te lo explico en una llamada corta y sin compromiso, y te paso este plan por escrito adaptado a tu caso.</p><p>Un saludo,<br>Lázaro &middot; Conecta Nex</p>`;
+
+  if (!asunto) asunto = `Un plan de 120 días para ${p.empresa || 'tu negocio'}`;
+  return { asunto, cuerpo, fuerte, debil: problema, con_plan: conPlan };
+}
+
+// Email de valor con plan de 120 dias; si la investigacion o la IA fallan, cae al
+// email en frio mas ligero para que el lead nunca se quede sin borrador.
+async function redactarConValor(p) {
+  try {
+    const r = await redactarPro(p);
+    if (r && r.cuerpo) return r;
+  } catch { /* cae al frio */ }
+  // El fallback tambien dentro de try: si generarFrio falla (p. ej. rate-limit de Groq),
+  // no rechazamos la promesa; devolvemos null y el llamador deja el lead sin borrador
+  // (se reintenta en otra pasada) en vez de propagar el error.
+  try { return await generarFrio(p); } catch { return null; }
 }
 
 export const maxDuration = 60;
@@ -307,6 +607,10 @@ export default async function handler(req, res) {
       if (req.query.id) {
         const [row] = await sql`SELECT * FROM prospectos WHERE id = ${req.query.id}`;
         if (!row) return jsonResponse(res, 404, { error: 'No encontrado' });
+        if (req.query.eventos) {
+          const eventos = await sql`SELECT id, tipo, detalle, creado_en FROM prospectos_eventos WHERE prospecto_id = ${req.query.id} ORDER BY creado_en DESC LIMIT 50`;
+          return jsonResponse(res, 200, { ...row, eventos });
+        }
         return jsonResponse(res, 200, row);
       }
       const rows = await sql`SELECT * FROM prospectos ORDER BY creado_en DESC`;
@@ -322,69 +626,82 @@ export default async function handler(req, res) {
         const zona = String(b.zona || '').trim();
         if (!nicho || !zona) return jsonResponse(res, 400, { error: 'Faltan nicho y zona' });
         const limite = Math.min(parseInt(b.limite, 10) || 12, 20);
-        let negocios;
-        try { negocios = await descubrirBrightData(nicho, zona, limite); }
-        catch (e) { return jsonResponse(res, 502, { error: e.message }); }
-        let insertados = 0, duplicados = 0; const nuevosIds = [];
-        for (const n of negocios) {
-          const existe = await sql`
-            SELECT 1 FROM prospectos
-            WHERE (website <> '' AND lower(website) = ${n.website.toLowerCase()})
-               OR (lower(empresa) = ${n.empresa.toLowerCase()} AND lower(ciudad) = ${zona.toLowerCase()})
-            LIMIT 1`;
-          if (existe.length) { duplicados++; continue; }
-          const [row] = await sql`
-            INSERT INTO prospectos (empresa, nombre, email, telefono, sector, ciudad, website, situacion, observaciones, estado, origen)
-            VALUES (${n.empresa}, ${''}, ${''}, ${n.telefono}, ${nicho}, ${zona}, ${n.website},
-                    ${n.website ? 'mejorable' : 'sin_presencia'}, ${'Descubierto automaticamente (Bright Data).'}, ${'nuevo'}, ${'descubierto'})
-            RETURNING id`;
-          insertados++; nuevosIds.push(row.id);
-        }
-        // Auto-puntuar los nuevos (en paralelo, acotado) salvo que se pida puntuar:false
-        let puntuados = 0;
-        if (b.puntuar !== false && iaHabilitada() && nuevosIds.length) {
-          const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
-          const out = await Promise.allSettled(filas.map((p) => puntuarLead(p)));
-          for (let i = 0; i < filas.length; i++) {
-            const rr = out[i];
-            if (rr.status === 'fulfilled' && rr.value) {
-              try {
-                await sql`UPDATE prospectos SET prioridad = ${rr.value.prioridad},
-                  observaciones = ${(filas[i].observaciones ? filas[i].observaciones + '\n' : '') + '[Prioridad IA: ' + rr.value.prioridad + '] ' + rr.value.motivo}
-                  WHERE id = ${filas[i].id}`;
-                puntuados++;
-              } catch { /* sigue */ }
-            }
-          }
-        }
-        // Enriquecer: buscar el email de contacto en la web de cada nuevo prospecto (salvo enriquecer:false).
-        let enriquecidos = 0;
-        if (b.enriquecer !== false && nuevosIds.length) {
-          const conWeb = await sql`SELECT id, website FROM prospectos WHERE id = ANY(${nuevosIds}) AND website <> '' AND (email IS NULL OR email = '')`;
-          const mails = await Promise.allSettled(conWeb.map((p) => enriquecerEmailWeb(p.website)));
-          for (let i = 0; i < conWeb.length; i++) {
-            const rr = mails[i];
-            if (rr.status === 'fulfilled' && rr.value) {
-              try { await sql`UPDATE prospectos SET email = ${rr.value} WHERE id = ${conWeb[i].id}`; enriquecidos++; } catch { /* sigue */ }
-            }
-          }
-        }
-        // Auto-redactar el email en frio de cada nuevo prospecto (salvo generar_emails:false).
-        let redactados = 0;
-        if (b.generar_emails !== false && iaHabilitada() && nuevosIds.length) {
-          const filas = await sql`SELECT * FROM prospectos WHERE id = ANY(${nuevosIds})`;
-          const out = await Promise.allSettled(filas.map((p) => generarFrio(p)));
-          for (let i = 0; i < filas.length; i++) {
-            const rr = out[i];
-            if (rr.status === 'fulfilled' && rr.value && rr.value.cuerpo) {
-              try {
-                await sql`UPDATE prospectos SET asunto = ${rr.value.asunto}, email_borrador = ${rr.value.cuerpo}, actualizado_en = NOW() WHERE id = ${filas[i].id}`;
-                redactados++;
-              } catch { /* sigue */ }
-            }
-          }
-        }
-        return jsonResponse(res, 200, { ok: true, descubiertos: negocios.length, insertados, duplicados, enriquecidos, puntuados, redactados });
+        let r;
+        try {
+          r = await pipelineDescubrir({
+            nicho, zona, limite,
+            puntuar: b.puntuar !== false, enriquecer: b.enriquecer !== false, generar: b.generar_emails !== false,
+          });
+        } catch (e) { return jsonResponse(res, 502, { error: e.message }); }
+        return jsonResponse(res, 200, { ok: true, ...r });
+      }
+
+      // ── Agente de captacion diaria ─────────────────────────────────────────
+      // Configuracion del scrapeo (ciudad + nichos que rotan + limite + activo).
+      if (accion === 'config_get') {
+        return jsonResponse(res, 200, await getCaptacion());
+      }
+      if (accion === 'config_set') {
+        await getCaptacion(); // asegura tabla y fila
+        const [row] = await sql`UPDATE captacion_config SET
+          activo = ${!!b.activo},
+          ciudad = ${String(b.ciudad || '').trim()},
+          nichos = ${String(b.nichos || '').trim()},
+          limite_diario = ${Math.min(Math.max(parseInt(b.limite_diario, 10) || 10, 1), 20)},
+          actualizado_en = NOW()
+          WHERE id = 1 RETURNING *`;
+        return jsonResponse(res, 200, row);
+      }
+
+      // Ciclo del agente: cada dia scrapea la ciudad configurada con el nicho que
+      // toque (rotan), mete los nuevos leads EN FRIO, la IA los prioriza, busca su
+      // email, redacta el primer contacto y recalcula la evolucion del embudo.
+      if (accion === 'ciclo_diario') {
+        const cfg = await getCaptacion();
+        if (!cfg.activo && !b.forzar) return jsonResponse(res, 200, { ok: true, saltado: 'agente desactivado' });
+        const ciudad = String(b.ciudad || cfg.ciudad || '').trim();
+        const nichos = String(cfg.nichos || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+        if (!ciudad) return jsonResponse(res, 400, { error: 'Configura la ciudad del agente de captacion.' });
+        if (!nichos.length) return jsonResponse(res, 400, { error: 'Configura al menos un nicho (sector) a buscar.' });
+        const idx = ((cfg.nicho_idx || 0) % nichos.length + nichos.length) % nichos.length;
+        const nicho = nichos[idx];
+        let r = null, err = '';
+        try {
+          r = await pipelineDescubrir({ nicho, zona: ciudad, limite: Math.min(cfg.limite_diario || 10, 20), origen: 'agente_diario' });
+        } catch (e) { err = e.message; }
+        const evolucionados = await evolucionarEtapas().catch(() => 0);
+        const resumen = err
+          ? `ERROR (${nicho} en ${ciudad}): ${err}`
+          : `${nicho} en ${ciudad}: ${r.insertados} nuevos en frio (${r.duplicados} repetidos), ${r.enriquecidos} emails encontrados, ${r.redactados} borradores IA`;
+        // Solo avanzamos al siguiente nicho si el scrapeo funciono; si fallo (p. ej.
+        // Bright Data caido), se reintenta el MISMO nicho en la proxima ejecucion.
+        const siguienteIdx = err ? (cfg.nicho_idx || 0) : (cfg.nicho_idx || 0) + 1;
+        await sql`UPDATE captacion_config SET nicho_idx = ${siguienteIdx},
+          ultima_ejecucion = NOW(), ultimo_resultado = ${resumen.slice(0, 500)}, actualizado_en = NOW() WHERE id = 1`;
+        if (err) return jsonResponse(res, 502, { error: err, nicho, ciudad });
+        return jsonResponse(res, 200, { ok: true, nicho, ciudad, ...r, evolucionados });
+      }
+
+      // Recalcula la etapa de evolucion de todos los prospectos.
+      if (accion === 'evolucionar') {
+        const cambios = await evolucionarEtapas();
+        return jsonResponse(res, 200, { ok: true, cambios });
+      }
+
+      // Panel de evolucion: recalcula etapas y devuelve el embudo + actividad reciente.
+      if (accion === 'evolucion') {
+        const cambios = await evolucionarEtapas().catch(() => 0);
+        const etapas = await sql`SELECT COALESCE(NULLIF(etapa, ''), 'frio') AS etapa, COUNT(*)::int AS n FROM prospectos GROUP BY 1`;
+        const ciudades = await sql`
+          SELECT COALESCE(NULLIF(ciudad, ''), '(sin ciudad)') AS ciudad, COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE etapa IN ('interesado','caliente'))::int AS interesados,
+            COUNT(*) FILTER (WHERE etapa = 'cliente')::int AS clientes
+          FROM prospectos GROUP BY 1 ORDER BY 2 DESC LIMIT 12`;
+        const eventos = await sql`
+          SELECT e.id, e.prospecto_id, e.tipo, e.detalle, e.creado_en, p.empresa
+          FROM prospectos_eventos e LEFT JOIN prospectos p ON p.id = e.prospecto_id
+          ORDER BY e.creado_en DESC LIMIT 40`;
+        return jsonResponse(res, 200, { ok: true, cambios, etapas, ciudades, eventos });
       }
 
       if (accion === 'crear') {
@@ -419,8 +736,12 @@ export default async function handler(req, res) {
         if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada (GROQ_API_KEY).' });
         const [p] = await sql`SELECT * FROM prospectos WHERE id = ${b.id}`;
         if (!p) return jsonResponse(res, 404, { error: 'No encontrado' });
-        const r = await generarFrio({ ...p, ...b });
-        const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
+        // Email en frio ligero solo si se pide expresamente (rapido:true); por defecto,
+        // el email de VALOR con diagnostico + solucion + plan de 120 dias.
+        const r = b.rapido ? await generarFrio({ ...p, ...b }) : await redactarConValor({ ...p, ...b });
+        if (!r || !r.cuerpo) return jsonResponse(res, 502, { error: 'La IA no pudo redactar ahora (reintenta en un momento).' });
+        const obs = r.con_plan ? marcarPlan(p.observaciones, r.fuerte, r.debil) : p.observaciones;
+        const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
         return jsonResponse(res, 200, row);
       }
 
@@ -489,6 +810,7 @@ export default async function handler(req, res) {
             cuerpo = cuerpo.replace(/^\s*-{3,}\s*/, '').trim();
             if (!asunto) asunto = 'Re: ' + String(p.asunto || 'nuestro mensaje').replace(/^\s*Re:\s*/i, '');
             await sql`UPDATE prospectos SET asunto = ${asunto}, email_borrador = ${cuerpo}, seguimiento_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
+            await registrarEvento(p.id, 'seguimiento', 'Follow-up redactado por la IA: ' + asunto);
             redactados++;
           } catch { /* sigue */ }
         }
@@ -510,7 +832,8 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, { ok: true, ...r });
       }
 
-      // Agente PRO: investiga cada negocio en internet y redacta un email PERSONALIZADO (fuerte/debil).
+      // Agente de valor: investiga cada negocio y redacta el email con diagnostico,
+      // solucion y plan de 120 dias. Salta los que ya tienen el plan redactado.
       if (accion === 'redactar_pro') {
         if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
         const limite = Math.min(parseInt(b.limite, 10) || 4, 6);
@@ -518,19 +841,21 @@ export default async function handler(req, res) {
           ? await sql`SELECT * FROM prospectos WHERE id = ${b.id}`
           : await sql`
               SELECT * FROM prospectos
-              WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')
+              WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')
               ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
               LIMIT ${limite}`;
-        const res2 = await Promise.allSettled(filas.map(async (p) => {
-          const r = await redactarPro(p);
-          const obs = (p.observaciones ? p.observaciones + '\n' : '') + `[PRO] Fuerte: ${r.fuerte || '-'} | Debil: ${r.debil || '-'}`;
+        // redactarConValor garantiza borrador (cae a frio) y nunca lanza; concurrencia acotada.
+        const res2 = await mapLimit(filas, 3, async (p) => {
+          const r = await redactarConValor(p);
+          if (!r || !r.cuerpo) return false;
+          const obs = marcarPlan(p.observaciones, r.fuerte, r.debil);
           await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${p.id}`;
           return true;
-        }));
-        const redactados = res2.filter((x) => x.status === 'fulfilled').length;
+        });
+        const redactados = res2.filter((x) => x.status === 'fulfilled' && x.value).length;
         const [{ pendientes }] = await sql`
           SELECT COUNT(*)::int AS pendientes FROM prospectos
-          WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PRO]%')`;
+          WHERE estado = 'nuevo' AND (observaciones IS NULL OR observaciones NOT LIKE '%[PLAN 120d]%')`;
         return jsonResponse(res, 200, { ok: true, redactados, pendientes });
       }
 
@@ -539,12 +864,18 @@ export default async function handler(req, res) {
       if (accion === 'enviar_auto') {
         if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Email no configurado.' });
         const limite = Math.min(parseInt(b.limite, 10) || 5, 10);
+        // Ventana de revision: no auto-enviar a leads recien captados (por defecto 2h).
+        // Evita mandar un correo si el email extraido de la web es erroneo o no procede.
+        // Distinguimos NaN (no indicado -> 2h) de 0 (envio inmediato explicito).
+        const mh = parseInt(b.min_horas, 10);
+        const minHoras = Number.isNaN(mh) ? 2 : Math.max(0, mh);
         const em = await getEmisor();
         const filas = await sql`
           SELECT * FROM prospectos
           WHERE estado = 'nuevo'
             AND email IS NOT NULL AND email <> ''
             AND email_borrador IS NOT NULL AND email_borrador <> ''
+            AND creado_en < NOW() - (${minHoras} * INTERVAL '1 hour')
           ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
           LIMIT ${limite}`;
         let enviados = 0;
@@ -559,10 +890,17 @@ export default async function handler(req, res) {
               attachments: ADJUNTOS_INLINE,
             });
             await sql`UPDATE prospectos SET estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
+            await registrarEvento(p.id, 'email', 'Email en frio enviado (auto): ' + (p.asunto || ''));
             enviados++;
           } catch (e) { console.error('enviar_auto:', e.message); }
         }
-        const [{ pendientes }] = await sql`SELECT COUNT(*)::int AS pendientes FROM prospectos WHERE estado = 'nuevo' AND email <> '' AND email_borrador <> ''`;
+        // El contador refleja los que REALMENTE se pueden auto-enviar: misma ventana de
+        // revision y formato de email valido que la SELECT de envio.
+        const [{ pendientes }] = await sql`
+          SELECT COUNT(*)::int AS pendientes FROM prospectos
+          WHERE estado = 'nuevo' AND email <> '' AND email_borrador <> ''
+            AND creado_en < NOW() - (${minHoras} * INTERVAL '1 hour')
+            AND email ~* '^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]{2,}$'`;
         return jsonResponse(res, 200, { ok: true, enviados, pendientes });
       }
 
@@ -578,6 +916,7 @@ export default async function handler(req, res) {
         const em = await getEmisor();
         await enviarEmail({ to: p.email, subject: asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(cuerpo, em, p), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
         const [row] = await sql`UPDATE prospectos SET asunto = ${asunto || ''}, email_borrador = ${cuerpo}, estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;
+        await registrarEvento(b.id, 'email', 'Email enviado: ' + (asunto || ''));
         return jsonResponse(res, 200, row);
       }
 
@@ -622,6 +961,7 @@ export default async function handler(req, res) {
           try {
             await enviarEmail({ to: p.email, subject: p.asunto || `Una idea para ${p.empresa || 'tu negocio'}`, html: emailHtml(p.email_borrador, em, p), replyTo: process.env.REPLY_TO_EMAIL, attachments: ADJUNTOS_INLINE });
             await sql`UPDATE prospectos SET estado = 'email_enviado', enviado_en = NOW(), actualizado_en = NOW() WHERE id = ${p.id}`;
+            await registrarEvento(p.id, 'email', 'Email en frio enviado (lote): ' + (p.asunto || ''));
             ok++;
           } catch { /* sigue */ }
         }
@@ -648,7 +988,8 @@ export default async function handler(req, res) {
         if (!p) return jsonResponse(res, 404, { error: 'Prospecto no encontrado' });
         if (p.cliente_id) return jsonResponse(res, 400, { error: 'Este prospecto ya es cliente.' });
         const cli = await convertirEnCliente(p, b);
-        await sql`UPDATE prospectos SET estado = 'convertido', cliente_id = ${cli.id}, actualizado_en = NOW() WHERE id = ${b.id}`;
+        await sql`UPDATE prospectos SET estado = 'convertido', cliente_id = ${cli.id}, etapa = 'cliente', etapa_en = NOW(), actualizado_en = NOW() WHERE id = ${b.id}`;
+        await registrarEvento(b.id, 'convertido', 'Convertido en cliente ' + cli.numero_cliente);
         return jsonResponse(res, 200, { cliente_id: cli.id, numero_cliente: cli.numero_cliente });
       }
 

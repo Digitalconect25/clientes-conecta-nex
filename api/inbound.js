@@ -10,6 +10,7 @@ import { jsonResponse } from './_auth.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { traerContenidoResend, extraerCuerpoDeWebhook } from './_resend.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
+import { registrarEvento } from './prospectos.js';
 
 const BASE_URL = process.env.PUBLIC_BASE_URL || 'https://clientes.conectanex.com';
 
@@ -64,7 +65,11 @@ export default async function handler(req, res) {
     const correo = soloEmail(de);
     if (correo) {
       const [p] = await sql`SELECT id, estado FROM prospectos WHERE lower(email) = ${correo} LIMIT 1`;
-      if (p) { prospecto_id = p.id; primeraRespuesta = p.estado !== 'respondido' && p.estado !== 'convertido'; await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${p.id} AND estado != 'convertido'`; }
+      if (p) {
+        prospecto_id = p.id; primeraRespuesta = p.estado !== 'respondido' && p.estado !== 'convertido';
+        await sql`UPDATE prospectos SET estado = 'respondido', actualizado_en = NOW() WHERE id = ${p.id} AND estado != 'convertido'`;
+        await registrarEvento(p.id, 'respuesta', 'Respondió por email: ' + String(asunto || '(sin asunto)').slice(0, 120));
+      }
       const [c] = await sql`SELECT id FROM clientes WHERE lower(email) = ${correo} LIMIT 1`;
       if (c) cliente_id = c.id;
     }
@@ -97,15 +102,23 @@ Criterio de INTERES: alto = quiere avanzar, pide info/precio/cita o muestra gana
           const prioridad = PRIO[grado] || null;
           const gradoLabel = grado ? grado.charAt(0).toUpperCase() + grado.slice(1) : '';
           try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { /* noop */ }
+          try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa text`; } catch { /* noop */ }
+          try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS etapa_en timestamptz`; } catch { /* noop */ }
           const obsPrev = p.observaciones ? p.observaciones + '\n\n' : '';
           await sql`UPDATE prospectos SET
               observaciones = ${obsPrev + '[Respondio el lead' + (gradoLabel ? ' · interes ' + gradoLabel : '') + '] ' + (ia.analisis || cuerpoTxt.slice(0, 200))},
               email_borrador = ${ia.respuesta || p.email_borrador || ''},
               asunto = ${'Re: ' + String(asunto || p.asunto || '').replace(/^\s*Re:\s*/i, '')},
               interes_grado = ${grado || null},
+              etapa = CASE WHEN etapa = 'cliente' OR estado = 'convertido' THEN etapa
+                           WHEN ${grado} = 'alto' THEN 'caliente'
+                           WHEN ${grado} = 'bajo' THEN 'contactado'
+                           ELSE 'interesado' END,
+              etapa_en = NOW(),
               prioridad = COALESCE(${prioridad}, prioridad),
               actualizado_en = NOW()
             WHERE id = ${prospecto_id}`;
+          if (grado) await registrarEvento(prospecto_id, 'etapa', 'La IA cualifica su respuesta: interés ' + grado + (ia.analisis ? ' · ' + ia.analisis.slice(0, 180) : ''));
         }
       } catch (e) { console.error('inbound IA error:', e.message); }
     }

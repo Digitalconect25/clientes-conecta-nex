@@ -9,6 +9,23 @@ const PESTADO = {
   convertido: { l: 'Convertido', c: '#16a34a' },
   descartado: { l: 'Descartado', c: '#c0392b' },
 };
+// Etapas de EVOLUCION del lead en el embudo (las recalcula el servidor con cada senal).
+const ETAPA = {
+  frio: { l: 'En frío', c: '#64748b', i: '🧊' },
+  contactado: { l: 'Contactado', c: '#2563eb', i: '✉️' },
+  seguimiento: { l: 'En seguimiento', c: '#7c3aed', i: '🔁' },
+  interesado: { l: 'Interesado', c: '#b8860b', i: '⭐' },
+  caliente: { l: 'Caliente', c: '#ea580c', i: '🔥' },
+  cliente: { l: 'Cliente', c: '#16a34a', i: '🏆' },
+  descartado: { l: 'Descartado', c: '#c0392b', i: '✖' },
+};
+const ETAPAS_ORDEN = ['frio', 'contactado', 'seguimiento', 'interesado', 'caliente', 'cliente'];
+const EVENTO_ICONO = { alta: '📥', email: '✉️', seguimiento: '🔁', interes: '⭐', respuesta: '💬', etapa: '📈', convertido: '🏆' };
+const fmtFecha = (d) => String(d || '').slice(0, 16).replace('T', ' ');
+const badgeEtapa = (et, extra = {}) => {
+  const x = ETAPA[et] || ETAPA.frio;
+  return <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: x.c, borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap', ...extra }}>{x.i} {x.l}</span>;
+};
 const VACIO = { empresa: '', nombre: '', email: '', telefono: '', sector: '', ciudad: '', website: '', situacion: 'sin_presencia', observaciones: '' };
 
 // Parser CSV: detecta separador (, o ;) y respeta comillas dobles.
@@ -82,12 +99,23 @@ export default function Prospeccion() {
   const [busy, setBusy] = useState(false);
   const [marcados, setMarcados] = useState(() => new Set());
   const [emailPrueba, setEmailPrueba] = useState('');
+  const [cfg, setCfg] = useState(null); // configuracion del agente de captacion diaria
+  const [cfgForm, setCfgForm] = useState({ activo: false, ciudad: '', nichos: '', limite_diario: 10 });
+  const [etapaFiltro, setEtapaFiltro] = useState('');
 
   function toggleMarcado(id) {
     setMarcados((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+  // Selecciona/deselecciona solo los VISIBLES (filtrada), no toda la lista: asi el
+  // borrado nunca elimina en silencio prospectos ocultos por el filtro activo.
   function toggleTodos() {
-    setMarcados((prev) => (prev.size === lista.length ? new Set() : new Set(lista.map((p) => p.id))));
+    const ids = filtrada.map((p) => p.id);
+    setMarcados((prev) => {
+      const todos = ids.length > 0 && ids.every((id) => prev.has(id));
+      const n = new Set(prev);
+      ids.forEach((id) => (todos ? n.delete(id) : n.add(id)));
+      return n;
+    });
   }
   async function borrarSeleccionados() {
     if (!marcados.size) return;
@@ -106,17 +134,85 @@ export default function Prospeccion() {
     finally { setBusy(false); }
   }
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(); cargarCfg(); }, []);
+
+  // Olvida los marcados que dejan de ser visibles (al cambiar de filtro O cuando la
+  // lista se recarga/reclasifica): evita borrar sin querer prospectos ocultos que
+  // quedaron seleccionados. Depende tambien de `lista` porque `filtrada` deriva de ella.
+  useEffect(() => {
+    setMarcados((prev) => {
+      if (!prev.size) return prev;
+      const visibles = new Set(filtrada.map((p) => p.id));
+      const n = new Set([...prev].filter((id) => visibles.has(id)));
+      return n.size === prev.size ? prev : n;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista, etapaFiltro, lista]);
 
   async function cargar() {
     setCargando(true);
     try {
+      // Recalcula la evolucion en el servidor antes de pintar la lista (etapas al dia).
+      await api.prospectosEvolucion().catch(() => null);
       const r = await api.prospectosList();
       setLista(r.prospectos || []);
       setEmailOn(!!r.email_habilitado);
       setIaOn(!!r.ia_habilitada);
     } catch (err) { alert('Error: ' + err.message); }
     finally { setCargando(false); }
+  }
+
+  async function cargarCfg() {
+    try {
+      const c = await api.captacionConfig();
+      setCfg(c);
+      setCfgForm({ activo: !!c.activo, ciudad: c.ciudad || '', nichos: c.nichos || '', limite_diario: c.limite_diario || 10 });
+    } catch { /* el panel del agente queda con valores por defecto */ }
+  }
+  async function guardarCfg() {
+    setBusy(true);
+    try {
+      const c = await api.captacionGuardar(cfgForm);
+      setCfg(c);
+      setCfgForm({ activo: !!c.activo, ciudad: c.ciudad || '', nichos: c.nichos || '', limite_diario: c.limite_diario || 10 });
+      alert('Configuración del agente guardada.');
+    } catch (err) {
+      alert('Error: ' + err.message);
+      // Revierte al ultimo estado confirmado por el servidor; si no hay cfg (carga inicial
+      // fallida), al menos deja 'activo' en false para no mostrarlo activo sin persistir.
+      setCfgForm((prev) => cfg
+        ? { activo: !!cfg.activo, ciudad: cfg.ciudad || '', nichos: cfg.nichos || '', limite_diario: cfg.limite_diario || 10 }
+        : { ...prev, activo: false });
+    }
+    finally { setBusy(false); }
+  }
+  // Activar/desactivar el agente NO debe arrastrar ediciones sin guardar de ciudad/nichos:
+  // se persiste solo el flag sobre la config confirmada (cfg), conservando lo tecleado.
+  async function toggleActivo(activo) {
+    setCfgForm((f) => ({ ...f, activo })); // optimista
+    const base = cfg || cfgForm;
+    setBusy(true);
+    try {
+      const c = await api.captacionGuardar({ activo, ciudad: base.ciudad || '', nichos: base.nichos || '', limite_diario: base.limite_diario || 10 });
+      setCfg(c);
+      setCfgForm((f) => ({ ...f, activo: !!c.activo })); // solo el flag; conserva ediciones
+    } catch (err) {
+      alert('Error: ' + err.message);
+      setCfgForm((f) => ({ ...f, activo: cfg ? !!cfg.activo : false })); // revierte siempre el flag
+    }
+    finally { setBusy(false); }
+  }
+  async function ejecutarAgente() {
+    if (!cfgForm.ciudad.trim()) { alert('Pon la ciudad donde quieres captar clientes.'); return; }
+    if (!cfgForm.nichos.trim()) { alert('Pon al menos un nicho (ej: peluquería, fontanero, restaurante).'); return; }
+    setBusy(true);
+    try {
+      const c = await api.captacionGuardar(cfgForm); setCfg(c);
+      const r = await api.captacionEjecutar();
+      alert(`Scrapeo de "${r.nicho}" en ${r.ciudad}:\n· ${r.insertados} negocios nuevos en frío (${r.duplicados} ya estaban)\n· ${r.enriquecidos} emails encontrados\n· ${r.redactados} borradores redactados por la IA`);
+      cargarCfg(); cargar();
+    } catch (err) { alert('Error: ' + err.message); }
+    finally { setBusy(false); }
   }
 
   async function crear(e) {
@@ -178,17 +274,30 @@ export default function Prospeccion() {
   const total = lista.length;
   const enviados = lista.filter((p) => p.estado === 'email_enviado' || p.enviado_en).length;
   const respond = lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length;
-  const filtrada = lista.filter((p) => vista === 'sin'
-    ? (!p.estado || p.estado === 'nuevo')
-    : vista === 'cont'
-      ? p.estado === 'email_enviado'
-      : (p.estado === 'respondido' || p.estado === 'convertido'));
+  const etapaDe = (p) => (p.etapa && ETAPA[p.etapa] ? p.etapa : 'frio');
+  const porEtapa = lista.reduce((acc, p) => { const e = etapaDe(p); acc[e] = (acc[e] || 0) + 1; return acc; }, {});
+  const filtrada = lista.filter((p) => {
+    const okVista = vista === 'todos'
+      ? true
+      : vista === 'sin'
+        ? (!p.estado || p.estado === 'nuevo')
+        : vista === 'cont'
+          ? p.estado === 'email_enviado'
+          : (p.estado === 'respondido' || p.estado === 'convertido');
+    const okEtapa = !etapaFiltro || etapaDe(p) === etapaFiltro;
+    return okVista && okEtapa;
+  });
+  // "Proximo nicho" desde la config GUARDADA (cfg), no del textarea sin guardar (cfgForm),
+  // para que coincida con lo que el agente scrapearia realmente.
+  const nichosCfg = String(cfg?.nichos || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  const nichoHoy = nichosCfg.length ? nichosCfg[(((cfg?.nicho_idx || 0) % nichosCfg.length) + nichosCfg.length) % nichosCfg.length] : '';
+  const cfgSinGuardar = !!cfg && (cfgForm.ciudad !== (cfg.ciudad || '') || cfgForm.nichos !== (cfg.nichos || '') || String(cfgForm.limite_diario) !== String(cfg.limite_diario || 10));
 
   return (
     <div>
       <h1>Captacion en frio</h1>
       <p style={{ color: '#67756c', marginTop: -6 }}>
-        Sube tu base de datos de negocios sin presencia (o mejorable), la IA redacta un email cercano y no agresivo, lo revisas y lo envias.
+        El agente scrapea cada dia negocios de tu ciudad, la IA redacta el primer contacto y el embudo mide como evolucionan: de leads en frio a interesados, calientes y clientes.
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }}>
@@ -198,6 +307,71 @@ export default function Prospeccion() {
             <div style={{ fontSize: 12, color: '#67756c', textTransform: 'uppercase', letterSpacing: .5 }}>{l}</div>
           </div>
         ))}
+      </div>
+
+      {/* Agente de captacion diaria (scrapeo automatico por ciudad) */}
+      <div style={{ ...card, borderColor: cfgForm.activo ? '#cfe9d8' : '#e3e8e5' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h3 style={{ margin: 0 }}>🤖 Agente de captación diaria</h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: cfgForm.activo ? '#0f7a39' : '#67756c', cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfgForm.activo} disabled={busy}
+              onChange={(e) => toggleActivo(e.target.checked)} />
+            {cfgForm.activo ? 'Activo (scrapea cada mañana)' : 'Desactivado'}
+          </label>
+        </div>
+        <p style={{ color: '#67756c', fontSize: 13.5, margin: '6px 0 12px' }}>
+          Cada mañana (lun-sáb, con el cron de las 8:00) busca en Google negocios del nicho que toque en la <b>ciudad que pongas</b>, los añade como leads <b>en frío</b>, la IA los prioriza, localiza su email y deja redactado el primer contacto. Los nichos van rotando día a día.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 120px', gap: 12 }}>
+          <label>Ciudad<input value={cfgForm.ciudad} onChange={(e) => setCfgForm({ ...cfgForm, ciudad: e.target.value })} placeholder="Alicante" /></label>
+          <label>Nichos (separados por comas)<input value={cfgForm.nichos} onChange={(e) => setCfgForm({ ...cfgForm, nichos: e.target.value })} placeholder="peluquería, fontanero, restaurante, clínica dental" /></label>
+          <label>Negocios / día<input type="number" min="1" max="20" value={cfgForm.limite_diario} onChange={(e) => setCfgForm({ ...cfgForm, limite_diario: e.target.value })} /></label>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+          <button onClick={() => guardarCfg()} disabled={busy}>Guardar configuración</button>
+          <button onClick={ejecutarAgente} disabled={busy} style={{ background: '#0f7a39', color: '#fff' }}>▶ Ejecutar scrapeo ahora</button>
+          {nichoHoy && !cfgSinGuardar && <span style={{ fontSize: 13, color: '#67756c' }}>Próximo nicho: <b>{nichoHoy}</b>{cfg?.ciudad ? <> en <b>{cfg.ciudad}</b></> : null}</span>}
+          {cfgSinGuardar && <span style={{ fontSize: 13, color: '#b8860b' }}>Tienes cambios sin guardar. Pulsa "Guardar configuración" para aplicarlos.</span>}
+        </div>
+        {cfg?.ultima_ejecucion && (
+          <p style={{ color: '#67756c', fontSize: 12.5, margin: '10px 0 0', paddingTop: 8, borderTop: '1px solid #eef2f0' }}>
+            Última ejecución: <b>{fmtFecha(cfg.ultima_ejecucion)}</b>{cfg.ultimo_resultado ? <> · {cfg.ultimo_resultado}</> : null}
+          </p>
+        )}
+      </div>
+
+      {/* Embudo de EVOLUCION: en frio -> contactado -> interesado -> caliente -> cliente */}
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Evolución de los clientes</h3>
+          <span style={{ fontSize: 13, color: '#67756c' }}>
+            {porEtapa.interesado || 0} interesados · {porEtapa.caliente || 0} calientes · {porEtapa.cliente || 0} clientes {total ? `(${Math.round(((porEtapa.cliente || 0) / total) * 100)}% de conversión)` : ''}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {ETAPAS_ORDEN.map((k, i) => {
+            const x = ETAPA[k]; const n = porEtapa[k] || 0; const activo = etapaFiltro === k;
+            return (
+              <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {i > 0 && <span style={{ color: '#c3ccc6' }}>→</span>}
+                <button onClick={() => { setEtapaFiltro(activo ? '' : k); setVista('todos'); }}
+                  title={activo ? 'Quitar filtro' : 'Ver solo los de esta etapa'}
+                  style={{ background: activo ? x.c : '#fff', color: activo ? '#fff' : x.c, border: `2px solid ${x.c}`, borderRadius: 10, padding: '8px 12px', fontWeight: 700, cursor: 'pointer' }}>
+                  {x.i} {x.l} <span style={{ fontSize: 16 }}>{n}</span>
+                </button>
+              </span>
+            );
+          })}
+          {(porEtapa.descartado || 0) > 0 && (
+            <button onClick={() => { setEtapaFiltro(etapaFiltro === 'descartado' ? '' : 'descartado'); setVista('todos'); }}
+              style={{ marginLeft: 10, background: etapaFiltro === 'descartado' ? ETAPA.descartado.c : '#fff', color: etapaFiltro === 'descartado' ? '#fff' : ETAPA.descartado.c, border: `2px solid ${ETAPA.descartado.c}`, borderRadius: 10, padding: '8px 12px', fontWeight: 700, cursor: 'pointer' }}>
+              ✖ Descartados {porEtapa.descartado}
+            </button>
+          )}
+        </div>
+        <p style={{ color: '#67756c', fontSize: 12, margin: '10px 0 0' }}>
+          La etapa se recalcula sola con cada señal: alta por scrapeo = <b>en frío</b>; email enviado = <b>contactado</b>; follow-up = <b>en seguimiento</b>; responde o pide info = <b>interesado</b>; cita agendada, propuesta aceptada o interés alto = <b>caliente</b>; convertido = <b>cliente</b>. Pulsa una etapa para filtrar la lista.
+        </p>
       </div>
 
       {!emailOn && (
@@ -289,16 +463,22 @@ export default function Prospeccion() {
             <button onClick={vaciarTodo} disabled={busy || !lista.length} style={{ color: '#c0392b' }}>Vaciar lista</button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, margin: '12px 0 0', flexWrap: 'wrap' }}>
-          {[['sin', 'Sin contactar', lista.filter((p) => !p.estado || p.estado === 'nuevo').length], ['cont', 'Contactados', lista.filter((p) => p.estado === 'email_enviado').length], ['resp', 'Con respuesta', lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length]].map(([k, l, n]) => (
-            <button key={k} onClick={() => setVista(k)} style={{ background: vista === k ? '#0f7a39' : '#eef2f0', color: vista === k ? '#fff' : '#374151', border: 0, borderRadius: 8, padding: '7px 12px', fontWeight: 600, cursor: 'pointer' }}>{l} ({n})</button>
+        <div style={{ display: 'flex', gap: 6, margin: '12px 0 0', flexWrap: 'wrap', alignItems: 'center' }}>
+          {[['todos', 'Todos', lista.length], ['sin', 'Sin contactar', lista.filter((p) => !p.estado || p.estado === 'nuevo').length], ['cont', 'Contactados', lista.filter((p) => p.estado === 'email_enviado').length], ['resp', 'Con respuesta', lista.filter((p) => p.estado === 'respondido' || p.estado === 'convertido').length]].map(([k, l, n]) => (
+            <button key={k} onClick={() => { setVista(k); setEtapaFiltro(''); }} style={{ background: vista === k && !etapaFiltro ? '#0f7a39' : '#eef2f0', color: vista === k && !etapaFiltro ? '#fff' : '#374151', border: 0, borderRadius: 8, padding: '7px 12px', fontWeight: 600, cursor: 'pointer' }}>{l} ({n})</button>
           ))}
+          {etapaFiltro && (
+            <span style={{ fontSize: 13, color: '#67756c', display: 'flex', alignItems: 'center', gap: 6 }}>
+              Filtrando por etapa: {badgeEtapa(etapaFiltro)}
+              <button onClick={() => setEtapaFiltro('')} style={{ padding: '3px 9px', fontSize: 12 }}>Quitar</button>
+            </span>
+          )}
         </div>
         {cargando ? <p>Cargando...</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginTop: 10 }}>
             <thead><tr style={{ textAlign: 'left', color: '#67756c', fontSize: 12, textTransform: 'uppercase' }}>
-              <th style={{ padding: 8 }}><input type="checkbox" checked={lista.length > 0 && marcados.size === lista.length} onChange={toggleTodos} title="Seleccionar todos" /></th>
-              <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Estado</th><th></th>
+              <th style={{ padding: 8 }}><input type="checkbox" checked={filtrada.length > 0 && filtrada.every((p) => marcados.has(p.id))} onChange={toggleTodos} title="Seleccionar los visibles" /></th>
+              <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Evolucion</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody>
               {[...filtrada].sort((a, b) => ordP(b.prioridad) - ordP(a.prioridad)).map((p) => {
@@ -310,12 +490,15 @@ export default function Prospeccion() {
                     <td>{p.email || <span style={{ color: '#94a3b8' }}>sin email</span>}</td>
                     <td>{p.situacion === 'mejorable' ? 'Mejorable' : 'Sin presencia'}</td>
                     <td style={{ textAlign: 'center' }}>{p.email_borrador ? 'Si' : '-'}</td>
+                    <td>{badgeEtapa(etapaDe(p))}</td>
                     <td><span style={{ color: e.c, fontWeight: 600 }}>{e.l}</span></td>
                     <td><button onClick={() => setSel(p)} style={{ padding: '6px 12px', fontSize: 13 }}>Abrir</button></td>
                   </tr>
                 );
               })}
-              {!lista.length && <tr><td colSpan={7} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Sube un CSV o anade uno arriba.</td></tr>}
+              {!lista.length
+                ? <tr><td colSpan={8} style={{ padding: 12, color: '#67756c' }}>Aun no hay prospectos. Activa el agente de captacion, sube un CSV o anade uno arriba.</td></tr>
+                : !filtrada.length && <tr><td colSpan={8} style={{ padding: 12, color: '#67756c' }}>Ningun prospecto en este filtro. Prueba otra pestana o quita el filtro de etapa.</td></tr>}
             </tbody>
           </table>
         )}
@@ -328,8 +511,13 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
   const [p, setP] = useState(prospecto);
   const [busy, setBusy] = useState(false);
   const [nif, setNif] = useState('');
+  const [eventos, setEventos] = useState(null); // historial de evolucion del lead
   const navigate = useNavigate();
   const set = (k, v) => setP({ ...p, [k]: v });
+
+  useEffect(() => {
+    api.prospectoEventos(prospecto.id).then((r) => setEventos(r.eventos || [])).catch(() => setEventos([]));
+  }, [prospecto.id]);
 
   async function convertir() {
     if (!nif.trim()) { alert('El NIF/CIF es obligatorio para crear el cliente.'); return; }
@@ -387,7 +575,7 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
     >
       <div style={{ ...card, maxWidth: 760, margin: '0 auto', borderColor: '#cfe9d8', background: '#fff' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', paddingBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>Prospecto: {p.empresa || p.nombre || 'Sin nombre'}</h3>
+        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>Prospecto: {p.empresa || p.nombre || 'Sin nombre'} {badgeEtapa(p.etapa && ETAPA[p.etapa] ? p.etapa : 'frio')}</h3>
         <button onClick={onClose} style={{ padding: '6px 12px' }}>Cerrar</button>
       </div>
       <div style={grid2}>
@@ -439,6 +627,26 @@ function EditorProspecto({ prospecto, emailOn, iaOn, onClose, onSaved }) {
 
       <SeccionPropuesta prospecto={p} emailOn={emailOn} iaOn={iaOn} />
 
+      {/* Evolucion del lead: historial de eventos (alta, emails, interes, cambios de etapa) */}
+      <div style={{ background: '#f7f9fb', border: '1px solid #e3e8ef', borderRadius: 10, padding: 14, marginTop: 14 }}>
+        <b>📈 Evolución del prospecto</b>
+        {eventos === null ? (
+          <p style={{ color: '#67756c', fontSize: 13, margin: '6px 0 0' }}>Cargando historial...</p>
+        ) : eventos.length === 0 ? (
+          <p style={{ color: '#67756c', fontSize: 13, margin: '6px 0 0' }}>Sin eventos todavía. Se irán registrando el alta, los emails, el interés y cada cambio de etapa.</p>
+        ) : (
+          <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {eventos.map((ev) => (
+              <div key={ev.id} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '5px 8px', background: '#fff', border: '1px solid #e9edf2', borderRadius: 8, alignItems: 'baseline' }}>
+                <span>{EVENTO_ICONO[ev.tipo] || '·'}</span>
+                <span style={{ flex: 1 }}>{ev.detalle || ev.tipo}</span>
+                <span style={{ color: '#94a3b8', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmtFecha(ev.creado_en)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <hr style={{ border: 0, borderTop: '1px solid #e3e8e5', margin: '16px 0' }} />
       <h4 style={{ margin: '0 0 8px' }}>Email en frio</h4>
       <label>Asunto<input value={p.asunto || ''} onChange={(e) => set('asunto', e.target.value)} placeholder="(se genera con la IA)" /></label>
@@ -473,18 +681,18 @@ function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(null);
   const [items, setItems] = useState([]);
-  const [meta, setMeta] = useState({ intro: '', descuento: 0, validez_dias: 15, notas: '' });
+  const [meta, setMeta] = useState({ intro: '', problema: '', solucion: '', plazo: '', descuento: 0, validez_dias: 15, notas: '' });
 
   useEffect(() => { cargar(); }, []);
   async function cargar() { try { const r = await api.propuestasList(prospecto.id); setLista(r.propuestas || []); } catch { setLista([]); } }
-  function abrir(pr) { setEdit(pr); setItems(pr.items_json || []); setMeta({ intro: pr.intro || '', descuento: Number(pr.descuento || 0), validez_dias: pr.validez_dias || 15, notas: pr.notas || '' }); }
+  function abrir(pr) { setEdit(pr); setItems(pr.items_json || []); setMeta({ intro: pr.intro || '', problema: pr.problema || '', solucion: pr.solucion || '', plazo: pr.plazo || '', descuento: Number(pr.descuento || 0), validez_dias: pr.validez_dias || 15, notas: pr.notas || '' }); }
   async function generarIA() { setBusy(true); try { const row = await api.propuestaGenerarIA(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
   async function crearVacia() { setBusy(true); try { const row = await api.propuestaCrear(prospecto.id); await cargar(); abrir(row); } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
 
   const subtotal = items.reduce((s, it) => s + Number(it.precio || 0) * Number(it.cantidad || 1), 0);
   const total = Math.max(0, subtotal - Number(meta.descuento || 0));
   const setItem = (i, k, v) => setItems(items.map((it, j) => j === i ? { ...it, [k]: v } : it));
-  const payload = () => ({ id: edit.id, intro: meta.intro, descuento: Number(meta.descuento || 0), validez_dias: Number(meta.validez_dias || 15), notas: meta.notas, items: items.map((it) => ({ servicio_id: it.servicio_id, nombre: it.nombre, descripcion: it.descripcion || '', cantidad: Number(it.cantidad || 1), precio: Number(it.precio || 0), subtotal: Number(it.precio || 0) * Number(it.cantidad || 1) })) });
+  const payload = () => ({ id: edit.id, intro: meta.intro, problema: meta.problema, solucion: meta.solucion, plazo: meta.plazo, descuento: Number(meta.descuento || 0), validez_dias: Number(meta.validez_dias || 15), notas: meta.notas, items: items.map((it) => ({ servicio_id: it.servicio_id, nombre: it.nombre, descripcion: it.descripcion || '', cantidad: Number(it.cantidad || 1), precio: Number(it.precio || 0), subtotal: Number(it.precio || 0) * Number(it.cantidad || 1) })) });
 
   async function guardar(aviso = true) { setBusy(true); try { const row = await api.propuestaUpdate(payload()); await cargar(); setEdit(row); if (aviso) alert('Propuesta guardada ✓'); return row; } catch (e) { alert('Error: ' + e.message); } finally { setBusy(false); } }
   async function enviar() {
@@ -539,8 +747,21 @@ function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
             <button onClick={() => setEdit(null)} style={{ fontSize: 12, padding: '4px 10px' }}>Cerrar editor</button>
           </div>
           <label style={{ display: 'block', marginTop: 8, fontSize: 13 }}>Introducción
-            <textarea value={meta.intro} onChange={(e) => setMeta({ ...meta, intro: e.target.value })} style={{ ...inp, minHeight: 70 }} placeholder="Texto personalizado para el cliente" />
+            <textarea value={meta.intro} onChange={(e) => setMeta({ ...meta, intro: e.target.value })} style={{ ...inp, minHeight: 60 }} placeholder="Texto personalizado para el cliente" />
           </label>
+          {/* Diagnostico humanizado: se genera con la IA a partir del problema del negocio, editable */}
+          <div style={{ background: '#fff', border: '1px solid #ece7da', borderRadius: 8, padding: 10, margin: '10px 0' }}>
+            <div style={{ fontSize: 12.5, color: '#67756c', marginBottom: 6 }}>Propuesta humanizada (se rellena con "Generar con IA" según el problema del negocio; edítalo si quieres):</div>
+            <label style={{ display: 'block', fontSize: 13 }}>🔶 El problema que ves en su negocio
+              <textarea value={meta.problema} onChange={(e) => setMeta({ ...meta, problema: e.target.value })} style={{ ...inp, minHeight: 44 }} placeholder="Ej: no apareces en Google cuando buscan tu servicio en tu zona" />
+            </label>
+            <label style={{ display: 'block', fontSize: 13, marginTop: 6 }}>🟢 Cómo lo resolvéis
+              <textarea value={meta.solucion} onChange={(e) => setMeta({ ...meta, solucion: e.target.value })} style={{ ...inp, minHeight: 44 }} placeholder="Ej: ponemos al día tu ficha y tu web con las palabras que busca tu cliente" />
+            </label>
+            <label style={{ display: 'block', fontSize: 13, marginTop: 6 }}>🟣 En cuánto tiempo (plazo según el problema)
+              <input value={meta.plazo} onChange={(e) => setMeta({ ...meta, plazo: e.target.value })} style={inp} placeholder="Ej: unas 4 a 6 semanas" />
+            </label>
+          </div>
           <div style={{ fontSize: 13, fontWeight: 600, margin: '10px 0 4px' }}>Líneas</div>
           {items.map((it, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 90px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>

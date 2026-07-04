@@ -15,7 +15,7 @@ const URL_GROQ = 'https://api.groq.com/openai/v1/chat/completions';
 // Llama al modelo y devuelve el texto generado.
 // `mensajes` es un array de { role, content } estilo OpenAI.
 // Lanza error si la API responde mal o no hay key.
-export async function llamarIA({ mensajes, modelo, temperatura, max_tokens }) {
+export async function llamarIA({ mensajes, modelo, temperatura, max_tokens, timeout_ms }) {
   if (!iaHabilitada()) {
     throw new Error('IA no configurada. Anade GROQ_API_KEY en Vercel.');
   }
@@ -31,6 +31,8 @@ export async function llamarIA({ mensajes, modelo, temperatura, max_tokens }) {
     stream: false,
   };
 
+  // Timeout duro: sin el, un fetch colgado consume todo el presupuesto de la
+  // funcion serverless (maxDuration) hasta que Vercel la mata con 504.
   const res = await fetch(URL_GROQ, {
     method: 'POST',
     headers: {
@@ -38,6 +40,7 @@ export async function llamarIA({ mensajes, modelo, temperatura, max_tokens }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(typeof timeout_ms === 'number' ? timeout_ms : 30000),
   });
 
   if (!res.ok) {

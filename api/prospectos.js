@@ -198,7 +198,7 @@ export async function evolucionarEtapas() {
   const [reg] = await sql`SELECT to_regclass('public.citas') AS citas, to_regclass('public.propuestas') AS propuestas`;
   if (reg && reg.citas) {
     try {
-      for (const r of await sql`SELECT DISTINCT prospecto_id FROM citas WHERE prospecto_id IS NOT NULL AND estado IN ('pendiente','confirmada','realizada')`) calientes.add(r.prospecto_id);
+      for (const r of await sql`SELECT DISTINCT prospecto_id FROM citas WHERE prospecto_id IS NOT NULL AND estado IN ('pendiente','confirmada','hecha')`) calientes.add(r.prospecto_id);
     } catch { /* noop */ }
   }
   if (reg && reg.propuestas) {
@@ -817,12 +817,16 @@ export default async function handler(req, res) {
       if (accion === 'enviar_auto') {
         if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Email no configurado.' });
         const limite = Math.min(parseInt(b.limite, 10) || 5, 10);
+        // Ventana de revision: no auto-enviar a leads recien captados (por defecto 2h).
+        // Evita mandar un correo si el email extraido de la web es erroneo o no procede.
+        const minHoras = Math.max(0, parseInt(b.min_horas, 10) || 2);
         const em = await getEmisor();
         const filas = await sql`
           SELECT * FROM prospectos
           WHERE estado = 'nuevo'
             AND email IS NOT NULL AND email <> ''
             AND email_borrador IS NOT NULL AND email_borrador <> ''
+            AND creado_en < NOW() - (${minHoras} * INTERVAL '1 hour')
           ORDER BY (prioridad = 'Alta') DESC NULLS LAST, creado_en ASC
           LIMIT ${limite}`;
         let enviados = 0;

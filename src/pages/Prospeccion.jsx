@@ -106,8 +106,16 @@ export default function Prospeccion() {
   function toggleMarcado(id) {
     setMarcados((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+  // Selecciona/deselecciona solo los VISIBLES (filtrada), no toda la lista: asi el
+  // borrado nunca elimina en silencio prospectos ocultos por el filtro activo.
   function toggleTodos() {
-    setMarcados((prev) => (prev.size === lista.length ? new Set() : new Set(lista.map((p) => p.id))));
+    const ids = filtrada.map((p) => p.id);
+    setMarcados((prev) => {
+      const todos = ids.length > 0 && ids.every((id) => prev.has(id));
+      const n = new Set(prev);
+      ids.forEach((id) => (todos ? n.delete(id) : n.add(id)));
+      return n;
+    });
   }
   async function borrarSeleccionados() {
     if (!marcados.size) return;
@@ -127,6 +135,18 @@ export default function Prospeccion() {
   }
 
   useEffect(() => { cargar(); cargarCfg(); }, []);
+
+  // Al cambiar de filtro, olvida los marcados que dejan de ser visibles: evita
+  // borrar sin querer prospectos ocultos que quedaron seleccionados de otra vista.
+  useEffect(() => {
+    setMarcados((prev) => {
+      if (!prev.size) return prev;
+      const visibles = new Set(filtrada.map((p) => p.id));
+      const n = new Set([...prev].filter((id) => visibles.has(id)));
+      return n.size === prev.size ? prev : n;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista, etapaFiltro]);
 
   async function cargar() {
     setCargando(true);
@@ -250,8 +270,11 @@ export default function Prospeccion() {
     const okEtapa = !etapaFiltro || etapaDe(p) === etapaFiltro;
     return okVista && okEtapa;
   });
-  const nichosCfg = String(cfgForm.nichos || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  // "Proximo nicho" desde la config GUARDADA (cfg), no del textarea sin guardar (cfgForm),
+  // para que coincida con lo que el agente scrapearia realmente.
+  const nichosCfg = String(cfg?.nichos || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
   const nichoHoy = nichosCfg.length ? nichosCfg[(((cfg?.nicho_idx || 0) % nichosCfg.length) + nichosCfg.length) % nichosCfg.length] : '';
+  const cfgSinGuardar = !!cfg && (cfgForm.ciudad !== (cfg.ciudad || '') || cfgForm.nichos !== (cfg.nichos || '') || String(cfgForm.limite_diario) !== String(cfg.limite_diario || 10));
 
   return (
     <div>
@@ -290,7 +313,8 @@ export default function Prospeccion() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
           <button onClick={() => guardarCfg()} disabled={busy}>Guardar configuración</button>
           <button onClick={ejecutarAgente} disabled={busy} style={{ background: '#0f7a39', color: '#fff' }}>▶ Ejecutar scrapeo ahora</button>
-          {nichoHoy && <span style={{ fontSize: 13, color: '#67756c' }}>Próximo nicho: <b>{nichoHoy}</b>{cfgForm.ciudad ? <> en <b>{cfgForm.ciudad}</b></> : null}</span>}
+          {nichoHoy && !cfgSinGuardar && <span style={{ fontSize: 13, color: '#67756c' }}>Próximo nicho: <b>{nichoHoy}</b>{cfg?.ciudad ? <> en <b>{cfg.ciudad}</b></> : null}</span>}
+          {cfgSinGuardar && <span style={{ fontSize: 13, color: '#b8860b' }}>Tienes cambios sin guardar. Pulsa "Guardar configuración" para aplicarlos.</span>}
         </div>
         {cfg?.ultima_ejecucion && (
           <p style={{ color: '#67756c', fontSize: 12.5, margin: '10px 0 0', paddingTop: 8, borderTop: '1px solid #eef2f0' }}>
@@ -436,7 +460,7 @@ export default function Prospeccion() {
         {cargando ? <p>Cargando...</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginTop: 10 }}>
             <thead><tr style={{ textAlign: 'left', color: '#67756c', fontSize: 12, textTransform: 'uppercase' }}>
-              <th style={{ padding: 8 }}><input type="checkbox" checked={lista.length > 0 && marcados.size === lista.length} onChange={toggleTodos} title="Seleccionar todos" /></th>
+              <th style={{ padding: 8 }}><input type="checkbox" checked={filtrada.length > 0 && filtrada.every((p) => marcados.has(p.id))} onChange={toggleTodos} title="Seleccionar los visibles" /></th>
               <th>Negocio</th><th>Email</th><th>Situacion</th><th>Email IA</th><th>Evolucion</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody>

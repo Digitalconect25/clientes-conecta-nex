@@ -390,9 +390,14 @@ export default function GeneradorQR() {
     } catch { return 'qr-conecta-nex'; }
   }
 
+  // El backdrop del logo (addLogoBackdrop) solo se aplica dentro de getQrSvgText;
+  // si hay logo con fondo oculto, forzamos SIEMPRE la ruta SVG->PNG para que el
+  // archivo exportado sea identico a lo que se ve en la vista previa.
+  const logoConBackdrop = !creative && !!s.logoDataUrl && s.hideBgDots;
+
   async function getQrPngBlob() {
-    // Si hay marco, imagen de fondo o creativo, vamos por SVG -> PNG.
-    if (useFrame || s.bgImageDataUrl || creative) {
+    // Si hay marco, imagen de fondo, creativo o logo con backdrop, vamos por SVG -> PNG.
+    if (useFrame || s.bgImageDataUrl || creative || logoConBackdrop) {
       const finalSvg = await getQrSvgText();
       // Si hay marco, el SVG final es mas grande que s.size (incluye padding y headline).
       const outSize = useFrame ? s.size * 1.4 : s.size;
@@ -412,9 +417,31 @@ export default function GeneradorQR() {
     return blob.text();
   }
 
+  // El modo creativo ya dibuja su propio fondo/contenedor detras del logo
+  // (renderCustomQR). El modo ESTANDAR (qr-code-styling) solo oculta los puntos
+  // de fondo pero NO deja ningun contenedor visible: sobre un fondo de color o
+  // con un logo con bordes transparentes, el logo queda "flotando" sin marco,
+  // menos limpio y menos profesional. Anadimos aqui ese contenedor, leyendo la
+  // posicion/tamano reales del <image> que genera la libreria.
+  function addLogoBackdrop(svgText, st) {
+    const imgMatch = svgText.match(/<image\b[^>]*>/i);
+    if (!imgMatch) return svgText;
+    const attrs = imgMatch[0];
+    const num = (name) => {
+      const m = attrs.match(new RegExp(name + '="([\\d.]+)'));
+      return m ? parseFloat(m[1]) : null;
+    };
+    const x = num('x'), y = num('y'), w = num('width'), h = num('height');
+    if (x == null || y == null || !w || !h) return svgText;
+    const pad = Math.max(w, h) * 0.16;
+    const radius = Math.min(w, h) * 0.22;
+    const rect = `<rect x="${(x - pad).toFixed(2)}" y="${(y - pad).toFixed(2)}" width="${(w + pad * 2).toFixed(2)}" height="${(h + pad * 2).toFixed(2)}" rx="${radius.toFixed(2)}" fill="${st.bgColor}"/>`;
+    return svgText.replace(imgMatch[0], rect + imgMatch[0]);
+  }
+
   async function getQrSvgText() {
-    const raw = await getRawQrSvg();
-    let result = raw;
+    let result = await getRawQrSvg();
+    if (!creative && s.logoDataUrl && s.hideBgDots) result = addLogoBackdrop(result, s);
     if (s.bgImageDataUrl) result = wrapWithBgImage(result, s);
     if (s.animateGradient && s.useGradient) result = wrapWithAnimation(result, s);
     if (useFrame) result = wrapWithFrame(result, s);
@@ -527,7 +554,7 @@ export default function GeneradorQR() {
   }
 
   async function exportPNG() {
-    if (!s.texto.trim() && !creative && !useFrame && !s.bgImageDataUrl) {
+    if (!s.texto.trim() && !creative && !useFrame && !s.bgImageDataUrl && !logoConBackdrop) {
       const png = new QRCodeStyling({ ...buildOptions(s), type: 'canvas' });
       png.download({ name: safeName(), extension: 'png' });
       return;

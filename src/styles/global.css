@@ -322,8 +322,14 @@ table tr:hover td { background: var(--gris-1); }
 @media (max-width: 900px) {
   .qr-layout { grid-template-columns: 1fr; }
 }
-.qr-form { max-height: calc(100vh - 110px); overflow-y: auto; }
-.qr-preview-card { position: sticky; top: 20px; }
+/* El formulario NO tiene scroll propio: se desplaza con la pagina normal (un solo
+   scroll, como el resto del CRM). Un scroll anidado dentro de una caja de altura
+   fija es facil de pasar por alto (sobre todo en movil o con scrollbars ocultas),
+   y hacia que secciones como "Logo central" parecieran no existir. La vista previa
+   solo queda fija (sticky) en escritorio, donde el layout es de dos columnas. */
+@media (min-width: 901px) {
+  .qr-preview-card { position: sticky; top: 20px; }
+}
 .qr-exportable {
   border-radius: 8px;
   padding: 24px;

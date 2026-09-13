@@ -37,6 +37,24 @@ Plataforma web de gestion de clientes y generacion de contratos para Conecta Nex
     elementos como lineas de propuesta ordenados por scorecard; y al aceptar la propuesta el
     diseno pasa al cliente para que no quede huerfano.
   - Tabla `diseno_oferta` (migracion v21). Se crea sola al primer uso.
+- **Fichas de implementacion del agente IA de WhatsApp** (pantalla `Fichas`):
+  el cuestionario tecnico que rellena y firma el cliente antes de montarle el
+  agente. Son datos DISTINTOS de la ficha de cliente (alta y contrato), por eso
+  van en su propia tabla y no se mezclan.
+  - 13 apartados (datos, negocio, oferta, conversacion, operaciones, logistica,
+    limites, sistemas, proteccion de datos, privacidad, seguridad, entrenamiento
+    y autorizacion). Se eligen al crearla; estan en `src/lib/fichas.js`.
+  - Al crearla nace su **enlace privado**, asi que se puede copiar y mandar por
+    WhatsApp sin pasar por el email. "Enviar" reutiliza ese mismo enlace.
+  - El cliente lo abre sin contrasena, lo rellena por apartados (se guarda solo
+    mientras escribe) y **lo firma**: dibujo + codigo de un solo uso por email +
+    hash SHA-256, IP y fecha de servidor como evidencia.
+  - El codigo de firma va SIEMPRE al email que registro la agencia, nunca al que
+    teclee quien abre el enlace: si no, cualquiera con el enlace podria pedirselo
+    a su propio correo y firmar en nombre del cliente.
+  - Al firmar recibes un email con los datos y la ficha firmada adjunta, y un
+    segundo codigo para dar tu validacion.
+  - Tabla `fichas` (migracion v22). Se crea sola al primer uso.
 
 ## Despliegue
 
@@ -59,8 +77,32 @@ esquema vuelve a quedarse atras.
 
 Configurar en Vercel Settings -> Environment Variables:
 
+Imprescindibles:
+
 - `DATABASE_URL`: connection string de Neon (con la contrasena ya rotada)
 - `APP_PASSWORD`: contrasena para entrar a la app (eliges la que quieras)
+
+**Correo (sin esto no se puede firmar nada).** `enviarEmail` mira estas dos y, si
+falta cualquiera, no envia: ni el enlace de la ficha, ni el codigo de firma, ni el
+aviso de que el cliente ha firmado. Y como el codigo de firma va por email, sin
+ellas el cliente NO PUEDE FIRMAR ni la ficha ni los contratos:
+
+- `RESEND_API_KEY`: API key de resend.com
+- `RESEND_FROM_EMAIL`: remitente verificado en Resend (ej. `hola@conectanex.com`)
+- `RESEND_FROM_NAME`: nombre visible del remitente (por defecto "Conecta NEX")
+- `AGENCY_EMAIL`: donde recibes los avisos (ficha firmada, con los datos y el
+  documento adjunto). Si no la pones, usa el email de "Mis datos" del emisor.
+- `REPLY_TO_EMAIL`: direccion a la que responde el cliente
+- `PUBLIC_BASE_URL`: base de los enlaces publicos (por defecto
+  `https://clientes.conectanex.com`). Si esta mal, los enlaces que recibe el
+  cliente no abren.
+
+Otras:
+
+- `ACCESS_ENCRYPTION_KEY`: hex de 64 caracteres para cifrar las contrasenas de
+  los accesos de cliente. **Si la cambias, lo ya guardado no se puede descifrar.**
+- `CRON_SECRET`: para las tareas programadas
+- `GROQ_API_KEY`: redaccion con IA (propuestas y captacion)
 
 ### 3. Deploy
 

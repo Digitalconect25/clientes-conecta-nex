@@ -1,4 +1,4 @@
--- v20 · Diseño de oferta y brief del agente de IA (por prospecto)
+-- v21 · Diseño de oferta y brief del agente de IA (por prospecto)
 --
 -- Lo que se prepara ANTES de mandar la propuesta: qué agente se le va a montar
 -- al cliente (brief por sector), qué elementos entran en la oferta con su precio

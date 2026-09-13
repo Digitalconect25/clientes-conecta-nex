@@ -715,11 +715,19 @@ function SeccionPropuesta({ prospecto, emailOn, iaOn }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <b>Propuesta comercial</b>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {/* El diseño de oferta alimenta a la IA de aquí abajo: brief del agente,
+              puntuación de los elementos y avatares del cliente. */}
+          <a
+            href={'/diseno/' + prospecto.id}
+            style={{ background: '#0c7b6d', color: '#fff', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, textDecoration: 'none', display: 'inline-block' }}
+          >
+            🧩 Diseño de oferta
+          </a>
           <button onClick={generarIA} disabled={busy || !iaOn} style={{ background: '#5b3fa0', color: '#fff' }}>✨ Generar con IA</button>
           <button onClick={crearVacia} disabled={busy}>+ Vacía</button>
         </div>
       </div>
-      <p style={{ color: '#67756c', fontSize: 12.5, margin: '4px 0 0' }}>Oferta de servicios con precio. Se envía por email y el cliente la acepta con su nombre (queda registrada con fecha e IP).</p>
+      <p style={{ color: '#67756c', fontSize: 12.5, margin: '4px 0 0' }}>Oferta de servicios con precio. Se envía por email y el cliente la acepta con su nombre (queda registrada con fecha e IP). Si antes rellena el <b>Diseño de oferta</b>, la IA redacta con el brief del agente, los avatares y el núcleo que haya puntuado.</p>
 
       {/* Lista de propuestas existentes */}
       {lista && lista.length > 0 && (

@@ -94,6 +94,11 @@ export const api = {
   // Embudo de contratación: cada cliente con su fase del circuito
   embudoList: () => request('GET', '/api/embudo'),
 
+  // Diseno de oferta y brief del agente de IA (colgado del prospecto)
+  disenoGet: (prospectoId) => request('GET', `/api/diseno?prospecto_id=${prospectoId}`),
+  disenoGuardar: (data) => request('PUT', '/api/diseno', data),
+  disenoAPropuesta: (prospectoId) => request('POST', '/api/diseno', { accion: 'a_propuesta', prospecto_id: prospectoId }),
+
   clientesList: () => request('GET', '/api/clientes'),
   clienteGet: (id) => request('GET', `/api/clientes?id=${id}`),
   clienteCreate: (data) => request('POST', '/api/clientes', data),

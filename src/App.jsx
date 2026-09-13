@@ -1,32 +1,41 @@
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { getPassword, clearPassword } from './lib/api.js';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Clientes from './pages/Clientes.jsx';
-import ClienteDetalle from './pages/ClienteDetalle.jsx';
-import Embudo from './pages/Embudo.jsx';
-import Catalogo from './pages/Catalogo.jsx';
-import Emisor from './pages/Emisor.jsx';
-import Proyectos from './pages/Proyectos.jsx';
-import Emails from './pages/Emails.jsx';
-import Prospeccion from './pages/Prospeccion.jsx';
-import Agenda from './pages/Agenda.jsx';
-import Bandeja from './pages/Bandeja.jsx';
-import Agendar from './pages/Agendar.jsx';
-import Solicitud from './pages/Solicitud.jsx';
-import Propuesta from './pages/Propuesta.jsx';
-import Firmar from './pages/Firmar.jsx';
-import ValidarAgencia from './pages/ValidarAgencia.jsx';
-import FirmaEmpresa from './pages/FirmaEmpresa.jsx';
-import DatosFiscales from './pages/DatosFiscales.jsx';
-import AccesoActa from './pages/AccesoActa.jsx';
-import GeneradorQR from './pages/GeneradorQR.jsx';
-import Diseno from './pages/Diseno.jsx';
-import Fichas from './pages/Fichas.jsx';
-import Ficha from './pages/Ficha.jsx';
-import ValidarFicha from './pages/ValidarFicha.jsx';
+
+// Cada pagina se descarga al entrar en ella, no al abrir la aplicacion. Antes
+// iban las 24 en el mismo paquete, asi que el cliente que solo abre su enlace
+// para firmar desde el movil se descargaba ademas el panel entero de la agencia
+// (dashboard, bandeja, emails, generador de QR) sin llegar a verlo nunca.
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Clientes = lazy(() => import('./pages/Clientes.jsx'));
+const ClienteDetalle = lazy(() => import('./pages/ClienteDetalle.jsx'));
+const Embudo = lazy(() => import('./pages/Embudo.jsx'));
+const Catalogo = lazy(() => import('./pages/Catalogo.jsx'));
+const Emisor = lazy(() => import('./pages/Emisor.jsx'));
+const Proyectos = lazy(() => import('./pages/Proyectos.jsx'));
+const Emails = lazy(() => import('./pages/Emails.jsx'));
+const Prospeccion = lazy(() => import('./pages/Prospeccion.jsx'));
+const Agenda = lazy(() => import('./pages/Agenda.jsx'));
+const Bandeja = lazy(() => import('./pages/Bandeja.jsx'));
+const Agendar = lazy(() => import('./pages/Agendar.jsx'));
+const Solicitud = lazy(() => import('./pages/Solicitud.jsx'));
+const Propuesta = lazy(() => import('./pages/Propuesta.jsx'));
+const Firmar = lazy(() => import('./pages/Firmar.jsx'));
+const ValidarAgencia = lazy(() => import('./pages/ValidarAgencia.jsx'));
+const FirmaEmpresa = lazy(() => import('./pages/FirmaEmpresa.jsx'));
+const DatosFiscales = lazy(() => import('./pages/DatosFiscales.jsx'));
+const AccesoActa = lazy(() => import('./pages/AccesoActa.jsx'));
+const GeneradorQR = lazy(() => import('./pages/GeneradorQR.jsx'));
+const Diseno = lazy(() => import('./pages/Diseno.jsx'));
+const Fichas = lazy(() => import('./pages/Fichas.jsx'));
+const Ficha = lazy(() => import('./pages/Ficha.jsx'));
+const ValidarFicha = lazy(() => import('./pages/ValidarFicha.jsx'));
+
+function Cargando() {
+  return <div style={{ padding: 48, textAlign: 'center', color: '#667085', fontSize: 14 }}>Cargando…</div>;
+}
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
@@ -50,19 +59,21 @@ export default function App() {
   const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/') || location.pathname.startsWith('/validar/') || location.pathname.startsWith('/firma-empresa/') || location.pathname.startsWith('/datos-fiscales/') || location.pathname.startsWith('/ficha/') || location.pathname.startsWith('/validar-ficha/');
   if (esRutaPublica) {
     return (
-      <Routes>
-        <Route path="/acceso/:token" element={<AccesoActa />} />
-        <Route path="/agendar" element={<Agendar />} />
-        <Route path="/solicitud" element={<Solicitud />} />
-        <Route path="/propuesta/:token" element={<Propuesta />} />
-        <Route path="/firmar/:token" element={<Firmar />} />
-        <Route path="/validar/:token" element={<ValidarAgencia />} />
-        <Route path="/firma-empresa/:token" element={<FirmaEmpresa />} />
-        <Route path="/datos-fiscales/:token" element={<DatosFiscales />} />
-        <Route path="/ficha/:token" element={<Ficha />} />
-        <Route path="/validar-ficha/:token" element={<ValidarFicha />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <Suspense fallback={<Cargando />}>
+        <Routes>
+          <Route path="/acceso/:token" element={<AccesoActa />} />
+          <Route path="/agendar" element={<Agendar />} />
+          <Route path="/solicitud" element={<Solicitud />} />
+          <Route path="/propuesta/:token" element={<Propuesta />} />
+          <Route path="/firmar/:token" element={<Firmar />} />
+          <Route path="/validar/:token" element={<ValidarAgencia />} />
+          <Route path="/firma-empresa/:token" element={<FirmaEmpresa />} />
+          <Route path="/datos-fiscales/:token" element={<DatosFiscales />} />
+          <Route path="/ficha/:token" element={<Ficha />} />
+          <Route path="/validar-ficha/:token" element={<ValidarFicha />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -77,6 +88,7 @@ export default function App() {
 
   return (
     <Layout onLogout={handleLogout}>
+      <Suspense fallback={<Cargando />}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Clientes />} />
@@ -94,6 +106,7 @@ export default function App() {
         <Route path="/emisor" element={<Emisor />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

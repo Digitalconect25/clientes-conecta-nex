@@ -34,6 +34,7 @@ export default function Diseno() {
   const { prospectoId } = useParams();
   const navigate = useNavigate();
   const [prospecto, setProspecto] = useState(null);
+  const [prospectos, setProspectos] = useState([]);
   const [emisor, setEmisor] = useState(null);
   const [d, setD] = useState(VACIO);
   const [creada, setCreada] = useState(null);
@@ -71,13 +72,23 @@ export default function Diseno() {
   async function cargar() {
     setCargando(true); setError('');
     try {
-      const [p, dis, em] = await Promise.all([
-        api.prospectoGet(prospectoId).catch(() => null),
-        api.disenoGet(prospectoId),
+      // La lista va siempre: es la que alimenta el selector de la cabecera, el
+      // equivalente al desplegable de fichas que tenia la version local.
+      const [lista, em] = await Promise.all([
+        api.prospectosList().catch(() => []),
         api.emisorGet().catch(() => null),
       ]);
-      setProspecto(p?.prospecto || p || null);
+      setProspectos(Array.isArray(lista) ? lista : (lista?.prospectos || []));
       setEmisor(em?.emisor || em || null);
+
+      // Se entra por el menu, sin cliente elegido todavia.
+      if (!prospectoId) { setProspecto(null); setCreada(null); setD(VACIO); return; }
+
+      const [p, dis] = await Promise.all([
+        api.prospectoGet(prospectoId).catch(() => null),
+        api.disenoGet(prospectoId),
+      ]);
+      setProspecto(p?.prospecto || p || null);
       setCreada(dis.creado_en || null);
       setD({
         nicho: dis.nicho || '',
@@ -159,12 +170,26 @@ export default function Diseno() {
           </h1>
 
           <div className="no-png" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-            <span className="t-dato negra mayus" style={{ padding: '0 8px' }}>{cliente}</span>
+            {/* Cambiar de cliente sin salir: es el desplegable de fichas que
+                tenia la version local, con los prospectos de la agencia. */}
+            <label htmlFor="ol-cliente" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Cliente</label>
+            <select
+              id="ol-cliente"
+              value={prospectoId || ''}
+              onChange={(e) => navigate(e.target.value ? `/diseno/${e.target.value}` : '/diseno')}
+              className="t-dato negra"
+              style={{ height: 36, maxWidth: 260 }}
+            >
+              <option value="">Elija un cliente…</option>
+              {prospectos.map((p) => (
+                <option key={p.id} value={p.id}>{p.empresa || p.nombre || `Prospecto ${p.id}`}</option>
+              ))}
+            </select>
             <button onClick={() => navigate('/prospeccion')} className="b2 pulsable bg-papel t-micro negra mayus track-sm" style={{ minHeight: 36, padding: '0 12px' }}>Volver</button>
-            <button onClick={guardar} disabled={guardando} className="b2 pulsable bg-amarillo t-micro negra mayus track-sm" style={{ minHeight: 36, padding: '0 12px' }}>
+            <button onClick={guardar} disabled={guardando || !prospectoId} className="b2 pulsable bg-amarillo t-micro negra mayus track-sm" style={{ minHeight: 36, padding: '0 12px' }}>
               {guardando ? 'Guardando…' : 'Guardar'}
             </button>
-            <button onClick={crearPropuesta} disabled={guardando || items.length === 0} className="b2 pulsable bg-papel t-micro negra mayus track-sm" style={{ minHeight: 36, padding: '0 12px' }}>
+            <button onClick={crearPropuesta} disabled={guardando || !prospectoId || items.length === 0} className="b2 pulsable bg-papel t-micro negra mayus track-sm" style={{ minHeight: 36, padding: '0 12px' }}>
               Crear propuesta
             </button>
           </div>
@@ -225,6 +250,15 @@ export default function Diseno() {
       <main className={pestana === 'propuesta' ? '' : 'no-imprimir'} style={{ margin: '0 auto', maxWidth: 1152, padding: '32px 16px' }}>
         {/* Una red por pestana: si una herramienta falla, las otras siguen
             funcionando. La `key` reinicia la red al cambiar de pestana. */}
+        {!prospectoId ? (
+          <div className="b2 bg-papel" style={{ padding: '48px 24px', textAlign: 'center' }}>
+            <p className="t-rotulo negra mayus" style={{ margin: 0, lineHeight: 1.15, letterSpacing: '-0.02em' }}>Elija un cliente para empezar</p>
+            <p className="t-dato" style={{ margin: '8px auto 0', maxWidth: 420, fontWeight: 500 }}>
+              Use el desplegable de arriba. Cada cliente tiene su propia ficha, sus precios, su
+              reparto Front / Back, sus avatares y su propuesta.
+            </p>
+          </div>
+        ) : (
         <RedDeSeguridad key={pestana} ambito={PESTANAS.find((p) => p.id === pestana)?.texto} datos={() => d}>
           {pestana === 'ficha' && (
             <Ficha d={d} setD={setD} setCampo={setCampo} setFicha={setFicha} items={items} onVaciar={vaciar} {...comunes} />
@@ -242,6 +276,7 @@ export default function Diseno() {
             <Propuesta items={items} ficha={d.ficha_json} setFicha={setFicha} emisor={emisor} {...comunes} />
           )}
         </RedDeSeguridad>
+        )}
       </main>
 
       <footer className="no-png no-imprimir" style={{ margin: '0 auto', maxWidth: 1152, padding: '0 16px 40px' }}>

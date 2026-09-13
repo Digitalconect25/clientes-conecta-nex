@@ -98,6 +98,8 @@ export default function App() {
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />
+        {/* Sin id entra por el menu y elige cliente ahi mismo; con id, va directo. */}
+        <Route path="/diseno" element={<Diseno />} />
         <Route path="/diseno/:prospectoId" element={<Diseno />} />
         <Route path="/agenda" element={<Agenda />} />
         <Route path="/bandeja" element={<Bandeja />} />

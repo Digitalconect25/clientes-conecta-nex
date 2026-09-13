@@ -200,7 +200,7 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
               // si fueran columnas: la casilla quedaba lejos y el titulo centrado.
               // Dentro de un span el texto es un bloque unico pegado a su casilla.
               <label key={s.clave} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13.5, cursor: 'pointer', lineHeight: 1.35, padding: '3px 0' }}>
-                <input type="checkbox" checked={secciones.includes(s.clave)} onChange={() => toggleSeccion(s.clave)} style={{ flexShrink: 0, marginTop: 2 }} />
+                <input type="checkbox" checked={secciones.includes(s.clave)} onChange={() => toggleSeccion(s.clave)} style={{ marginTop: 2 }} />
                 <span>{s.numero} · {s.titulo}</span>
               </label>
             ))}
@@ -210,7 +210,7 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
           </button>
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '12px 0 6px', fontSize: 13.5, cursor: 'pointer' }}>
-            <input type="checkbox" checked={enviarAhora} onChange={(e) => setEnviarAhora(e.target.checked)} style={{ flexShrink: 0 }} />
+            <input type="checkbox" checked={enviarAhora} onChange={(e) => setEnviarAhora(e.target.checked)} />
             <span>Enviar el enlace al cliente por email ahora mismo</span>
           </label>
           {enviarAhora && (

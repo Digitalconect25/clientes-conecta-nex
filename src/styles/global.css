@@ -357,6 +357,18 @@ input[type="color"] {
   cursor: pointer;
 }
 input[type="range"] { padding: 0; }
+/* Las casillas y los radios no pueden heredar el width:100% y el padding de la
+   regla `input, select, textarea` de arriba: se estiraban a lo ancho de su
+   columna y dejaban su propia etiqueta a 150px, descuadrada. Faltaba esta
+   excepcion (si estaban las de color, range y file). Afecta a las casillas de
+   toda la aplicacion, incluidas las paginas que ve el cliente: solicitud,
+   ficha de implementacion, firma y datos fiscales. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
 input[type="file"] { padding: 6px; font-size: 12px; }
 
 @media print {

@@ -23,6 +23,7 @@ import FirmaEmpresa from './pages/FirmaEmpresa.jsx';
 import DatosFiscales from './pages/DatosFiscales.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
 import GeneradorQR from './pages/GeneradorQR.jsx';
+import Diseno from './pages/Diseno.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />
+        <Route path="/diseno/:prospectoId" element={<Diseno />} />
         <Route path="/agenda" element={<Agenda />} />
         <Route path="/bandeja" element={<Bandeja />} />
         <Route path="/catalogo" element={<Catalogo />} />

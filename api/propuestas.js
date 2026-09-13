@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
+import { leerDiseno, resumirBrief } from './diseno.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
@@ -71,7 +72,7 @@ function calcularTotal(items, descuento) {
 }
 
 // IA: elige 2-4 servicios del catalogo (con su precio real) y redacta una intro.
-async function generarConIA(p) {
+async function generarConIA(p, dis) {
   const cat = await sql`SELECT id, nombre, categoria, precio, descripcion FROM servicios WHERE activo = TRUE ORDER BY categoria, nombre`;
   if (!cat.length) return { intro: '', items: [] };
   const validos = new Map(cat.map((s) => [s.id, s]));
@@ -98,7 +99,7 @@ Situacion: ${p.situacion === 'mejorable' ? 'tiene algo de presencia pero mejorab
 ${probPrevio ? 'PROBLEMA YA DETECTADO de este negocio (usalo como base): ' + probPrevio : ''}
 Le interesa (del formulario): ${yaInteresa || '(no indicado)'}.
 Notas internas del negocio: ${obs.slice(0, 900)}.
-Catalogo:\n${listado}`;
+${resumirBrief(dis) ? 'BRIEF DEL AGENTE QUE SE LE VA A MONTAR (informacion de primera mano, tiene prioridad sobre lo demas):\n' + resumirBrief(dis) + '\n' : ''}Catalogo:\n${listado}`;
   const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.55, max_tokens: 900 });
   const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
   // Si un campo salio vacio, el fallback puede engullir la seccion siguiente: si el
@@ -154,7 +155,8 @@ export default async function handler(req, res) {
         let problema = b.problema || '', solucion = b.solucion || '', plazo = b.plazo || '';
         if (accion === 'generar_ia') {
           if (!iaHabilitada()) return jsonResponse(res, 400, { error: 'IA no configurada.' });
-          const r = await generarConIA(p);
+          // El brief del diseno de oferta, si lo hay, entra en el prompt.
+          const r = await generarConIA(p, await leerDiseno(pid).catch(() => null));
           intro = r.intro; items = r.items; problema = r.problema; solucion = r.solucion; plazo = r.plazo;
           // Sin servicios no hay propuesta (evita crear una a 0 EUR por una respuesta IA truncada/invalida).
           if (!items.length) return jsonResponse(res, 502, { error: 'La IA no seleccionó servicios del catálogo. Reintenta, o crea la propuesta en blanco y añade las líneas a mano.' });

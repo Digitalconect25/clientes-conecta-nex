@@ -84,7 +84,12 @@ export function resumirBrief(dis) {
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const puntos = (p) => {
-  const e = (v) => Math.min(5, Math.max(1, parseInt(v, 10) || 3));
+  // Ojo con `parseInt(v) || 3`: en JavaScript el 0 es falso, asi que una
+  // puntuacion de 0 se convertia en 3 en vez de acotarse al minimo (1).
+  const e = (v) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 3;
+  };
   return { complementa: e(p?.complementa), objecion: e(p?.objecion), valor: e(p?.valor), esfuerzo: e(p?.esfuerzo) };
 };
 const totalPuntos = (p) => p.complementa + p.objecion + p.valor + p.esfuerzo;

@@ -353,6 +353,11 @@ CREATE TABLE IF NOT EXISTS diseno_oferta (
   -- [{id,nombre,dolor_corto,x,y,dolor,sueno,no,si}]
   avatares_json JSONB DEFAULT '[]'::jsonb,
 
+  -- v23 · Ficha del cliente y lo que arma la propuesta imprimible: contacto,
+  -- telefono, email, nif, localidad, origen, estado, aceptadaEl, validaHasta,
+  -- notas, condiciones, siguientePaso, enlacePago, conceptoPago.
+  ficha_json JSONB DEFAULT '{}'::jsonb,
+
   creado_en TIMESTAMPTZ DEFAULT NOW(),
   actualizado_en TIMESTAMPTZ DEFAULT NOW()
 );

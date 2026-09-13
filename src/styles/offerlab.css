@@ -150,15 +150,53 @@
   .offerlab .pulsable:active { transform: none; }
 }
 
-/* --- Impresion --------------------------------------------------------------
+/* Existe solo en el papel; en pantalla no se ve (ver el bloque @media print). */
+.offerlab .solo-imprimir { display: none; }
+
+/* --- Impresion / PDF --------------------------------------------------------
+   El PDF se genera con el propio navegador («Guardar como PDF»): sale texto
+   real y seleccionable, pesa poco y no hace falta ninguna libreria.
    Se oculta SOLO lo marcado: ocultar `header` a secas se llevaba por delante
    el membrete del propio documento, que tambien es un <header>. */
 @media print {
+  @page { size: A4; margin: 14mm; }
+
+  /* Del CRM no entra nada en el papel: ni menu lateral, ni cabecera. */
+  .sidebar, .main-header { display: none !important; }
+  .layout { display: block !important; }
+  .main { padding: 0 !important; }
+
   .offerlab .no-png,
   .offerlab .no-imprimir { display: none !important; }
-  .offerlab .dura,
-  .offerlab .dura-sm { box-shadow: none !important; }
+
+  .offerlab { margin: 0 !important; }
+  .offerlab main { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+
+  .offerlab .documento {
+    max-width: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  /* Aviso que SOLO existe en papel: si alguien pulsa Ctrl+P estando en otra
+     pestana, en vez de imprimirle el scorecard interno le explica donde esta
+     el documento del cliente. */
+  .offerlab .solo-imprimir { display: block !important; }
+
+  /* En papel los espacios se aprietan un punto: con los de pantalla, una
+     propuesta corta se pasaba por unos pixeles y mandaba la firma sola a una
+     segunda pagina. */
+  .offerlab .documento > * + * { margin-top: 1rem !important; }
+
+  /* Que no se parta una tabla ni un bloque por la mitad. */
   .offerlab .junto { break-inside: avoid; }
   .offerlab tr, .offerlab img { break-inside: avoid; }
   .offerlab thead { display: table-header-group; }
+
+  /* En papel, el negro macizo se come el toner y las sombras no existen. */
+  .offerlab .dura,
+  .offerlab .dura-sm { box-shadow: none !important; }
+
+  .offerlab a[href]::after { content: ''; }
 }

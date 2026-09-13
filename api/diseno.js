@@ -31,10 +31,34 @@ async function asegurarTabla() {
     )`;
   } catch { /* noop */ }
   try { await sql`CREATE INDEX IF NOT EXISTS idx_diseno_prospecto ON diseno_oferta (prospecto_id)`; } catch { /* noop */ }
+  // v23: la ficha del cliente y lo que arma la propuesta imprimible (condiciones,
+  // siguiente paso, enlace de cobro). Van juntos en un JSONB porque son campos de
+  // un documento, no criterios por los que se filtre.
+  try { await sql`ALTER TABLE diseno_oferta ADD COLUMN IF NOT EXISTS ficha_json JSONB DEFAULT '{}'::jsonb`; } catch { /* noop */ }
   _mig = true;
 }
 
-const VACIO = { nicho: '', brief_comun: {}, brief_nicho: {}, items_json: [], avatares_json: [] };
+const VACIO = { nicho: '', brief_comun: {}, brief_nicho: {}, items_json: [], avatares_json: [], ficha_json: {} };
+
+// Campos que admite la ficha. Lo que no este en esta lista no se guarda: el
+// navegador no decide que columnas hay.
+const CAMPOS_FICHA = [
+  'contacto', 'telefono', 'email', 'nif', 'localidad', 'origen',
+  'estado', 'aceptadaEl', 'validaHasta', 'notas',
+  'condiciones', 'siguientePaso', 'enlacePago', 'conceptoPago',
+];
+const ESTADOS_FICHA = ['borrador', 'enviada', 'aceptada', 'rechazada'];
+
+function saneaFicha(o) {
+  if (!o || typeof o !== 'object') return {};
+  const salida = {};
+  for (const k of CAMPOS_FICHA) {
+    const v = o[k];
+    if (typeof v === 'string') salida[k] = v.slice(0, 4000);
+  }
+  if (salida.estado && !ESTADOS_FICHA.includes(salida.estado)) salida.estado = 'borrador';
+  return salida;
+}
 
 // Lectura reutilizable: la usa tambien propuestas.js para alimentar a la IA.
 export async function leerDiseno(prospectoId) {
@@ -162,12 +186,14 @@ export default async function handler(req, res) {
       const briefNicho = soloTextos(b.brief_nicho);
       const items = saneaItems(b.items_json);
       const avatares = saneaAvatares(b.avatares_json);
+      const ficha = saneaFicha(b.ficha_json);
 
       const [row] = await sql`
-        INSERT INTO diseno_oferta (prospecto_id, cliente_id, nicho, brief_comun, brief_nicho, items_json, avatares_json)
+        INSERT INTO diseno_oferta (prospecto_id, cliente_id, nicho, brief_comun, brief_nicho, items_json, avatares_json, ficha_json)
         VALUES (${pid}, ${b.cliente_id ? parseInt(b.cliente_id, 10) : null}, ${nicho},
                 ${JSON.stringify(comun)}::jsonb, ${JSON.stringify(briefNicho)}::jsonb,
-                ${JSON.stringify(items)}::jsonb, ${JSON.stringify(avatares)}::jsonb)
+                ${JSON.stringify(items)}::jsonb, ${JSON.stringify(avatares)}::jsonb,
+                ${JSON.stringify(ficha)}::jsonb)
         ON CONFLICT (prospecto_id) DO UPDATE SET
           cliente_id = COALESCE(EXCLUDED.cliente_id, diseno_oferta.cliente_id),
           nicho = EXCLUDED.nicho,
@@ -175,6 +201,7 @@ export default async function handler(req, res) {
           brief_nicho = EXCLUDED.brief_nicho,
           items_json = EXCLUDED.items_json,
           avatares_json = EXCLUDED.avatares_json,
+          ficha_json = EXCLUDED.ficha_json,
           actualizado_en = NOW()
         RETURNING *`;
       return jsonResponse(res, 200, row);

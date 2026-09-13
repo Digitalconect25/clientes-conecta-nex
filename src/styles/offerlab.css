@@ -1,0 +1,156 @@
+/* =========================================================================
+   Offer Lab dentro del CRM · sistema de diseño
+   -------------------------------------------------------------------------
+   Portado tal cual de ~/smart-offer-lab/src/index.css. Aquella app usa
+   Tailwind 4 y esta no, asi que las utilidades van escritas a mano con el
+   mismo resultado.
+
+   TODO cuelga de `.offerlab`: el global.css del CRM pone en cada input
+   `width:100%; padding:8px 10px; border:1px solid gris`, y eso se cargaba la
+   estetica de la herramienta. Aqui dentro manda esta hoja; fuera, el CRM
+   sigue igual que siempre.
+
+   Cuatro colores y ni uno mas. Todo en HEX: la exportacion a PNG no traga
+   funciones de color modernas (oklch se rompe al serializar el clon).
+   ========================================================================= */
+
+.offerlab {
+  --papel: #ffffff;
+  --tinta: #000000;
+  --amarillo: #ffd400;
+  --azul: #002460;
+
+  /* Escala FIJA. Es una herramienta de escritorio, no una landing. */
+  --ol-micro: 0.6875rem;  /* 11px · etiquetas de campo */
+  --ol-dato: 0.8125rem;   /* 13px · datos densos */
+  --ol-cuerpo: 0.9375rem; /* 15px · texto normal */
+  --ol-rotulo: 1.125rem;  /* 18px · nombre de elemento */
+  --ol-cifra: 1.5rem;     /* 24px · importes que mandan */
+  --ol-titulo: 1.75rem;   /* 28px · titulo de columna */
+  --ol-seccion: 2.25rem;  /* 36px · titulo de herramienta */
+
+  /* Salida exponencial: arranca rapido, frena suave. Nada de rebotes. */
+  --paso: cubic-bezier(0.22, 1, 0.36, 1);
+
+  background: var(--papel);
+  color: var(--tinta);
+  font-family: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--ol-cuerpo);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Cimientos ------------------------------------------------------------ */
+
+.offerlab .b2 { border: 2px solid var(--tinta); }
+
+/* La sombra es jerarquia, no decoracion: solo la lleva lo que esta elevado. */
+.offerlab .dura { box-shadow: 5px 5px 0 var(--tinta); }
+.offerlab .dura-sm { box-shadow: 3px 3px 0 var(--tinta); }
+
+.offerlab .bg-papel { background: var(--papel); color: var(--tinta); }
+.offerlab .bg-tinta { background: var(--tinta); color: var(--papel); }
+.offerlab .bg-amarillo { background: var(--amarillo); color: var(--tinta); }
+.offerlab .bg-azul { background: var(--azul); color: var(--papel); }
+.offerlab .text-azul { color: var(--azul); }
+
+.offerlab .t-micro { font-size: var(--ol-micro); }
+.offerlab .t-dato { font-size: var(--ol-dato); }
+.offerlab .t-cuerpo { font-size: var(--ol-cuerpo); }
+.offerlab .t-rotulo { font-size: var(--ol-rotulo); }
+.offerlab .t-cifra { font-size: var(--ol-cifra); }
+.offerlab .t-titulo { font-size: var(--ol-titulo); }
+.offerlab .t-seccion { font-size: var(--ol-seccion); }
+
+.offerlab .negra { font-weight: 900; }
+.offerlab .mayus { text-transform: uppercase; }
+.offerlab .cifras { font-variant-numeric: tabular-nums; }
+.offerlab .track { letter-spacing: 0.1em; }
+.offerlab .track-sm { letter-spacing: 0.04em; }
+
+/* --- Interaccion ---------------------------------------------------------- */
+
+/* Pulsar un bloque macizo tiene que sentirse fisico: al pasar por encima se
+   levanta, al pulsarlo se hunde contra su propia sombra y la anula. */
+.offerlab .pulsable {
+  transition: transform 120ms var(--paso), box-shadow 120ms var(--paso);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .offerlab .pulsable:hover { transform: translate(-1px, -1px); }
+  .offerlab .dura-sm.pulsable:hover { box-shadow: 4px 4px 0 var(--tinta); }
+  .offerlab .dura.pulsable:hover { box-shadow: 6px 6px 0 var(--tinta); }
+}
+
+.offerlab .pulsable:active { transform: translate(2px, 2px); }
+.offerlab .dura-sm.pulsable:active,
+.offerlab .dura.pulsable:active { box-shadow: 0 0 0 var(--tinta); }
+
+/* Foco visible SIEMPRE, y con la paleta: azul sobre claro, amarillo sobre
+   oscuro. Sin esto la herramienta no se puede usar con teclado. */
+.offerlab :focus-visible { outline: 3px solid var(--azul); outline-offset: 2px; }
+.offerlab .bg-tinta:focus-visible,
+.offerlab .bg-azul:focus-visible { outline-color: var(--amarillo); }
+
+/* --- Campos ---------------------------------------------------------------
+   Estos son los que el CRM deja en gris de 1px: aqui se recuperan. */
+
+.offerlab input,
+.offerlab textarea,
+.offerlab select {
+  font-family: inherit;
+  background: var(--papel);
+  color: var(--tinta);
+  border: 2px solid var(--tinta);
+  border-radius: 0;
+  outline: none;
+  padding: 0 8px;
+  box-shadow: none;
+}
+
+.offerlab textarea { padding: 8px; }
+
+.offerlab input:focus,
+.offerlab textarea:focus,
+.offerlab select:focus {
+  background: var(--amarillo);
+  border-color: var(--tinta);
+  box-shadow: none;
+}
+
+/* El placeholder en gris translucido es lo que delata a media web: se queda
+   en 3:1 y encima mete un color fuera de paleta. Azul de marca, opaco. */
+.offerlab ::placeholder { color: var(--azul); opacity: 1; font-weight: 500; }
+.offerlab ::selection { background: var(--amarillo); color: var(--tinta); }
+
+/* Los botones del CRM son verdes y redondeados: dentro de la herramienta, no. */
+.offerlab button {
+  border-radius: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* --- Modo presentacion ------------------------------------------------------
+   Cuando gira la pantalla hacia el cliente, desaparece todo lo que es de
+   taller. Es exactamente lo mismo que se excluye del PNG: si no sale en la
+   imagen que se le manda, tampoco tiene que verlo en la reunion. */
+.offerlab.presentacion .no-png:not(.mantener) { display: none !important; }
+.offerlab.presentacion { --ol-cifra: 2rem; --ol-rotulo: 1.25rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .offerlab .pulsable { transition-duration: 1ms; }
+  .offerlab .pulsable:hover,
+  .offerlab .pulsable:active { transform: none; }
+}
+
+/* --- Impresion --------------------------------------------------------------
+   Se oculta SOLO lo marcado: ocultar `header` a secas se llevaba por delante
+   el membrete del propio documento, que tambien es un <header>. */
+@media print {
+  .offerlab .no-png,
+  .offerlab .no-imprimir { display: none !important; }
+  .offerlab .dura,
+  .offerlab .dura-sm { box-shadow: none !important; }
+  .offerlab .junto { break-inside: avoid; }
+  .offerlab tr, .offerlab img { break-inside: avoid; }
+  .offerlab thead { display: table-header-group; }
+}

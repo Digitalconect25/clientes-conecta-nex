@@ -101,8 +101,14 @@ export default async function handler(req, res) {
 
       // Envia un codigo de un solo uso (OTP) al email de quien va a firmar.
       if (accion === 'enviar_codigo') {
-        const email = String(req.body?.firmante_email || '').trim();
-        if (!email || !RE_EMAIL.test(email)) return jsonResponse(res, 400, { error: 'Escribe un email válido para enviarte el código.' });
+        // El codigo va al email que fijo LA AGENCIA al mandar la ficha, nunca al
+        // que teclee quien abre el enlace. Si lo eligiera el propio firmante, a
+        // cualquiera que llegase a tener el enlace (un reenvio, el historial del
+        // navegador) le bastaria con pedir el codigo a su propio correo para
+        // firmar en nombre del cliente, y la evidencia de firma dejaria de valer.
+        // Es el mismo criterio que ya sigue api/firmar.js con los contratos.
+        const email = String(f.destinatario_email || cli?.email || '').trim();
+        if (!email || !RE_EMAIL.test(email)) return jsonResponse(res, 400, { error: 'No hay un email de contacto válido para enviarte el código. Contacta con la agencia.' });
         if (!emailHabilitado()) return jsonResponse(res, 400, { error: 'Envío de código no disponible.' });
         const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
         await sql`UPDATE fichas SET firmante_email = ${email}, firma_codigo = ${codigo}, firma_codigo_exp = NOW() + INTERVAL '15 minutes' WHERE id = ${f.id}`;

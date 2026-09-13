@@ -65,12 +65,12 @@ export async function asegurarFichas() {
   _mig = true;
 }
 
-const RESUMEN = sql => sql`
-  SELECT f.id, f.cliente_id, f.titulo, f.version, f.secciones, f.estado, f.token,
-    f.destinatario_email, f.destinatario_nombre, f.enviada_en, f.vista_en, f.completada_en,
-    f.firmante_nombre, f.fecha_firma, f.firma_ref, f.validado_en, f.creado_en, f.actualizado_en,
-    c.nombre AS cliente_nombre, c.email AS cliente_email
-  FROM fichas f JOIN clientes c ON c.id = f.cliente_id`;
+// Ojo: aqui habia un helper `RESUMEN = sql => sql\`SELECT ...\`` que se intentaba
+// completar con otra plantilla (RESUMEN(sql)`WHERE ...`). No se puede: el tag de
+// @neondatabase/serverless YA ejecuta la consulta y devuelve una Promise, que no
+// es invocable. Lanzaba "RESUMEN(...) is not a function" en cada carga de la
+// pantalla, ademas de disparar el SELECT entero sin WHERE ni LIMIT. Las dos
+// consultas van completas, de una pieza, como en el resto del repo.
 
 function seccionesValidas(arr) {
   return (Array.isArray(arr) ? arr : []).filter((c) => CLAVES_VALIDAS.has(c));
@@ -91,10 +91,23 @@ export default async function handler(req, res) {
         return jsonResponse(res, 200, row);
       }
       if (req.query.cliente_id) {
-        const rows = await RESUMEN(sql)`WHERE f.cliente_id = ${parseInt(req.query.cliente_id, 10)} ORDER BY f.creado_en DESC`;
+        const rows = await sql`
+          SELECT f.id, f.cliente_id, f.titulo, f.version, f.secciones, f.estado, f.token,
+            f.destinatario_email, f.destinatario_nombre, f.enviada_en, f.vista_en, f.completada_en,
+            f.firmante_nombre, f.fecha_firma, f.firma_ref, f.validado_en, f.creado_en, f.actualizado_en,
+            c.nombre AS cliente_nombre, c.email AS cliente_email
+          FROM fichas f JOIN clientes c ON c.id = f.cliente_id
+          WHERE f.cliente_id = ${parseInt(req.query.cliente_id, 10)}
+          ORDER BY f.creado_en DESC`;
         return jsonResponse(res, 200, rows);
       }
-      const rows = await RESUMEN(sql)`ORDER BY f.creado_en DESC LIMIT 300`;
+      const rows = await sql`
+        SELECT f.id, f.cliente_id, f.titulo, f.version, f.secciones, f.estado, f.token,
+          f.destinatario_email, f.destinatario_nombre, f.enviada_en, f.vista_en, f.completada_en,
+          f.firmante_nombre, f.fecha_firma, f.firma_ref, f.validado_en, f.creado_en, f.actualizado_en,
+          c.nombre AS cliente_nombre, c.email AS cliente_email
+        FROM fichas f JOIN clientes c ON c.id = f.cliente_id
+        ORDER BY f.creado_en DESC LIMIT 300`;
       return jsonResponse(res, 200, rows);
     }
 

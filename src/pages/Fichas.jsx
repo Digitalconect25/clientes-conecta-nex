@@ -24,6 +24,11 @@ export default function Fichas() {
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
   const [detalle, setDetalle] = useState(null);
+  // Nada de alert/confirm/prompt: congelan la ventana entera del panel.
+  const [aviso, setAviso] = useState('');
+  const [error, setError] = useState('');
+  const [aEliminar, setAEliminar] = useState(null);
+  const [aEnviar, setAEnviar] = useState(null);
 
   useEffect(() => { cargar(); }, []);
 
@@ -47,25 +52,31 @@ export default function Fichas() {
 
   async function copiarEnlace(token) {
     const url = `${window.location.origin}/ficha/${token}`;
-    try { await navigator.clipboard.writeText(url); alert('Enlace copiado:\n' + url); } catch { prompt('Copia el enlace:', url); }
+    setError('');
+    try { await navigator.clipboard.writeText(url); setAviso('Enlace copiado al portapapeles.'); }
+    catch { setAviso('Copia este enlace a mano: ' + url); }
   }
 
-  async function enviarEnlace(ficha) {
-    const email = prompt('¿A qué email se envía la ficha?', ficha.destinatario_email || ficha.cliente_email || '');
-    if (email === null) return;
-    try { await api.fichaEnviarEnlace(ficha.id, email.trim()); await cargar(); alert('Enviada.'); }
-    catch (err) { alert('Error: ' + err.message); }
+  async function confirmarEnvio(email) {
+    try {
+      await api.fichaEnviarEnlace(aEnviar.id, email.trim());
+      setAEnviar(null); setError(''); setAviso('Ficha enviada a ' + email.trim() + '.');
+      await cargar();
+    } catch (err) { setError(err.message); }
   }
 
-  async function eliminar(ficha) {
-    if (!confirm(`¿Eliminar la ficha "${ficha.titulo}" de ${ficha.cliente_nombre}?`)) return;
-    try { await api.fichaEliminar(ficha.id); await cargar(); }
-    catch (err) { alert('Error: ' + err.message); }
+  async function confirmarEliminar() {
+    try {
+      await api.fichaEliminar(aEliminar.id);
+      setAEliminar(null); setError(''); setAviso('Ficha eliminada.');
+      await cargar();
+    } catch (err) { setError(err.message); }
   }
 
   async function verDetalle(ficha) {
+    setError('');
     try { setDetalle(await api.fichaGet(ficha.id)); }
-    catch (err) { alert('Error: ' + err.message); }
+    catch (err) { setError(err.message); }
   }
 
   if (cargando) return <div className="empty">Cargando...</div>;
@@ -76,6 +87,19 @@ export default function Fichas() {
         <h1>Fichas de implementación ({fichas.length})</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>+ Nueva ficha</button>
       </div>
+
+      {aviso && (
+        <div style={{ background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{aviso}</span>
+          <button onClick={() => setAviso('')} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', fontWeight: 700 }}>×</button>
+        </div>
+      )}
+      {error && (
+        <div style={{ background: '#fef3f2', border: '1px solid #fecdca', color: '#b42318', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{error}</span>
+          <button onClick={() => setError('')} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', fontWeight: 700 }}>×</button>
+        </div>
+      )}
 
       <div className="card">
         <div style={{ display: 'flex', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
@@ -102,8 +126,8 @@ export default function Fichas() {
                   <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <button className="btn-outline btn-sm" onClick={() => verDetalle(f)}>Ver</button>
                     {f.token && <button className="btn-outline btn-sm" onClick={() => copiarEnlace(f.token)}>Copiar enlace</button>}
-                    {!['firmada', 'validada'].includes(f.estado) && <button className="btn-outline btn-sm" onClick={() => enviarEnlace(f)}>{f.enviada_en ? 'Reenviar' : 'Enviar'}</button>}
-                    {!['firmada', 'validada'].includes(f.estado) && <button className="btn-danger btn-sm" onClick={() => eliminar(f)}>Eliminar</button>}
+                    {!['firmada', 'validada'].includes(f.estado) && <button className="btn-outline btn-sm" onClick={() => { setError(''); setAviso(''); setAEnviar(f); }}>{f.enviada_en ? 'Reenviar' : 'Enviar'}</button>}
+                    {!['firmada', 'validada'].includes(f.estado) && <button className="btn-danger btn-sm" onClick={() => { setError(''); setAviso(''); setAEliminar(f); }}>Eliminar</button>}
                   </td>
                 </tr>
               ))}
@@ -114,6 +138,8 @@ export default function Fichas() {
 
       {showModal && <ModalNuevaFicha clientes={clientes} onClose={() => setShowModal(false)} onCreado={async () => { setShowModal(false); await cargar(); }} />}
       {detalle && <ModalDetalle ficha={detalle} onClose={() => setDetalle(null)} />}
+      {aEnviar && <ModalEnviar ficha={aEnviar} onClose={() => setAEnviar(null)} onEnviar={confirmarEnvio} />}
+      {aEliminar && <ModalEliminar ficha={aEliminar} onClose={() => setAEliminar(null)} onConfirmar={confirmarEliminar} />}
     </div>
   );
 }
@@ -125,6 +151,7 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
   const [email, setEmail] = useState('');
   const [enviarAhora, setEnviarAhora] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [errorModal, setErrorModal] = useState('');
 
   function toggleSeccion(clave) {
     setSecciones((prev) => prev.includes(clave) ? prev.filter((c) => c !== clave) : [...prev, clave]);
@@ -136,14 +163,15 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
   }, [clienteId, clientes]);
 
   async function crear() {
-    if (!clienteId) { alert('Elige un cliente.'); return; }
-    if (!secciones.length) { alert('Elige al menos un apartado.'); return; }
+    if (!clienteId) { setErrorModal('Elige un cliente.'); return; }
+    if (!secciones.length) { setErrorModal('Elige al menos un apartado.'); return; }
+    setErrorModal('');
     setGuardando(true);
     try {
       const ficha = await api.fichaCrear({ cliente_id: parseInt(clienteId, 10), titulo, secciones });
       if (enviarAhora) await api.fichaEnviarEnlace(ficha.id, email);
       onCreado();
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) { setErrorModal(err.message); }
     finally { setGuardando(false); }
   }
 
@@ -181,6 +209,9 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
           {enviarAhora && (
             <input type="email" placeholder="Email del destinatario" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', boxSizing: 'border-box' }} />
           )}
+          {errorModal && (
+            <div style={{ background: '#fef3f2', border: '1px solid #fecdca', color: '#b42318', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 13.5 }}>{errorModal}</div>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn-outline" onClick={onClose}>Cancelar</button>
@@ -214,6 +245,52 @@ function ModalDetalle({ ficha, onClose }) {
           </div>
         </div>
         <div className="modal-footer"><button className="btn-outline" onClick={onClose}>Cerrar</button></div>
+      </div>
+    </div>
+  );
+}
+
+// Sustituyen al prompt() y al confirm() nativos, que congelaban toda la pestana
+// del panel hasta contestarlos (y el prompt se cancelaba con Esc sin avisar).
+function ModalEnviar({ ficha, onClose, onEnviar }) {
+  const [email, setEmail] = useState(ficha.destinatario_email || ficha.cliente_email || '');
+  const valido = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" style={{ maxWidth: 470 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><h2>{ficha.enviada_en ? 'Reenviar ficha' : 'Enviar ficha'}</h2><button onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <p style={{ margin: '0 0 12px', fontSize: 13.5, color: 'var(--gris-5)' }}>
+            Se enviará a <b>{ficha.cliente_nombre}</b> el enlace privado para rellenar y firmar la ficha.
+            A este mismo email llegará después el código de firma, así que conviene que sea el suyo.
+          </p>
+          <label>Email del destinatario</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', boxSizing: 'border-box' }} autoFocus />
+        </div>
+        <div className="modal-footer">
+          <button className="btn-outline" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" disabled={!valido} onClick={() => onEnviar(email)}>Enviar enlace</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalEliminar({ ficha, onClose, onConfirmar }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" style={{ maxWidth: 450 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header"><h2>Eliminar ficha</h2><button onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <p style={{ margin: 0, fontSize: 14 }}>
+            Se va a eliminar <b>{ficha.titulo}</b> de <b>{ficha.cliente_nombre}</b>.
+            Si ya le habías enviado el enlace, dejará de funcionar. No se puede deshacer.
+          </p>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-outline" onClick={onClose}>Cancelar</button>
+          <button className="btn-danger" onClick={onConfirmar}>Eliminar</button>
+        </div>
       </div>
     </div>
   );

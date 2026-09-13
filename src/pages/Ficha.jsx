@@ -17,6 +17,7 @@ export default function Ficha() {
   const [contenido, setContenido] = useState({});
   const [guardadoEn, setGuardadoEn] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [faltan, setFaltan] = useState([]);
   const [pasoFirma, setPasoFirma] = useState(false);
@@ -32,7 +33,6 @@ export default function Ficha() {
   const [pendientes, setPendientes] = useState('');
   const [decl, setDecl] = useState({ capacidad_representacion: false, aprueba_alcance: false, autoriza_tratamiento_operativo: false, recibe_copia: false });
   const [firmaImg, setFirmaImg] = useState(null);
-  const [firmanteEmail, setFirmanteEmail] = useState('');
   const [codigo, setCodigo] = useState('');
   const [codigoEnviado, setCodigoEnviado] = useState(false);
   const [emailMask, setEmailMask] = useState('');
@@ -44,6 +44,10 @@ export default function Ficha() {
   const [errorFirma, setErrorFirma] = useState('');
 
   const timerAutoguardado = useRef(null);
+  // El guardado sale con retardo, asi que no puede leer `contenido` del cierre:
+  // leeria el valor ANTERIOR al ultimo cambio y guardaria siempre una edicion
+  // atrasada (el cliente veia "Borrador guardado" y perdia lo ultimo que escribio).
+  const contenidoRef = useRef({});
   const secciones = useMemo(() => (ficha ? seccionesActivas(ficha.secciones) : []), [ficha]);
 
   useEffect(() => {
@@ -53,14 +57,23 @@ export default function Ficha() {
         if (!ok) { setError(j.error || 'No disponible'); setEstadoCarga('error'); return; }
         setFicha(j);
         setContenido(j.contenido || {});
+        contenidoRef.current = j.contenido || {};
         setPasoFirma(j.estado === 'completada');
         setEstadoCarga('ok');
       })
       .catch(() => { setError('No se pudo cargar.'); setEstadoCarga('error'); });
   }, [token]);
 
+  // Si el cliente cierra la pestana antes de que salte el guardado, el temporizador
+  // se queda colgado apuntando a un componente que ya no existe.
+  useEffect(() => () => { if (timerAutoguardado.current) clearTimeout(timerAutoguardado.current); }, []);
+
   function actualizarCampo(seccionClave, campoClave, valor) {
-    setContenido((prev) => ({ ...prev, [seccionClave]: { ...(prev[seccionClave] || {}), [campoClave]: valor } }));
+    setContenido((prev) => {
+      const siguiente = { ...prev, [seccionClave]: { ...(prev[seccionClave] || {}), [campoClave]: valor } };
+      contenidoRef.current = siguiente;
+      return siguiente;
+    });
     if (timerAutoguardado.current) clearTimeout(timerAutoguardado.current);
     timerAutoguardado.current = setTimeout(() => guardarBorrador(true), 2500);
   }
@@ -69,7 +82,9 @@ export default function Ficha() {
     setContenido((prev) => {
       const actuales = Array.isArray(prev[seccionClave]?.[campoClave]) ? prev[seccionClave][campoClave] : [];
       const nuevas = actuales.includes(opcion) ? actuales.filter((o) => o !== opcion) : [...actuales, opcion];
-      return { ...prev, [seccionClave]: { ...(prev[seccionClave] || {}), [campoClave]: nuevas } };
+      const siguiente = { ...prev, [seccionClave]: { ...(prev[seccionClave] || {}), [campoClave]: nuevas } };
+      contenidoRef.current = siguiente;
+      return siguiente;
     });
     if (timerAutoguardado.current) clearTimeout(timerAutoguardado.current);
     timerAutoguardado.current = setTimeout(() => guardarBorrador(true), 1200);
@@ -78,9 +93,12 @@ export default function Ficha() {
   async function guardarBorrador(silencioso) {
     if (!silencioso) setGuardando(true);
     try {
-      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'guardar', contenido }) });
-      if (r.ok) setGuardadoEn(new Date());
-    } catch { /* se reintentara en el proximo cambio */ }
+      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'guardar', contenido: contenidoRef.current }) });
+      // Callar el fallo era peor que el fallo: el cliente seguia viendo la hora
+      // del ultimo guardado que si funciono y se marchaba creyendo que estaba todo.
+      if (r.ok) { setGuardadoEn(new Date()); setErrorGuardado(''); }
+      else setErrorGuardado('No se ha podido guardar el ultimo cambio. Vuelve a intentarlo antes de cerrar.');
+    } catch { setErrorGuardado('Sin conexion: el ultimo cambio no se ha guardado todavia. No cierres esta pagina.'); }
     finally { if (!silencioso) setGuardando(false); }
   }
 
@@ -88,7 +106,7 @@ export default function Ficha() {
     setEnviando(true); setFaltan([]);
     try {
       await guardarBorrador(true);
-      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'enviar', contenido }) });
+      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'enviar', contenido: contenidoRef.current }) });
       const j = await r.json();
       if (r.ok && j.ok) { setPasoFirma(true); setTimeout(() => document.getElementById('bloque-firma')?.scrollIntoView({ behavior: 'smooth' }), 60); }
       else setFaltan(j.faltan || [j.error || 'No se pudo continuar.']);
@@ -97,10 +115,12 @@ export default function Ficha() {
   }
 
   async function pedirCodigo() {
-    if (!firmanteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(firmanteEmail)) { setErrorFirma('Escribe un email válido para recibir el código.'); return; }
+    // A donde va el codigo lo decide el servidor: al email de contacto que
+    // registro la agencia. Si lo eligiera quien abre el enlace, podria mandarselo
+    // a si mismo y firmar en nombre del cliente.
     setErrorFirma(''); setEnviandoCodigo(true);
     try {
-      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'enviar_codigo', firmante_email: firmanteEmail }) });
+      const r = await fetch(urlApi(token), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'enviar_codigo' }) });
       const j = await r.json();
       if (r.ok && j.ok) { setCodigoEnviado(true); setEmailMask(j.email || ''); } else setErrorFirma(j.error || 'No se pudo enviar el código.');
     } catch { setErrorFirma('No se pudo conectar.'); }
@@ -217,8 +237,11 @@ export default function Ficha() {
             ))}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', flexWrap: 'wrap', margin: '4px 0 22px' }}>
-              <span style={{ fontSize: 12.5, color: C.tenue }}>
-                {guardando ? 'Guardando…' : guardadoEn ? `Borrador guardado ${guardadoEn.toLocaleTimeString('es-ES')}` : 'Se guarda solo mientras escribes.'}
+              <span style={{ fontSize: 12.5, color: errorGuardado ? '#b42318' : C.tenue, fontWeight: errorGuardado ? 700 : 400 }}>
+                {errorGuardado ? errorGuardado
+                  : guardando ? 'Guardando…'
+                  : guardadoEn ? `Borrador guardado ${guardadoEn.toLocaleTimeString('es-ES')}`
+                  : 'Se guarda solo mientras escribes.'}
               </span>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => guardarBorrador(false)} disabled={guardando}
@@ -277,7 +300,9 @@ export default function Ficha() {
                 <label style={labSt}>Código de firma</label>
                 {!codigoEnviado ? (
                   <>
-                    <input value={firmanteEmail} onChange={(e) => setFirmanteEmail(e.target.value)} placeholder="Tu email para recibir el código" style={fieldSt} />
+                    <p style={{ fontSize: 13, color: C.tenue, margin: '0 0 8px' }}>
+                      Te enviaremos un código de un solo uso al email de contacto que la agencia tiene registrado para esta ficha.
+                    </p>
                     <button onClick={pedirCodigo} disabled={enviandoCodigo}
                       style={{ width: '100%', marginTop: 8, padding: '12px', borderRadius: 10, border: '1px solid ' + C.teal, background: '#fff', color: C.teal, fontWeight: 700, fontSize: 14.5, cursor: 'pointer' }}>
                       {enviandoCodigo ? 'Enviando…' : '📧 Enviar código a mi email'}

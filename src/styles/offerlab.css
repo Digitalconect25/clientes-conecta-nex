@@ -41,6 +41,14 @@
 
 /* --- Cimientos ------------------------------------------------------------ */
 
+/* El global.css del CRM pinta los titulos de verde corporativo. Aqui dentro el
+   color lo manda el bloque que los contiene: negro sobre papel, papel sobre
+   tinta. Sin esto, «BRIEF DEL AGENTE» salia en verde en plena herramienta. */
+.offerlab h1,
+.offerlab h2,
+.offerlab h3,
+.offerlab h4 { color: inherit; border: 0; padding: 0; }
+
 .offerlab .b2 { border: 2px solid var(--tinta); }
 
 /* La sombra es jerarquia, no decoracion: solo la lleva lo que esta elevado. */

@@ -127,6 +127,15 @@ export const api = {
   pagoUpdate: (data) => request('PUT', '/api/pagos', data),
   pagoDelete: (id) => request('DELETE', `/api/pagos?id=${id}`),
 
+  // Fichas de implementacion (agente IA WhatsApp): crear, elegir apartados,
+  // enviar el enlace privado y hacer seguimiento hasta que quede firmada.
+  fichasList: (clienteId) => request('GET', clienteId ? `/api/fichas?cliente_id=${clienteId}` : '/api/fichas'),
+  fichaGet: (id) => request('GET', `/api/fichas?id=${id}`),
+  fichaCrear: (data) => request('POST', '/api/fichas', data),
+  fichaActualizar: (data) => request('PUT', '/api/fichas', data),
+  fichaEliminar: (id) => request('DELETE', `/api/fichas?id=${id}`),
+  fichaEnviarEnlace: (id, email, nombreDestinatario) => request('POST', '/api/fichas', { accion: 'enviar_enlace', id, email, nombre_destinatario: nombreDestinatario }),
+
   // Fases del proyecto
   fasesList: (clienteId) => request('GET', clienteId ? `/api/fases?cliente_id=${clienteId}` : '/api/fases'),
   faseCreate: (data) => request('POST', '/api/fases', data),

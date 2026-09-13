@@ -24,6 +24,9 @@ import DatosFiscales from './pages/DatosFiscales.jsx';
 import AccesoActa from './pages/AccesoActa.jsx';
 import GeneradorQR from './pages/GeneradorQR.jsx';
 import Diseno from './pages/Diseno.jsx';
+import Fichas from './pages/Fichas.jsx';
+import Ficha from './pages/Ficha.jsx';
+import ValidarFicha from './pages/ValidarFicha.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(!!getPassword());
@@ -44,7 +47,7 @@ export default function App() {
 
   // La ruta /acceso/:token es PUBLICA. Cualquier persona con el enlace
   // puede entrar (luego se le pedira el PIN). NO requiere login de admin.
-  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/') || location.pathname.startsWith('/validar/') || location.pathname.startsWith('/firma-empresa/') || location.pathname.startsWith('/datos-fiscales/');
+  const esRutaPublica = location.pathname.startsWith('/acceso/') || location.pathname.startsWith('/agendar') || location.pathname.startsWith('/solicitud') || location.pathname.startsWith('/propuesta/') || location.pathname.startsWith('/firmar/') || location.pathname.startsWith('/validar/') || location.pathname.startsWith('/firma-empresa/') || location.pathname.startsWith('/datos-fiscales/') || location.pathname.startsWith('/ficha/') || location.pathname.startsWith('/validar-ficha/');
   if (esRutaPublica) {
     return (
       <Routes>
@@ -56,6 +59,8 @@ export default function App() {
         <Route path="/validar/:token" element={<ValidarAgencia />} />
         <Route path="/firma-empresa/:token" element={<FirmaEmpresa />} />
         <Route path="/datos-fiscales/:token" element={<DatosFiscales />} />
+        <Route path="/ficha/:token" element={<Ficha />} />
+        <Route path="/validar-ficha/:token" element={<ValidarFicha />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -77,6 +82,7 @@ export default function App() {
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
         <Route path="/embudo" element={<Embudo />} />
+        <Route path="/fichas" element={<Fichas />} />
         <Route path="/proyectos" element={<Proyectos />} />
         <Route path="/emails" element={<Emails />} />
         <Route path="/prospeccion" element={<Prospeccion />} />

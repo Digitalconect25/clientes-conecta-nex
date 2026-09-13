@@ -23,6 +23,20 @@ Plataforma web de gestion de clientes y generacion de contratos para Conecta Nex
 - Firma digital del cliente con canvas
 - Descarga PDF individual o ZIP con los 3 documentos
 - Dashboard con metricas
+- **Diseno de oferta y brief del agente de IA** (por prospecto, en `/diseno/:id`, se entra
+  desde la ficha del prospecto en Captacion en frio):
+  - Brief del agente: 8 bloques comunes (encargo, como habla, que sabe, con que se conecta,
+    modelo economico, escalado a persona, cumplimiento y KPI) + las preguntas propias de
+    cada sector (10 sectores en `src/lib/nichos.js`; anadir uno es editar esa lista).
+    Avisa de los campos sin los que no se puede construir el agente.
+  - Scorecard: puntua cada elemento de 1 a 5 en 4 criterios.
+  - Reparto Front Offer / Back Offer con conteo y suma por columna.
+  - Mapa de avatares por anillo de afinidad (dolor, sueno, que le hace decir NO y que SI).
+  - **No es una isla**: el brief entra en el prompt de la propuesta con IA (`generar_ia`) y
+    en el del email de captacion individual; el boton "Crear propuesta con esto" vuelca los
+    elementos como lineas de propuesta ordenados por scorecard; y al aceptar la propuesta el
+    diseno pasa al cliente para que no quede huerfano.
+  - Tabla `diseno_oferta` (migracion v21). Se crea sola al primer uso.
 
 ## Despliegue
 

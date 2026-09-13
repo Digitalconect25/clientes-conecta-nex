@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
-import { leerDiseno } from './diseno.js';
+import { leerDiseno, resumirBrief } from './diseno.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
 import { envolverEmail, botonEmail, tarjetaDatos, escEmail } from './_emailLayout.js';
 
@@ -69,43 +69,6 @@ async function siguienteNumero(anio) {
 function calcularTotal(items, descuento) {
   const sub = (items || []).reduce((s, it) => s + Number(it.subtotal != null ? it.subtotal : (Number(it.precio || 0) * Number(it.cantidad || 1))), 0);
   return Math.max(0, sub - Number(descuento || 0));
-}
-
-// El brief del agente (pantalla "Diseno de oferta") en texto plano, para que la IA
-// escriba sobre el negocio REAL y no sobre generalidades: que tiene que conseguir
-// el agente, por donde habla, que no puede decir, a quien atiende y que elementos
-// pesan mas en el scorecard.
-function resumirBrief(dis) {
-  if (!dis) return '';
-  const c = dis.brief_comun || {};
-  const n = dis.brief_nicho || {};
-  const l = [];
-  if (dis.nicho) l.push(`Sector del brief: ${dis.nicho}`);
-  const linea = (etiqueta, valor) => { if (valor && String(valor).trim()) l.push(`${etiqueta}: ${String(valor).trim().slice(0, 400)}`); };
-  linea('Que tiene que conseguir el agente', c.objetivo);
-  linea('Canales', c.canales);
-  linea('Quien atiende hoy', c.situacion);
-  linea('Horario', c.horario);
-  linea('Prohibido decir', c.lineasRojas);
-  linea('Preguntas mas frecuentes', c.faq);
-  linea('Por que le compran a el', c.diferencial);
-  linea('Como se le cobra', c.importes || c.modeloPrecio);
-  linea('Cifra que hay que mover', [c.kpi, c.partida && `hoy ${c.partida}`, c.meta && `meta ${c.meta}`].filter(Boolean).join(' · '));
-  for (const [k, v] of Object.entries(n)) linea(`Del sector (${k})`, v);
-
-  const avatares = Array.isArray(dis.avatares_json) ? dis.avatares_json.slice(0, 3) : [];
-  for (const a of avatares) {
-    const partes = [a.dolor_corto, a.dolor && `le duele: ${a.dolor}`, a.no && `dice NO si: ${a.no}`, a.si && `dice SI si: ${a.si}`].filter(Boolean);
-    if (partes.length) l.push(`Cliente tipo "${a.nombre}": ${partes.join(' | ').slice(0, 400)}`);
-  }
-
-  const items = Array.isArray(dis.items_json) ? dis.items_json : [];
-  if (items.length) {
-    const pts = (i) => (i.puntos?.complementa || 0) + (i.puntos?.objecion || 0) + (i.puntos?.valor || 0) + (i.puntos?.esfuerzo || 0);
-    const top = [...items].sort((a, b) => pts(b) - pts(a)).slice(0, 3).map((i) => i.nombre).filter(Boolean);
-    if (top.length) l.push(`Nucleo de la oferta ya decidido (usalo como eje): ${top.join(', ')}`);
-  }
-  return l.join('\n');
 }
 
 // IA: elige 2-4 servicios del catalogo (con su precio real) y redacta una intro.

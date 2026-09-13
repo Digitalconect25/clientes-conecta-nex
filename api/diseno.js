@@ -45,6 +45,43 @@ export async function leerDiseno(prospectoId) {
   return row || null;
 }
 
+/**
+ * El brief en texto plano, para meterselo a la IA (propuesta o email).
+ * Vive aqui, junto al dato, para que lo pueda usar cualquier endpoint.
+ */
+export function resumirBrief(dis) {
+  if (!dis) return '';
+  const c = dis.brief_comun || {};
+  const n = dis.brief_nicho || {};
+  const l = [];
+  if (dis.nicho) l.push(`Sector del brief: ${dis.nicho}`);
+  const linea = (etiqueta, valor) => { if (valor && String(valor).trim()) l.push(`${etiqueta}: ${String(valor).trim().slice(0, 400)}`); };
+  linea('Que tiene que conseguir el agente', c.objetivo);
+  linea('Canales', c.canales);
+  linea('Quien atiende hoy', c.situacion);
+  linea('Horario', c.horario);
+  linea('Prohibido decir', c.lineasRojas);
+  linea('Preguntas mas frecuentes', c.faq);
+  linea('Por que le compran a el', c.diferencial);
+  linea('Como se le cobra', c.importes || c.modeloPrecio);
+  linea('Cifra que hay que mover', [c.kpi, c.partida && `hoy ${c.partida}`, c.meta && `meta ${c.meta}`].filter(Boolean).join(' · '));
+  for (const [k, v] of Object.entries(n)) linea(`Del sector (${k})`, v);
+
+  const avatares = Array.isArray(dis.avatares_json) ? dis.avatares_json.slice(0, 3) : [];
+  for (const a of avatares) {
+    const partes = [a.dolor_corto, a.dolor && `le duele: ${a.dolor}`, a.no && `dice NO si: ${a.no}`, a.si && `dice SI si: ${a.si}`].filter(Boolean);
+    if (partes.length) l.push(`Cliente tipo "${a.nombre}": ${partes.join(' | ').slice(0, 400)}`);
+  }
+
+  const items = Array.isArray(dis.items_json) ? dis.items_json : [];
+  if (items.length) {
+    const pts = (i) => (i.puntos?.complementa || 0) + (i.puntos?.objecion || 0) + (i.puntos?.valor || 0) + (i.puntos?.esfuerzo || 0);
+    const top = [...items].sort((a, b) => pts(b) - pts(a)).slice(0, 3).map((i) => i.nombre).filter(Boolean);
+    if (top.length) l.push(`Nucleo de la oferta ya decidido (usalo como eje): ${top.join(', ')}`);
+  }
+  return l.join('\n');
+}
+
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const puntos = (p) => {
   const e = (v) => Math.min(5, Math.max(1, parseInt(v, 10) || 3));

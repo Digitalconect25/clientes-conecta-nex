@@ -2,6 +2,7 @@ import { sql } from './_db.js';
 import { checkAuth, jsonResponse } from './_auth.js';
 import { llamarIA, iaHabilitada } from './_groq.js';
 import { enviarEmail, emailHabilitado } from './_email.js';
+import { leerDiseno, resumirBrief } from './diseno.js';
 import crypto from 'node:crypto';
 
 // Escapa texto para incrustarlo en el HTML del email sin romper el maquetado.
@@ -109,7 +110,7 @@ function emailHtml(cuerpo, em, p) {
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // ── Generacion del email en frio con IA (Groq) ──────────────────────────────
-async function generarFrio(p) {
+async function generarFrio(p, dis) {
   const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
   const sys = `Eres el asistente de captacion de Conecta Nex, marca de Digital Conect. El emisor es Lazaro Carrazana. Escribe un email de PRIMER CONTACTO EN FRIO a un negocio, calido y consultivo, que el lector lea entero. NO suena a venta ni a plantilla.
 GUION EN ORDEN (parrafos cortos, varios):
@@ -137,7 +138,8 @@ ASUNTO: <asunto corto, honesto, sin clickbait, que invite a abrir>
 Presencia online: ${p.website ? p.website : 'no le hemos encontrado web ni redes'}.
 Situacion: ${sin ? 'sin presencia online' : 'presencia mejorable'}.
 Observaciones del analisis: ${p.observaciones || '(ninguna)'}.
-Persona de contacto: ${p.nombre || '(desconocida)'}.`;
+Persona de contacto: ${p.nombre || '(desconocida)'}.
+${resumirBrief(dis) ? 'LO QUE YA SABEMOS DE PRIMERA MANO (del diseno de oferta; tiene prioridad sobre lo anterior, escribe el diagnostico con esto):\n' + resumirBrief(dis) : ''}`;
   const { texto } = await llamarIA({
     mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }],
     temperatura: 0.65,
@@ -543,7 +545,7 @@ function renderPlan120(fases, empresa) {
 // Agente de VALOR: investiga el negocio, detecta su problema concreto de presencia
 // digital, explica la solucion y adjunta un plan de 120 dias (4 fases) con que resuelve
 // cada una. Es la propuesta de valor de la agencia, no un email generico.
-async function redactarPro(p) {
+async function redactarPro(p, dis) {
   const { web, serp } = await investigarNegocio(p);
   const sin = (p.situacion || 'sin_presencia') !== 'mejorable';
   const sys = `Eres consultor de Conecta Nex (marca de Digital Conect), agencia de marketing; el emisor es Lazaro Carrazana. Te doy informacion REAL de un negocio concreto. NO escribas un email generico: haz un DIAGNOSTICO util centrado en SU dolor y una PROPUESTA con un plan de 120 dias.
@@ -567,7 +569,8 @@ FASE4: <titulo corto> | <acciones concretas dias 91-120> | <que resuelve>
 RESULTADO: <1-2 frases: que resolveria en su negocio al terminar los 120 dias, realista>`;
   const user = `Negocio: ${p.empresa || '(s/n)'}. Sector: ${p.sector || '-'}. Ciudad: ${p.ciudad || '-'}. Web: ${p.website || 'no tiene'}.
 INFO DE SU WEB: ${web || '(no disponible)'}
-INFO DE GOOGLE: ${serp || '(no disponible)'}`;
+INFO DE GOOGLE: ${serp || '(no disponible)'}
+${resumirBrief(dis) ? 'LO QUE YA SABEMOS DE PRIMERA MANO (del diseno de oferta; manda sobre lo scrapeado):\n' + resumirBrief(dis) : ''}`;
   const { texto } = await llamarIA({ mensajes: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperatura: 0.6, max_tokens: 1700, timeout_ms: 28000 });
 
   const campo = (re) => ((texto.match(re) || [])[1] || '').trim();
@@ -621,15 +624,15 @@ INFO DE GOOGLE: ${serp || '(no disponible)'}`;
 
 // Email de valor con plan de 120 dias; si la investigacion o la IA fallan, cae al
 // email en frio mas ligero para que el lead nunca se quede sin borrador.
-async function redactarConValor(p) {
+async function redactarConValor(p, dis) {
   try {
-    const r = await redactarPro(p);
+    const r = await redactarPro(p, dis);
     if (r && r.cuerpo) return r;
   } catch { /* cae al frio */ }
   // El fallback tambien dentro de try: si generarFrio falla (p. ej. rate-limit de Groq),
   // no rechazamos la promesa; devolvemos null y el llamador deja el lead sin borrador
   // (se reintenta en otra pasada) en vez de propagar el error.
-  try { return await generarFrio(p); } catch { return null; }
+  try { return await generarFrio(p, dis); } catch { return null; }
 }
 
 export const maxDuration = 60;
@@ -777,7 +780,11 @@ export default async function handler(req, res) {
         if (!p) return jsonResponse(res, 404, { error: 'No encontrado' });
         // Email en frio ligero solo si se pide expresamente (rapido:true); por defecto,
         // el email de VALOR con diagnostico + solucion + plan de 120 dias.
-        const r = b.rapido ? await generarFrio({ ...p, ...b }) : await redactarConValor({ ...p, ...b });
+        // Aqui SI se consulta el brief: es la redaccion de UN prospecto concreto.
+        // En los envios masivos del cron no se hace, para no meter una consulta por
+        // lead a cambio de un dato que en el primer contacto casi siempre esta vacio.
+        const dis = await leerDiseno(p.id).catch(() => null);
+        const r = b.rapido ? await generarFrio({ ...p, ...b }, dis) : await redactarConValor({ ...p, ...b }, dis);
         if (!r || !r.cuerpo) return jsonResponse(res, 502, { error: 'La IA no pudo redactar ahora (reintenta en un momento).' });
         const obs = r.con_plan ? marcarPlan(p.observaciones, r.fuerte, r.debil) : p.observaciones;
         const [row] = await sql`UPDATE prospectos SET asunto = ${r.asunto}, email_borrador = ${r.cuerpo}, observaciones = ${obs}, actualizado_en = NOW() WHERE id = ${b.id} RETURNING *`;

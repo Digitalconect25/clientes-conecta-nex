@@ -1,4 +1,6 @@
-import QRCode from 'qrcode';
+// 'qrcode' se carga solo cuando de verdad se dibuja un QR (ver renderCustomQR).
+// Importarlo arriba lo metia en el paquete principal, que descarga TODO el que
+// entra, incluido el cliente que solo abre su enlace para firmar desde el movil.
 
 export const CREATIVE_SHAPES = [
   { value: 'triangle-up', label: 'Triangulo (arriba)' },
@@ -283,6 +285,7 @@ export async function renderCustomQR({
   pupilColor,
   transparentBg = false,
 }) {
+  const QRCode = (await import('qrcode')).default;
   const qr = QRCode.create(data || ' ', { errorCorrectionLevel: errorLevel || 'H' });
   const size = qr.modules.size;
   const matrix = qr.modules.data;

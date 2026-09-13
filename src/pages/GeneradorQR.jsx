@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
-import html2pdf from 'html2pdf.js';
 import { CREATIVE_SHAPES, FRAME_STYLES as CORNER_FRAME_STYLES, PUPIL_STYLES, isCreativeShape, renderCustomQR, svgToPngBlob } from '../lib/customQR.js';
 import { ICONS, ICON_BY_ID } from '../lib/qrIcons.js';
 import { extractPalette } from '../lib/colorExtractor.js';
@@ -575,6 +574,7 @@ export default function GeneradorQR() {
 
   async function exportPDF() {
     if (!exportableRef.current) return;
+    const html2pdf = (await import('html2pdf.js')).default;
     const opt = {
       margin: 10,
       filename: safeName() + '.pdf',

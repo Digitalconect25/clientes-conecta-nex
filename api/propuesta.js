@@ -160,6 +160,10 @@ async function crearClienteYpedirDatos(pr) {
 
   await sql`UPDATE propuestas SET cliente_id = ${cli.id} WHERE id = ${pr.id}`;
   if (pr.prospecto_id) { try { await sql`UPDATE prospectos SET cliente_id = ${cli.id}, estado = 'convertido', actualizado_en = NOW() WHERE id = ${pr.prospecto_id}`; } catch { /* noop */ } }
+  // El diseno de oferta (brief del agente, avatares, scorecard) sigue al cliente:
+  // sin esto, al convertir el prospecto el brief quedaba huerfano y habia que
+  // volver a preguntarle todo al cliente. En try/catch por si la tabla aun no existe.
+  if (pr.prospecto_id) { try { await sql`UPDATE diseno_oferta SET cliente_id = ${cli.id}, actualizado_en = NOW() WHERE prospecto_id = ${pr.prospecto_id}`; } catch { /* noop */ } }
 
   const email = (cli.email || '').trim();
   if (email && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && emailHabilitado()) {

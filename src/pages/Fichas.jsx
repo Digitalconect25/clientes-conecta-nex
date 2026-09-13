@@ -149,7 +149,10 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
   const [titulo, setTitulo] = useState('Ficha de implementación del agente IA WhatsApp');
   const [secciones, setSecciones] = useState(SECCIONES_FICHA.map((s) => s.clave));
   const [email, setEmail] = useState('');
-  const [enviarAhora, setEnviarAhora] = useState(true);
+  // Desmarcada a proposito: crear la ficha y avisar al cliente son dos decisiones
+  // distintas. Viniendo marcada, cualquier alta con prisa le disparaba un email
+  // con un enlace que quiza no estaba listo, y eso no se puede retirar.
+  const [enviarAhora, setEnviarAhora] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [errorModal, setErrorModal] = useState('');
 
@@ -192,9 +195,13 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
           <label>Apartados que necesita este cliente</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', margin: '6px 0 6px' }}>
             {SECCIONES_FICHA.map((s) => (
-              <label key={s.clave} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, cursor: 'pointer' }}>
-                <input type="checkbox" checked={secciones.includes(s.clave)} onChange={() => toggleSeccion(s.clave)} />
-                {s.numero} · {s.titulo}
+              // El texto iba suelto dentro del flex, asi que se partia en tres
+              // elementos (numero, separador y titulo) y el gap los separaba como
+              // si fueran columnas: la casilla quedaba lejos y el titulo centrado.
+              // Dentro de un span el texto es un bloque unico pegado a su casilla.
+              <label key={s.clave} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13.5, cursor: 'pointer', lineHeight: 1.35, padding: '3px 0' }}>
+                <input type="checkbox" checked={secciones.includes(s.clave)} onChange={() => toggleSeccion(s.clave)} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>{s.numero} · {s.titulo}</span>
               </label>
             ))}
           </div>
@@ -202,9 +209,9 @@ function ModalNuevaFicha({ clientes, onClose, onCreado }) {
             {secciones.length === SECCIONES_FICHA.length ? 'Quitar todos' : 'Marcar todos'}
           </button>
 
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0' }}>
-            <input type="checkbox" checked={enviarAhora} onChange={(e) => setEnviarAhora(e.target.checked)} />
-            Enviar el enlace por email ahora mismo
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '12px 0 6px', fontSize: 13.5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={enviarAhora} onChange={(e) => setEnviarAhora(e.target.checked)} style={{ flexShrink: 0 }} />
+            <span>Enviar el enlace al cliente por email ahora mismo</span>
           </label>
           {enviarAhora && (
             <input type="email" placeholder="Email del destinatario" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', boxSizing: 'border-box' }} />

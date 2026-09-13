@@ -11,9 +11,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { fmtEuros } from '../lib/contratos.js';
 import { CAMPOS_AGENTE, NICHOS, buscarNicho, CRITERIOS, TOTAL_MAX, totalPuntos, IMPRESCINDIBLES } from '../lib/nichos.js';
 
-const EUR = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' €';
+// El formato de euros de la casa (el mismo de Dashboard, Embudo y Clientes):
+// una pantalla que ponga "2.900,50 €" al lado de otra con "2900,50 EUR" canta.
+const EUR = fmtEuros;
 const nuevoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 const ANILLOS = [

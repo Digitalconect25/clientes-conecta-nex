@@ -153,9 +153,16 @@ export default async function handler(req, res) {
       if (!clienteId) return jsonResponse(res, 400, { error: 'Falta el cliente.' });
       const secc = seccionesValidas(secciones);
       if (!secc.length) return jsonResponse(res, 400, { error: 'Elige al menos un apartado.' });
+      // El enlace privado nace aqui, al crear la ficha, no al mandar el correo.
+      // Naciendo solo en enviar_enlace, el email era la UNICA via para hacerle
+      // llegar la ficha al cliente: no se podia copiar el enlace para mandarlo
+      // por WhatsApp, ni abrir la vista del cliente para repasarla antes de
+      // enviarsela. Enviar por email sigue funcionando igual y reutiliza este
+      // mismo token, asi que el enlace no cambia por haberlo enviado.
+      const tokenNuevo = crypto.randomBytes(24).toString('base64url');
       const [row] = await sql`
-        INSERT INTO fichas (cliente_id, titulo, secciones)
-        VALUES (${clienteId}, ${String(titulo || 'Ficha de implementación del agente IA WhatsApp').trim()}, ${JSON.stringify(secc)}::jsonb)
+        INSERT INTO fichas (cliente_id, titulo, secciones, token)
+        VALUES (${clienteId}, ${String(titulo || 'Ficha de implementación del agente IA WhatsApp').trim()}, ${JSON.stringify(secc)}::jsonb, ${tokenNuevo})
         RETURNING *`;
       return jsonResponse(res, 200, row);
     }

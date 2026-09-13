@@ -42,7 +42,18 @@ Plataforma web de gestion de clientes y generacion de contratos para Conecta Nex
 
 ### 1. Base de datos
 
-Ya creada en Neon (proyecto "Clientes Conecta Nex"). Schema en `db/schema.sql` ejecutado.
+Ya creada en Neon (proyecto "Clientes Conecta Nex").
+
+`db/schema.sql` es el esquema completo y al dia: las 24 tablas con las columnas
+que fueron anadiendo las migraciones v2 a v22 ya integradas. Se puede pegar
+entero en el SQL Editor de Neon tantas veces como haga falta: va todo con
+IF NOT EXISTS, no hay ni un DROP, y lleva al final un bloque de ALTER que pone
+al dia una base que ya existia (un CREATE TABLE IF NOT EXISTS no anade columnas
+nuevas a una tabla que ya esta creada; esos ALTER si).
+
+Las migraciones `db/migration_v*.sql` se quedan como historial. Al anadir una
+tabla nueva, crea su migracion Y refleja la tabla tambien en `schema.sql`, o el
+esquema vuelve a quedarse atras.
 
 ### 2. Variables de entorno en Vercel
 

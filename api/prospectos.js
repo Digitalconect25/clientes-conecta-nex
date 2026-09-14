@@ -369,6 +369,10 @@ const DOMINIOS_RUIDO = [
   'doctoralia', 'topdoctors', 'guiasamarillas', 'qdq.com', 'solofarma', 'citiservi',
   'eltenedor', 'justeat', 'glovoapp', 'ubereats', 'google.com', 'bing.com', 'x.com',
   'twitter.com', 'tiktok.com', 'pinterest.', 'ayuntamiento', '.gob.es', 'juntadeandalucia',
+  // Vistos al buscar negocios reales de Altea: todos son fichas de terceros.
+  'iberinform', 'trustlocal', 'cybo.com', 'espainfo', 'dateas', 'moovitapp', 'waze.com',
+  'foursquare', 'elpais.com', 'cincodias', 'comercioscomunitat', 'alteamarket', 'infoempresa',
+  'guiaempresas', 'datosempresa', 'bizkeo', 'yellowpages', 'opendi', 'tuugo', 'hotfrog',
 ];
 
 // Titulos que delatan un articulo o un listado, no un negocio.
@@ -454,6 +458,53 @@ async function webViva(website) {
     if (r.status === 405 || r.status === 501) r = await pedir('GET');
     return r.ok;
   } catch { return false; }
+}
+
+/**
+ * Averigua si un negocio tiene web PROPIA, que es el dato que mas pesa y el que
+ * Google no da en el pack local (sus campos son name, rating, reviews_cnt,
+ * type, address, maps_link: ni web ni telefono).
+ *
+ * Se busca el nombre entre comillas y se mira que dominios salen. Comprobado
+ * con dos casos reales de Altea:
+ *   - «Fontaneria Gines»: solo iberinform, einforma, Moovit... -> NO tiene web
+ *   - «Fontaneria LaMar»: fontanerialamar.es el primero        -> SI tiene web
+ *
+ * No basta con descartar directorios: se exige ademas que el dominio se parezca
+ * al nombre del negocio, que es lo que de verdad distingue su web de la ficha
+ * que le ha hecho un tercero.
+ */
+async function buscarWebDelNegocio(empresa, ciudad) {
+  const key = process.env.BRIGHTDATA_KEY;
+  if (!key || !empresa) return '';
+  const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
+  const q = encodeURIComponent(`"${empresa}" ${ciudad || ''}`.trim());
+  try {
+    const r = await fetch('https://api.brightdata.com/request', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone, url: `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`, format: 'raw' }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) return '';
+    const data = await r.json().catch(() => null);
+    if (!data || !Array.isArray(data.organic)) return '';
+
+    // Letras del nombre, sin acentos ni espacios: «Fontaneria LaMar» -> fontanerialamar
+    const clave = sinAcentos(empresa).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const trozos = sinAcentos(empresa).toLowerCase().split(/\s+/).filter((p) => p.length >= 4);
+
+    for (const o of data.organic) {
+      const bruto = String(o.display_link || o.source || o.link || '').split('›')[0].trim();
+      const dom = dominioNorm(bruto).replace(/\/.*$/, '');
+      // Que sea un dominio de verdad y no un trozo de texto del resultado.
+      if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(dom)) continue;
+      if (contiene(dom, DOMINIOS_RUIDO)) continue;
+      const plano = dom.replace(/[^a-z0-9]/g, '');
+      if (plano.includes(clave) || trozos.some((t) => plano.includes(t))) return dom;
+    }
+    return '';
+  } catch { return ''; }
 }
 
 /**
@@ -576,7 +627,22 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
 
   // ¿Responde su web? Una web caida o parada es dolor, no presencia. Se
   // comprueba en paralelo acotado para no tardar una eternidad.
-  const comprobados = await mapLimit(crudos, 12, async (n) => ({ ...n, webOk: n.website ? await webViva(n.website) : null }));
+  // Los del pack local llegan SIN web, porque Google no la da ahi. Y esa es la
+  // señal que mas pesa, asi que se busca de verdad: una consulta por negocio,
+  // solo para los del pack (suelen ser 3-6) y todas a la vez para que quepa en
+  // el tiempo de la funcion.
+  const sinDato = crudos.filter((n) => n.hayDatosContacto === false && !n.website).slice(0, 8);
+  const encontradas = new Map();
+  if (sinDato.length) {
+    const r = await mapLimit(sinDato, 8, async (n) => ({ empresa: n.empresa, web: await buscarWebDelNegocio(n.empresa, zona) }));
+    for (const x of r) if (x && x.status === 'fulfilled' && x.value) encontradas.set(x.value.empresa, x.value.web);
+  }
+  const conWeb = crudos.map((n) => (encontradas.has(n.empresa)
+    // Ya sabemos si tiene web o no: a partir de aqui el dato es real y se puntua.
+    ? { ...n, website: encontradas.get(n.empresa), hayDatosContacto: true }
+    : n));
+
+  const comprobados = await mapLimit(conWeb, 12, async (n) => ({ ...n, webOk: n.website ? await webViva(n.website) : null }));
 
   let flojos = 0;
   const candidatos = [];

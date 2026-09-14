@@ -397,17 +397,26 @@ function esRuido(nombre, website) {
   return false;
 }
 
-// Rotulos de negocio: si el nombre empieza por uno de estos, es un comercio,
-// no una persona. Sin esto, «Peluqueria Gore» pasaba por autonomo.
-const RE_ROTULO = /^(bar|cafeteria|cafe|restaurante|pizzeria|peluqueria|barberia|salon|clinica|centro|taller|garaje|tienda|super|panaderia|pasteleria|farmacia|gimnasio|hotel|hostal|asesoria|gestoria|inmobiliaria|academia|autoescuela|estudio|carniceria|fruteria|floristeria|optica|veterinaria|lavanderia|ferreteria|electricidad|fontaneria|reformas|construcciones|transportes|grupo|casa|mesón|meson)\b/i;
+// Se comparan los nombres sin acentos: la lista estaba escrita sin ellos y
+// «Peluqueria Yoli Toledo» (con tilde en el rotulo real) se colaba como autonomo.
+const sinAcentos = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-/** Heuristica de autonomo: nombre de persona, sin forma societaria ni rotulo. */
+// Si aparece CUALQUIERA de estas palabras, es un negocio con rotulo, no una
+// persona. Antes solo se miraba la primera palabra, asi que «Ripoll
+// Electricidad» o «Altea Luz Instalaciones Electricas» pasaban por autonomos.
+const RE_ROTULO = /\b(bar|cafeteria|cafe|restaurante|pizzeria|peluqueria|barberia|salon|clinica|centro|taller|garaje|tienda|super|panaderia|pasteleria|farmacia|gimnasio|hotel|hostal|asesoria|gestoria|inmobiliaria|academia|autoescuela|estudio|carniceria|fruteria|floristeria|optica|veterinaria|lavanderia|ferreteria|electricidad|electricista|electricas?|fontaneria|fontanero|reformas|construcciones|transportes|instalaciones|servicios|soluciones|energia|climatizacion|carpinteria|pintura|limpieza|seguros|abogados|dental|estetica|spa|luz|casa|meson)\b/i;
+
+/**
+ * Heuristica de autonomo: nombre de persona, sin forma societaria ni rotulo de
+ * negocio. Se exige ademas que TODAS las palabras tengan forma de nombre propio
+ * (Nombre Apellido), no solo la primera.
+ */
 function esAutonomo(nombre) {
-  const n = String(nombre || '').trim();
+  const n = sinAcentos(String(nombre || '').trim());
   if (/\b(s\.?l\.?u?|s\.?a\.?|s\.?c\.?|c\.?b\.?|sociedad|group|grupo)\b/i.test(n)) return false;
   if (RE_ROTULO.test(n)) return false;
   const palabras = n.split(/\s+/).filter(Boolean);
-  return palabras.length >= 2 && palabras.length <= 4 && /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+$/.test(palabras[0] || '');
+  return palabras.length >= 2 && palabras.length <= 4 && palabras.every((p) => /^[A-Z][a-z'-]+$/.test(p));
 }
 
 /** ¿La web responde? Una web caida o parada es dolor, no presencia. */

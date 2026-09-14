@@ -384,14 +384,31 @@ const DOMINIOS_GRATIS = ['wixsite.com', 'blogspot.', 'business.site', 'negocio.s
 
 const contiene = (dom, lista) => lista.some((x) => dom.includes(x));
 
-/** ¿Es un resultado que NO es un negocio local? (articulo, directorio, portal) */
-function esRuido(nombre, website) {
-  const n = String(nombre || '').trim();
-  if (!n || n.length < 3) return true;
-  if (RE_TITULO_RUIDO.test(n)) return true;
-  // Un titulo largo con varias palabras y sin forma de nombre propio suele ser
-  // el titular de un articulo, no el rotulo de un negocio.
-  if (n.split(/\s+/).length > 9) return true;
+// Reclamos de pagina de captacion. Ningun negocio se llama «Fontanero barato».
+const RE_RECLAMO = /\b(barat[oa]s?|economic[oa]s?|urgente|24\s*h(oras)?|precios?|presupuestos?|ofertas?|low\s*cost|gratis)\b/i;
+
+/**
+ * ¿Es un resultado que NO es un negocio local? (articulo, directorio, portal,
+ * pagina de categoria).
+ *
+ * Se le pasan el nicho y la zona buscados porque el ruido mas habitual es el
+ * titulo que repite la propia busqueda: «Fontaneros en Altea» no es el rotulo
+ * de nadie, es una pagina de servicios. Un negocio de verdad se llama
+ * «Fontaneria Ripoll», no «Fontaneros en Altea, Comunidad Valenciana».
+ */
+function esRuido(nombre, website, nicho = '', zona = '') {
+  const bruto = String(nombre || '').trim();
+  if (!bruto || bruto.length < 3) return true;
+  if (RE_TITULO_RUIDO.test(bruto)) return true;
+  if (RE_RECLAMO.test(bruto)) return true;
+  // Un titulo largo suele ser el titular de un articulo, no un rotulo.
+  if (bruto.split(/\s+/).length > 9) return true;
+
+  const n = sinAcentos(bruto).toLowerCase();
+  const ni = sinAcentos(String(nicho || '')).toLowerCase().replace(/es$|s$/, '');
+  const zo = sinAcentos(String(zona || '')).toLowerCase();
+  if (ni.length >= 4 && zo.length >= 3 && n.includes(ni) && n.includes(zo)) return true;
+
   const dom = dominioNorm(website);
   if (dom && contiene(dom, DOMINIOS_RUIDO)) return true;
   return false;
@@ -443,20 +460,38 @@ async function webViva(website) {
  * Puntua el DOLOR de 0 a 100 con senales objetivas, no con opiniones.
  * Cuanto mas alto, mas nos necesita y mas facil es que escuche.
  */
-function senalesDeDolor({ empresa, website, telefono, enPack, webOk }) {
+function senalesDeDolor({ empresa, website, telefono, enPack, webOk, reviews, rating, hayDatosContacto = true }) {
   const dom = dominioNorm(website);
   const motivos = [];
   let dolor = 0;
 
-  // Pesos calibrados con casos reales: «solo Facebook» o una web caida son casi
-  // peores que no tener nada, porque el cliente que los busca se va.
-  if (!dom) { dolor += 45; motivos.push('sin web'); }
-  else if (contiene(dom, DOMINIOS_REDES)) { dolor += 38; motivos.push('solo una red social, sin web propia'); }
-  else if (contiene(dom, DOMINIOS_GRATIS)) { dolor += 30; motivos.push('web de plantilla gratuita, sin dominio propio'); }
+  // IMPORTANTE: el pack local de Google NO devuelve ni web ni telefono (sus
+  // campos son name, rating, reviews_cnt, type, address, maps_link). Penalizar
+  // ahi por «sin web» seria inventarse un dolor que nadie ha medido: los seis
+  // fontaneros de la prueba puntuaban 57 solo por eso. Cuando la fuente no trae
+  // el dato, no se puntua; se puntua lo que SI se sabe.
+  if (hayDatosContacto) {
+    // Pesos calibrados con casos reales: «solo Facebook» o una web caida son
+    // casi peores que no tener nada, porque el cliente que los busca se va.
+    if (!dom) { dolor += 45; motivos.push('sin web'); }
+    else if (contiene(dom, DOMINIOS_REDES)) { dolor += 38; motivos.push('solo una red social, sin web propia'); }
+    else if (contiene(dom, DOMINIOS_GRATIS)) { dolor += 30; motivos.push('web de plantilla gratuita, sin dominio propio'); }
+    if (dom && webOk === false) { dolor += 35; motivos.push('su web no responde'); }
+    if (!String(telefono || '').trim()) { dolor += 12; motivos.push('sin telefono visible'); }
+  }
 
-  if (dom && webOk === false) { dolor += 35; motivos.push('su web no responde'); }
+  // Reputacion: esto SI lo trae el pack local y mide presencia de verdad. Un
+  // negocio con cuatro resenas no aparece, no le encuentran y no se fian de el.
+  const res = Number.isFinite(Number(reviews)) ? Number(reviews) : null;
+  if (res !== null) {
+    if (res <= 5) { dolor += 30; motivos.push(`solo ${res} resenas en Google`); }
+    else if (res <= 15) { dolor += 20; motivos.push(`pocas resenas (${res})`); }
+    else if (res <= 40) { dolor += 10; motivos.push(`resenas justas (${res})`); }
+  }
+  const nota = Number(rating);
+  if (Number.isFinite(nota) && nota > 0 && nota < 4) { dolor += 12; motivos.push(`nota baja (${nota})`); }
+
   if (!enPack) { dolor += 20; motivos.push('no sale en la ficha local de Google'); }
-  if (!String(telefono || '').trim()) { dolor += 12; motivos.push('sin telefono visible'); }
 
   const autonomo = esAutonomo(empresa);
   if (autonomo) { dolor += 8; motivos.push('autonomo o negocio de una persona'); }
@@ -495,26 +530,35 @@ async function descubrirBrightData(nicho, zona, limite) {
   // `enPack` distingue al negocio con ficha en Google (sale en el pack local) del
   // que solo aparece como resultado suelto: no salir en la ficha local es una de
   // las senales de dolor que luego se puntuan.
-  const add = (empresa, telefono, website, enPack) => {
+  const add = (empresa, telefono, website, enPack, extra = {}) => {
     empresa = String(empresa || '').trim();
     if (!empresa || out.length >= limite) return;
     // Fuera articulos, directorios y portales: no son clientes.
-    if (esRuido(empresa, website)) { descartados++; return; }
+    if (esRuido(empresa, website, nicho, zona)) { descartados++; return; }
     const clave = dominioNorm(website) || empresa.toLowerCase();
     if (vistos.has(clave)) return;
     vistos.add(clave);
-    out.push({ empresa, telefono: String(telefono || '').replace(/[^\d+ ]/g, '').trim(), website: String(website || '').trim(), enPack: !!enPack });
+    out.push({ empresa, telefono: String(telefono || '').replace(/[^\d+ ]/g, '').trim(), website: String(website || '').trim(), enPack: !!enPack, ...extra });
   };
-  // 1) Pack local (los mas relevantes: negocios con ficha de Google).
+  // 1) Pack local: negocios REALES con ficha de Google. No trae web ni telefono,
+  //    pero si resenas y nota, que es lo que se usa para medirlos.
   for (const b of (Array.isArray(data.snack_pack) ? data.snack_pack : [])) {
-    add(b.name, b.phone, b.site || b.link || b.website, true);
+    add(b.name, b.phone, b.site || b.link || b.website, true, {
+      reviews: b.reviews_cnt ?? b.reviews ?? null,
+      rating: b.rating ?? null,
+      hayDatosContacto: false,
+      maps: b.maps_link || '',
+    });
   }
   // 2) Resultados organicos, para completar hasta 'limite'.
   const organicos = data.organic || data.organic_results || [];
   for (const o of (Array.isArray(organicos) ? organicos : [])) {
     if (out.length >= limite) break;
     const nombre = String(o.title || o.name || '').replace(/\s*[-|·].*$/, '').trim(); // corta " - Opiniones", " | Web"
-    add(nombre, o.phone, o.link || o.url || o.display_link, false);
+    // OJO: `link` suele ser un redirector de Google (google.com/goto?url=...),
+    // asi que el dominio de verdad esta en display_link o en source.
+    const dominioReal = String(o.display_link || '').split('›')[0].trim() || o.source || o.link || o.url || '';
+    add(nombre, o.phone, dominioReal, false, { hayDatosContacto: true });
   }
   out.descartados = descartados;
   return out;
@@ -539,9 +583,9 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
   for (const rr of comprobados) {
     const n = rr && rr.status === 'fulfilled' ? rr.value : null;
     if (!n) continue;
-    const s = senalesDeDolor(n);
-    // Un negocio con web propia que responde, bien posicionado y con su ficha al
-    // dia no nos necesita: no entra en la lista por mucho que salga en Google.
+    const s = senalesDeDolor({ ...n, webOk: n.webOk });
+    // Un negocio con web propia que responde, bien posicionado, con su ficha al
+    // dia y con resenas no nos necesita: no entra por mucho que salga en Google.
     if (s.dolor < umbralDolor) { flojos++; continue; }
     candidatos.push({ ...n, dolor: s.dolor, motivos: s.motivos, autonomo: s.autonomo });
   }

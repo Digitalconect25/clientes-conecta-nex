@@ -276,12 +276,19 @@ CREATE TABLE IF NOT EXISTS prospectos (
   interes_en TIMESTAMPTZ,              -- v19
   etapa TEXT,                          -- v19: frio|contactado|seguimiento|interesado|caliente|cliente|descartado
   etapa_en TIMESTAMPTZ,                -- v19
+  -- v24 · Cuanto nos necesita ese negocio, de 0 a 100, medido con señales
+  -- objetivas: sin web (+45), solo una red social (+30), web de plantilla
+  -- gratuita (+22), su web no responde (+25), no sale en la ficha local de
+  -- Google (+20), sin teléfono (+12), autónomo (+8). El scrapeo solo se queda
+  -- con los que pasan el umbral.
+  dolor INTEGER,
   enviado_en TIMESTAMP,
   creado_en TIMESTAMP DEFAULT NOW(),
   actualizado_en TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_prospectos_creado ON prospectos (creado_en DESC);
 CREATE INDEX IF NOT EXISTS idx_prospectos_estado ON prospectos (estado);
+CREATE INDEX IF NOT EXISTS idx_prospectos_dolor ON prospectos (dolor DESC NULLS LAST);
 
 -- Historial de la evolución de cada prospecto (v19).
 CREATE TABLE IF NOT EXISTS prospectos_eventos (

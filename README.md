@@ -55,6 +55,19 @@ Plataforma web de gestion de clientes y generacion de contratos para Conecta Nex
   - Al firmar recibes un email con los datos y la ficha firmada adjunta, y un
     segundo codigo para dar tu validacion.
   - Tabla `fichas` (migracion v22). Se crea sola al primer uso.
+- **Captacion en frio: solo negocios que nos necesitan** (`api/prospectos.js`).
+  El scrapeo no busca volumen, busca dolor. Dos filtros antes de guardar nada:
+  1. **Fuera lo que no es un negocio.** Articulos y listados ("Las 10 mejores
+     empresas de..."), directorios y portales (Paginas Amarillas, Habitissimo,
+     Yelp, Idealista, Doctoralia, InfoJobs...) y titulos de mas de 9 palabras.
+  2. **Puntuacion de DOLOR de 0 a 100**, con senales objetivas y no con
+     opiniones de la IA: sin web (+45), solo una red social (+38), su web no
+     responde (+35), web de plantilla gratuita sin dominio propio (+30), no sale
+     en la ficha local de Google (+20), sin telefono (+12), autonomo (+8).
+     Solo entran los que llegan a 30. Un negocio con web propia que funciona,
+     ficha al dia y telefono puntua 0 y no entra: no nos necesita.
+  Se guarda en `prospectos.dolor` (migracion v24) y el motivo queda escrito en
+  las observaciones, para saber por que esta ahi cada lead.
 
 ## Despliegue
 

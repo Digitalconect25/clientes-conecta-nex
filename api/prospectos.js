@@ -168,6 +168,8 @@ async function ensureP() {
   // etapa_en y el scoring usa prioridad; si falta cualquiera NO cacheamos el exito.
   let ok = true;
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS prioridad text`; } catch { ok = false; }
+  // v24: dolor 0-100 medido con senales objetivas (sin web, sin ficha, web caida…).
+  try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS dolor integer`; } catch { ok = false; }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS seguimiento_en timestamptz`; } catch { ok = false; }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_grado text`; } catch { ok = false; }
   try { await sql`ALTER TABLE prospectos ADD COLUMN IF NOT EXISTS interes_en timestamptz`; } catch { ok = false; }
@@ -343,6 +345,106 @@ async function convertirEnCliente(p, b) {
 // Limpia el dominio para deduplicar (quita esquema, www y barra final).
 const dominioNorm = (w) => String(w || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
 
+/* ===========================================================================
+   CUALIFICACION DE LEADS · quien entra y quien no
+   ---------------------------------------------------------------------------
+   Antes entraba en la lista cualquier resultado de Google, y eso metia basura:
+   "Las 10 mejores empresas de electricistas en Altea" no es un negocio, es un
+   articulo. Tampoco sirven las paginas amarillas ni Habitissimo: son
+   directorios, no clientes.
+
+   Y sobre todo: el trabajo no es traer MUCHOS negocios, es traer los que mas
+   nos necesitan. Un negocio con web decente, bien posicionado y con su ficha
+   en Google no va a contratar nada; el que no aparece en ningun sitio, si.
+   Por eso cada candidato se puntua por DOLOR y solo entran los que pasan el
+   umbral.
+   =========================================================================== */
+
+// Directorios, agregadores y portales: nunca son el cliente final.
+const DOMINIOS_RUIDO = [
+  'paginasamarillas', 'paginas-amarillas', 'habitissimo', 'yelp.', 'tripadvisor', 'thefork',
+  'milanuncios', 'infoisinfo', 'cylex', 'einforma', 'axesor', 'empresia', 'expansion.com',
+  'indeed', 'infojobs', 'linkedin.com', 'youtube.com', 'wikipedia', 'amazon.', 'ebay.',
+  'idealista', 'fotocasa', 'booking.', 'airbnb', 'groupon', 'ofertia', 'trustpilot',
+  'doctoralia', 'topdoctors', 'guiasamarillas', 'qdq.com', 'solofarma', 'citiservi',
+  'eltenedor', 'justeat', 'glovoapp', 'ubereats', 'google.com', 'bing.com', 'x.com',
+  'twitter.com', 'tiktok.com', 'pinterest.', 'ayuntamiento', '.gob.es', 'juntadeandalucia',
+];
+
+// Titulos que delatan un articulo o un listado, no un negocio.
+const RE_TITULO_RUIDO = /(^|\s)(las?|los)\s+\d+\s+mejores|^top\s*\d|mejores\s+\w+\s+(en|de)\s|\bguia\b|\blistado\b|\bdirectorio\b|\bopiniones\b|\bprecios?\s+de\b|cuanto\s+cuesta|\branking\b|\bcomparativa\b|^que\s+|^como\s+/i;
+
+// Perfiles de red social como unica presencia: el negocio existe, pero online
+// esta en casa de otro. Es senal de dolor, no de ruido.
+const DOMINIOS_REDES = ['facebook.com', 'instagram.com', 'linktr.ee', 'wa.me', 'about.me'];
+
+// Webs de plantilla gratuita sin dominio propio: presencia debil.
+const DOMINIOS_GRATIS = ['wixsite.com', 'blogspot.', 'business.site', 'negocio.site', 'jimdosite',
+  'webnode.', 'weebly.com', 'my-free.website', 'godaddysites.com', 'sitew.', 'wordpress.com'];
+
+const contiene = (dom, lista) => lista.some((x) => dom.includes(x));
+
+/** ¿Es un resultado que NO es un negocio local? (articulo, directorio, portal) */
+function esRuido(nombre, website) {
+  const n = String(nombre || '').trim();
+  if (!n || n.length < 3) return true;
+  if (RE_TITULO_RUIDO.test(n)) return true;
+  // Un titulo largo con varias palabras y sin forma de nombre propio suele ser
+  // el titular de un articulo, no el rotulo de un negocio.
+  if (n.split(/\s+/).length > 9) return true;
+  const dom = dominioNorm(website);
+  if (dom && contiene(dom, DOMINIOS_RUIDO)) return true;
+  return false;
+}
+
+// Rotulos de negocio: si el nombre empieza por uno de estos, es un comercio,
+// no una persona. Sin esto, «Peluqueria Gore» pasaba por autonomo.
+const RE_ROTULO = /^(bar|cafeteria|cafe|restaurante|pizzeria|peluqueria|barberia|salon|clinica|centro|taller|garaje|tienda|super|panaderia|pasteleria|farmacia|gimnasio|hotel|hostal|asesoria|gestoria|inmobiliaria|academia|autoescuela|estudio|carniceria|fruteria|floristeria|optica|veterinaria|lavanderia|ferreteria|electricidad|fontaneria|reformas|construcciones|transportes|grupo|casa|mesón|meson)\b/i;
+
+/** Heuristica de autonomo: nombre de persona, sin forma societaria ni rotulo. */
+function esAutonomo(nombre) {
+  const n = String(nombre || '').trim();
+  if (/\b(s\.?l\.?u?|s\.?a\.?|s\.?c\.?|c\.?b\.?|sociedad|group|grupo)\b/i.test(n)) return false;
+  if (RE_ROTULO.test(n)) return false;
+  const palabras = n.split(/\s+/).filter(Boolean);
+  return palabras.length >= 2 && palabras.length <= 4 && /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+$/.test(palabras[0] || '');
+}
+
+/** ¿La web responde? Una web caida o parada es dolor, no presencia. */
+async function webViva(website) {
+  if (!website) return null;
+  const url = /^https?:\/\//i.test(website) ? website : 'https://' + website;
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(9000) });
+    return r.ok;
+  } catch { return false; }
+}
+
+/**
+ * Puntua el DOLOR de 0 a 100 con senales objetivas, no con opiniones.
+ * Cuanto mas alto, mas nos necesita y mas facil es que escuche.
+ */
+function senalesDeDolor({ empresa, website, telefono, enPack, webOk }) {
+  const dom = dominioNorm(website);
+  const motivos = [];
+  let dolor = 0;
+
+  // Pesos calibrados con casos reales: «solo Facebook» o una web caida son casi
+  // peores que no tener nada, porque el cliente que los busca se va.
+  if (!dom) { dolor += 45; motivos.push('sin web'); }
+  else if (contiene(dom, DOMINIOS_REDES)) { dolor += 38; motivos.push('solo una red social, sin web propia'); }
+  else if (contiene(dom, DOMINIOS_GRATIS)) { dolor += 30; motivos.push('web de plantilla gratuita, sin dominio propio'); }
+
+  if (dom && webOk === false) { dolor += 35; motivos.push('su web no responde'); }
+  if (!enPack) { dolor += 20; motivos.push('no sale en la ficha local de Google'); }
+  if (!String(telefono || '').trim()) { dolor += 12; motivos.push('sin telefono visible'); }
+
+  const autonomo = esAutonomo(empresa);
+  if (autonomo) { dolor += 8; motivos.push('autonomo o negocio de una persona'); }
+
+  return { dolor: Math.min(100, dolor), motivos, autonomo };
+}
+
 // Descubre negocios locales con Bright Data SERP. Usa el pack local de Google
 // (snack_pack: nombre/teléfono/web) y, como el pack solo trae ~3, COMPLETA con los
 // resultados organicos para captar mas negocios por consulta.
@@ -370,33 +472,65 @@ async function descubrirBrightData(nicho, zona, limite) {
   }
   const out = [];
   const vistos = new Set();
-  const add = (empresa, telefono, website) => {
+  let descartados = 0;
+  // `enPack` distingue al negocio con ficha en Google (sale en el pack local) del
+  // que solo aparece como resultado suelto: no salir en la ficha local es una de
+  // las senales de dolor que luego se puntuan.
+  const add = (empresa, telefono, website, enPack) => {
     empresa = String(empresa || '').trim();
     if (!empresa || out.length >= limite) return;
+    // Fuera articulos, directorios y portales: no son clientes.
+    if (esRuido(empresa, website)) { descartados++; return; }
     const clave = dominioNorm(website) || empresa.toLowerCase();
     if (vistos.has(clave)) return;
     vistos.add(clave);
-    out.push({ empresa, telefono: String(telefono || '').replace(/[^\d+ ]/g, '').trim(), website: String(website || '').trim() });
+    out.push({ empresa, telefono: String(telefono || '').replace(/[^\d+ ]/g, '').trim(), website: String(website || '').trim(), enPack: !!enPack });
   };
   // 1) Pack local (los mas relevantes: negocios con ficha de Google).
   for (const b of (Array.isArray(data.snack_pack) ? data.snack_pack : [])) {
-    add(b.name, b.phone, b.site || b.link || b.website);
+    add(b.name, b.phone, b.site || b.link || b.website, true);
   }
   // 2) Resultados organicos, para completar hasta 'limite'.
   const organicos = data.organic || data.organic_results || [];
   for (const o of (Array.isArray(organicos) ? organicos : [])) {
     if (out.length >= limite) break;
     const nombre = String(o.title || o.name || '').replace(/\s*[-|·].*$/, '').trim(); // corta " - Opiniones", " | Web"
-    add(nombre, o.phone, o.link || o.url || o.display_link);
+    add(nombre, o.phone, o.link || o.url || o.display_link, false);
   }
+  out.descartados = descartados;
   return out;
 }
 
 // Pipeline completo de captacion: scrapea negocios del nicho en la zona, inserta
 // los nuevos (sin duplicar), la IA los prioriza, busca su email en la web y
 // redacta el primer contacto en frio. Lo usan 'descubrir' (manual) y 'ciclo_diario' (agente).
-async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enriquecer = true, generar = true, origen = 'descubierto' }) {
-  const negocios = await descubrirBrightData(nicho, zona, limite);
+async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enriquecer = true, generar = true, origen = 'descubierto', umbralDolor = 30 }) {
+  // Se piden MUCHOS mas candidatos de los que hacen falta, porque la mayoria se
+  // va a caer en el filtro. El objetivo no es volumen: es quedarse solo con los
+  // que de verdad nos necesitan.
+  const crudos = await descubrirBrightData(nicho, zona, Math.min(60, Math.max(limite * 4, 20)));
+  const ruido = crudos.descartados || 0;
+
+  // ¿Responde su web? Una web caida o parada es dolor, no presencia. Se
+  // comprueba en paralelo acotado para no tardar una eternidad.
+  const comprobados = await mapLimit(crudos, 5, async (n) => ({ ...n, webOk: n.website ? await webViva(n.website) : null }));
+
+  let flojos = 0;
+  const candidatos = [];
+  for (const rr of comprobados) {
+    const n = rr && rr.status === 'fulfilled' ? rr.value : null;
+    if (!n) continue;
+    const s = senalesDeDolor(n);
+    // Un negocio con web propia que responde, bien posicionado y con su ficha al
+    // dia no nos necesita: no entra en la lista por mucho que salga en Google.
+    if (s.dolor < umbralDolor) { flojos++; continue; }
+    candidatos.push({ ...n, dolor: s.dolor, motivos: s.motivos, autonomo: s.autonomo });
+  }
+  // Primero los que mas duelen.
+  candidatos.sort((a, b) => b.dolor - a.dolor);
+  const negocios = candidatos.slice(0, limite);
+  console.log(`[captacion] ${nicho} en ${zona}: ${crudos.length} candidatos, ${ruido} eran ruido, ${flojos} sin dolor suficiente, ${negocios.length} se quedan`);
+
   let insertados = 0, duplicados = 0; const nuevosIds = [];
   for (const n of negocios) {
     // Dedup por dominio normalizado (sin esquema/www/barra final) o por empresa+ciudad.
@@ -407,13 +541,17 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
          OR (lower(trim(empresa)) = ${n.empresa.toLowerCase().trim()} AND lower(trim(ciudad)) = ${zona.toLowerCase().trim()})
       LIMIT 1`;
     if (existe.length) { duplicados++; continue; }
+    // La situacion sale del dolor medido, no de si hay una url cualquiera: una
+    // web caida o un perfil de Facebook no son "presencia online".
+    const situacion = n.dolor >= 60 ? 'sin_presencia' : 'mejorable';
+    const obs = `[Dolor ${n.dolor}/100] ${n.motivos.join(' · ')}.${n.autonomo ? ' Autonomo.' : ''} Captado con Bright Data.`;
     const [row] = await sql`
-      INSERT INTO prospectos (empresa, nombre, email, telefono, sector, ciudad, website, situacion, observaciones, estado, origen, etapa, etapa_en)
+      INSERT INTO prospectos (empresa, nombre, email, telefono, sector, ciudad, website, situacion, observaciones, estado, origen, etapa, etapa_en, dolor)
       VALUES (${n.empresa}, ${''}, ${''}, ${n.telefono}, ${nicho}, ${zona}, ${n.website},
-              ${n.website ? 'mejorable' : 'sin_presencia'}, ${'Descubierto automaticamente (Bright Data).'}, ${'nuevo'}, ${origen}, ${'frio'}, NOW())
+              ${situacion}, ${obs}, ${'nuevo'}, ${origen}, ${'frio'}, NOW(), ${n.dolor})
       RETURNING id`;
     insertados++; nuevosIds.push(row.id);
-    await registrarEvento(row.id, 'alta', `Captado por scrapeo: ${nicho} en ${zona} (lead en frio)`);
+    await registrarEvento(row.id, 'alta', `Captado por scrapeo: ${nicho} en ${zona} · dolor ${n.dolor}/100 (${n.motivos.join(', ')})`);
   }
   // Puntuar los nuevos con IA (prioridad Alta/Media/Baja). Concurrencia acotada
   // para no chocar con el rate-limit de Groq ni agotar el presupuesto de tiempo.

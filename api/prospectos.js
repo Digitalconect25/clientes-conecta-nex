@@ -818,6 +818,53 @@ export default async function handler(req, res) {
 
       // ── Agente de captacion diaria ─────────────────────────────────────────
       // Configuracion del scrapeo (ciudad + nichos que rotan + limite + activo).
+      // Repasa con el criterio nuevo los leads que ya estaban en la lista: saca
+      // el ruido que entro antes del filtro (articulos, directorios) y pone a
+      // cada uno su dolor. NO toca los que ya estan contactados, respondidos o
+      // convertidos: eso es trabajo en marcha y no se pisa.
+      if (accion === 'recalcular_dolor') {
+        const filas = await sql`
+          SELECT id, empresa, website, telefono
+          FROM prospectos
+          WHERE estado = 'nuevo' OR estado IS NULL
+          ORDER BY id`;
+
+        const fuera = [];
+        const aPuntuar = [];
+        for (const p of filas) (esRuido(p.empresa, p.website) ? fuera : aPuntuar).push(p);
+
+        for (const p of fuera) {
+          await sql`UPDATE prospectos SET estado = 'descartado', actualizado_en = NOW() WHERE id = ${p.id}`;
+          await registrarEvento(p.id, 'etapa', 'Descartado al repasar la lista: no es un negocio (articulo, directorio o portal)');
+        }
+
+        // Se comprueba de verdad si su web responde, igual que en el scrapeo.
+        const comprobados = await mapLimit(aPuntuar, 5, async (p) => ({ p, webOk: p.website ? await webViva(p.website) : null }));
+        let puntuados = 0;
+        const reparto = { alto: 0, medio: 0, bajo: 0 };
+        for (const rr of comprobados) {
+          if (!rr || rr.status !== 'fulfilled' || !rr.value) continue;
+          const { p, webOk } = rr.value;
+          // `enPack` no se puede saber a posteriori (no guardamos si salia en la
+          // ficha local), asi que se da por bueno: mejor quedarse corto que
+          // inflar el dolor de un lead antiguo con una senal que no medimos.
+          const s = senalesDeDolor({ empresa: p.empresa, website: p.website, telefono: p.telefono, enPack: true, webOk });
+          await sql`UPDATE prospectos
+            SET dolor = ${s.dolor},
+                situacion = ${s.dolor >= 60 ? 'sin_presencia' : 'mejorable'},
+                observaciones = ${'[Dolor ' + s.dolor + '/100] ' + (s.motivos.join(' · ') || 'sin senales de debilidad') + '.'},
+                actualizado_en = NOW()
+            WHERE id = ${p.id}`;
+          puntuados++;
+          if (s.dolor >= 60) reparto.alto++; else if (s.dolor >= 30) reparto.medio++; else reparto.bajo++;
+        }
+
+        return jsonResponse(res, 200, {
+          ok: true, revisados: filas.length, descartados: fuera.length, puntuados, reparto,
+          detalle_descartados: fuera.map((p) => p.empresa).slice(0, 20),
+        });
+      }
+
       if (accion === 'config_get') {
         return jsonResponse(res, 200, await getCaptacion());
       }

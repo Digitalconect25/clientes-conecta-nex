@@ -2,6 +2,9 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.js": { "maxDuration": 60 }
+  },
   "crons": [
     { "path": "/api/cron-pro", "schedule": "0 8 * * 1-6" },
     { "path": "/api/cron-citas", "schedule": "0 7 * * 1-6" }

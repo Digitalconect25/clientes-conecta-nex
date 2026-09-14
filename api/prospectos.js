@@ -419,12 +419,22 @@ function esAutonomo(nombre) {
   return palabras.length >= 2 && palabras.length <= 4 && palabras.every((p) => /^[A-Z][a-z'-]+$/.test(p));
 }
 
-/** ¿La web responde? Una web caida o parada es dolor, no presencia. */
+/**
+ * ¿La web responde? Una web caida o parada es dolor, no presencia.
+ *
+ * Con GET y 9 s de espera esto tumbaba la funcion: 48 webs de cinco en cinco
+ * son hasta 90 s y Vercel corta antes (502). Con HEAD, 4 s y doce a la vez son
+ * unos 16 s. Ademas, una web que tarda mas de 4 s en dar señal ya es mala
+ * señal para el cliente que la abre desde el movil.
+ */
 async function webViva(website) {
   if (!website) return null;
   const url = /^https?:\/\//i.test(website) ? website : 'https://' + website;
+  const pedir = (metodo) => fetch(url, { method: metodo, headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(4000) });
   try {
-    const r = await fetch(url, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(9000) });
+    let r = await pedir('HEAD');
+    // Hay servidores que no admiten HEAD: solo en ese caso se reintenta con GET.
+    if (r.status === 405 || r.status === 501) r = await pedir('GET');
     return r.ok;
   } catch { return false; }
 }
@@ -517,12 +527,12 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
   // Se piden MUCHOS mas candidatos de los que hacen falta, porque la mayoria se
   // va a caer en el filtro. El objetivo no es volumen: es quedarse solo con los
   // que de verdad nos necesitan.
-  const crudos = await descubrirBrightData(nicho, zona, Math.min(60, Math.max(limite * 4, 20)));
+  const crudos = await descubrirBrightData(nicho, zona, Math.min(36, Math.max(limite * 3, 18)));
   const ruido = crudos.descartados || 0;
 
   // ¿Responde su web? Una web caida o parada es dolor, no presencia. Se
   // comprueba en paralelo acotado para no tardar una eternidad.
-  const comprobados = await mapLimit(crudos, 5, async (n) => ({ ...n, webOk: n.website ? await webViva(n.website) : null }));
+  const comprobados = await mapLimit(crudos, 12, async (n) => ({ ...n, webOk: n.website ? await webViva(n.website) : null }));
 
   let flojos = 0;
   const candidatos = [];

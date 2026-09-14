@@ -474,37 +474,66 @@ async function webViva(website) {
  * al nombre del negocio, que es lo que de verdad distingue su web de la ficha
  * que le ha hecho un tercero.
  */
+// Palabras del sector: aparecen en el nombre de medio gremio y NO distinguen a
+// nadie. Sin esto, «Fontaneria indy» se quedaba con fontaneriaelrayo.es, que es
+// la web de otro negocio, solo porque ambos llevan «fontaneria».
+const GENERICOS = new Set(['fontaneria', 'fontanero', 'fontaneros', 'electricidad', 'electricista', 'electricistas',
+  'peluqueria', 'barberia', 'clinica', 'centro', 'taller', 'talleres', 'tienda', 'reformas', 'instalaciones',
+  'servicios', 'soluciones', 'construcciones', 'limpieza', 'limpiezas', 'transportes', 'asesoria', 'gestoria',
+  'restaurante', 'cafeteria', 'panaderia', 'farmacia', 'gimnasio', 'estetica', 'dental', 'autoescuela',
+  'inmobiliaria', 'carpinteria', 'pintura', 'climatizacion', 'energia', 'seguros', 'abogados', 'veterinaria',
+  'optica', 'ferreteria', 'altea', 'alicante', 'benidorm', 'valencia', 'madrid', 'barcelona']);
+
+/**
+ * Devuelve:
+ *   una cadena con el dominio  -> tiene web propia
+ *   ''                          -> se ha mirado y NO tiene web
+ *   null                        -> NO SE HA PODIDO AVERIGUAR
+ *
+ * Esa tercera opcion es la importante. Bright Data devuelve respuestas vacias de
+ * vez en cuando (HTTP 200 con 0 bytes), y la primera version convertia ese fallo
+ * en «no tiene web», o sea en 45 puntos de dolor inventado. Si no se sabe, se
+ * dice que no se sabe y no se puntua.
+ */
 async function buscarWebDelNegocio(empresa, ciudad) {
   const key = process.env.BRIGHTDATA_KEY;
-  if (!key || !empresa) return '';
+  if (!key || !empresa) return null;
   const zone = process.env.BRIGHTDATA_ZONE || 'mcp_unlocker';
   const q = encodeURIComponent(`"${empresa}" ${ciudad || ''}`.trim());
-  try {
-    const r = await fetch('https://api.brightdata.com/request', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zone, url: `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`, format: 'raw' }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!r.ok) return '';
-    const data = await r.json().catch(() => null);
-    if (!data || !Array.isArray(data.organic)) return '';
 
-    // Letras del nombre, sin acentos ni espacios: «Fontaneria LaMar» -> fontanerialamar
-    const clave = sinAcentos(empresa).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const trozos = sinAcentos(empresa).toLowerCase().split(/\s+/).filter((p) => p.length >= 4);
+  let data = null;
+  // Dos intentos: las respuestas vacias son intermitentes.
+  for (let intento = 0; intento < 2 && !data; intento++) {
+    try {
+      const r = await fetch('https://api.brightdata.com/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, url: `https://www.google.com/search?q=${q}&gl=es&hl=es&brd_json=1`, format: 'raw' }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) continue;
+      const txt = await r.text();
+      if (!txt.trim()) continue; // respuesta vacia: reintentar
+      try { data = JSON.parse(txt); } catch { /* no era JSON */ }
+    } catch { /* se reintenta */ }
+  }
+  if (!data || !Array.isArray(data.organic) || !data.organic.length) return null; // no se sabe
 
-    for (const o of data.organic) {
-      const bruto = String(o.display_link || o.source || o.link || '').split('›')[0].trim();
-      const dom = dominioNorm(bruto).replace(/\/.*$/, '');
-      // Que sea un dominio de verdad y no un trozo de texto del resultado.
-      if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(dom)) continue;
-      if (contiene(dom, DOMINIOS_RUIDO)) continue;
-      const plano = dom.replace(/[^a-z0-9]/g, '');
-      if (plano.includes(clave) || trozos.some((t) => plano.includes(t))) return dom;
-    }
-    return '';
-  } catch { return ''; }
+  const clave = sinAcentos(empresa).toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Solo las palabras que DISTINGUEN a este negocio, no las del gremio.
+  const trozos = sinAcentos(empresa).toLowerCase().split(/\s+/)
+    .map((p) => p.replace(/[^a-z0-9]/g, ''))
+    .filter((p) => p.length >= 4 && !GENERICOS.has(p));
+
+  for (const o of data.organic) {
+    const bruto = String(o.display_link || o.source || o.link || '').split('›')[0].trim();
+    const dom = dominioNorm(bruto).replace(/\/.*$/, '');
+    if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/.test(dom)) continue;
+    if (contiene(dom, DOMINIOS_RUIDO)) continue;
+    const plano = dom.replace(/[^a-z0-9]/g, '');
+    if (plano.includes(clave) || trozos.some((t) => plano.includes(t))) return dom;
+  }
+  return ''; // se ha mirado de verdad y no aparece web propia
 }
 
 /**
@@ -521,7 +550,10 @@ function senalesDeDolor({ empresa, website, telefono, enPack, webOk, reviews, ra
   // ahi por «sin web» seria inventarse un dolor que nadie ha medido: los seis
   // fontaneros de la prueba puntuaban 57 solo por eso. Cuando la fuente no trae
   // el dato, no se puntua; se puntua lo que SI se sabe.
-  if (hayDatosContacto) {
+  if (hayDatosContacto && website === null) {
+    // Se intento averiguar y no se pudo: no se puntua a ciegas.
+    motivos.push('web sin comprobar');
+  } else if (hayDatosContacto) {
     // Pesos calibrados con casos reales: «solo Facebook» o una web caida son
     // casi peores que no tener nada, porque el cliente que los busca se va.
     if (!dom) { dolor += 45; motivos.push('sin web'); }
@@ -634,7 +666,9 @@ async function pipelineDescubrir({ nicho, zona, limite = 12, puntuar = true, enr
   const sinDato = crudos.filter((n) => n.hayDatosContacto === false && !n.website).slice(0, 8);
   const encontradas = new Map();
   if (sinDato.length) {
-    const r = await mapLimit(sinDato, 8, async (n) => ({ empresa: n.empresa, web: await buscarWebDelNegocio(n.empresa, zona) }));
+    // De tres en tres: con ocho a la vez, Bright Data empieza a devolver
+    // respuestas vacias y se pierde el dato de la mitad.
+    const r = await mapLimit(sinDato, 3, async (n) => ({ empresa: n.empresa, web: await buscarWebDelNegocio(n.empresa, zona) }));
     for (const x of r) if (x && x.status === 'fulfilled' && x.value) encontradas.set(x.value.empresa, x.value.web);
   }
   const conWeb = crudos.map((n) => (encontradas.has(n.empresa)

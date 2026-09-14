@@ -823,10 +823,14 @@ export default async function handler(req, res) {
       // cada uno su dolor. NO toca los que ya estan contactados, respondidos o
       // convertidos: eso es trabajo en marcha y no se pisa.
       if (accion === 'recalcular_dolor') {
+        // Se repasa TODO lo que no sea ya un cliente: el ruido hay que sacarlo
+        // aunque se le haya mandado un email, porque un articulo o un directorio
+        // no van a contestar nunca y ensucian las cuentas del embudo. Lo unico
+        // intocable es lo convertido y lo ya descartado.
         const filas = await sql`
-          SELECT id, empresa, website, telefono
+          SELECT id, empresa, website, telefono, estado
           FROM prospectos
-          WHERE estado = 'nuevo' OR estado IS NULL
+          WHERE COALESCE(estado, 'nuevo') NOT IN ('convertido', 'descartado')
           ORDER BY id`;
 
         const fuera = [];

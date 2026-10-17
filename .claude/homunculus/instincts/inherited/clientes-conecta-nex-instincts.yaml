@@ -1,0 +1,318 @@
+# Instincts generated from https://github.com/Digitalconect25/clientes-conecta-nex
+# Generated: 2026-07-04T00:12:00.961Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: clientes-conecta-nex-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Commit Length
+
+## Action
+
+Write detailed commit messages (~169 characters for first line)
+
+## Evidence
+
+- Average commit message length: 169 chars
+- Based on 1 commits
+
+---
+id: clientes-conecta-nex-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: clientes-conecta-nex-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: clientes-conecta-nex-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Export Style
+
+## Action
+
+Prefer mixed exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: mixed
+
+---
+id: clientes-conecta-nex-arch-type-based
+trigger: "when adding new code"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Arch Type Based
+
+## Action
+
+Place code in the appropriate type folder (components/, services/, utils/, etc.)
+
+## Evidence
+
+- Type-based module organization detected
+- Folders: lib, pages
+
+---
+id: clientes-conecta-nex-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: clientes-conecta-nex-instinct-file-naming
+trigger: "When creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct File Naming
+
+## Action
+
+Name the file using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.files
+
+---
+id: clientes-conecta-nex-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Function Naming
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.functions
+
+---
+id: clientes-conecta-nex-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: clientes-conecta-nex-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: clientes-conecta-nex-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Import Style
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in importStyle
+
+---
+id: clientes-conecta-nex-instinct-export-style
+trigger: "When exporting modules or functions"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Export Style
+
+## Action
+
+Use mixed export style (default and named exports as needed)
+
+## Evidence
+
+- Pattern in exportStyle
+
+---
+id: clientes-conecta-nex-instinct-error-handling
+trigger: "When handling errors in code"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Error Handling
+
+## Action
+
+Use try-catch blocks for error handling
+
+## Evidence
+
+- Pattern in errorHandling.style
+
+---
+id: clientes-conecta-nex-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Test Location
+
+## Action
+
+Place test files in a separate directory from source code
+
+## Evidence
+
+- Pattern in architecture.folderStructure.testLocation
+
+---
+id: clientes-conecta-nex-instinct-module-organization
+trigger: "When organizing code modules"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Module Organization
+
+## Action
+
+Group modules by type (e.g., api, db, pages, lib)
+
+## Evidence
+
+- Pattern in architecture.moduleOrganization
+- Pattern in architecture.folderStructure.srcLayout
+
+---
+id: clientes-conecta-nex-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: Digitalconect25/clientes-conecta-nex
+---
+
+# Clientes Conecta Nex Instinct Git Commit Format
+
+## Action
+
+Use freeform commit messages without a required prefix
+
+## Evidence
+
+- Pattern in commits.type
+- Pattern in commits.prefixes
+

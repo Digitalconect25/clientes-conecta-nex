@@ -45,17 +45,32 @@ function fechaLarga(fecha) {
   } catch { return fecha; }
 }
 
+// Aviso a la agencia de cada reserva nueva (antes solo llegaba el resumen de las 8:00).
+function emailAvisoAgenciaHTML({ nombre, email, telefono, fecha, hora, nota }) {
+  const cuerpo = `
+    <p style="margin:0 0 14px">Nueva llamada reservada desde la web.</p>
+    ${tarjetaDatos([
+      ['Cuándo', escEmail(`${fechaLarga(fecha)} a las ${hora} h`)],
+      ['Nombre', escEmail(nombre)],
+      telefono ? ['Teléfono', escEmail(telefono)] : null,
+      email ? ['Correo', escEmail(email)] : null,
+      nota ? ['Lo que nos contó', escEmail(nota)] : null,
+    ])}
+    ${botonEmail(`${BASE}/agenda`, 'Abrir la agenda')}`;
+  return envolverEmail({ titulo: 'Nueva cita en la agenda', preheader: `${nombre} · ${fecha} ${hora} h`, cuerpoHtml: cuerpo });
+}
+
 function emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }) {
   const cuando = `${fechaLarga(fecha)} a las ${hora} h`;
   const saludo = nombre ? `Hola ${escEmail(nombre)},` : 'Hola,';
   const cuerpo = `
     <p style="margin:0 0 14px">${saludo}</p>
-    <p style="margin:0 0 16px">Hemos recibido tu solicitud de cita. Revísala y <b>confírmala</b> para dejarla reservada en firme.</p>
-    ${tarjetaDatos([['Fecha y hora', escEmail(cuando)], nota ? ['Tu nota', escEmail(nota)] : null])}
+    <p style="margin:0 0 16px">Hemos recibido su solicitud de cita. Revísela y <b>confírmela</b> para dejarla reservada en firme.</p>
+    ${tarjetaDatos([['Fecha y hora', escEmail(cuando)], nota ? ['Su nota', escEmail(nota)] : null])}
     ${botonEmail(urlConfirmar, 'Aceptar y confirmar la cita')}
-    <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si no reconoces esta solicitud, ignora este correo: no se reservará nada.</p>
+    <p style="margin:14px 0 0;color:#707a83;font-size:13.5px">Si no reconoce esta solicitud, ignore este correo: no se reservará nada.</p>
     <p style="margin:18px 0 0">Un saludo,<br><b>Equipo Conecta NEX</b></p>`;
-  return envolverEmail({ titulo: 'Confirma tu cita', preheader: 'Pulsa para dejar tu cita reservada en firme.', cuerpoHtml: cuerpo });
+  return envolverEmail({ titulo: 'Confirme su cita', preheader: 'Pulse para dejar su cita reservada en firme.', cuerpoHtml: cuerpo });
 }
 
 async function slotsLibres(fecha) {
@@ -81,14 +96,14 @@ export default async function handler(req, res) {
       const b = req.body || {};
       // Honeypot: si un bot rellena el campo oculto, fingimos exito y no guardamos.
       if (b.website2) return jsonResponse(res, 200, { ok: true });
-      if (!(await limitar(obtenerIp(req), 'agendar', 8, 60))) return jsonResponse(res, 429, { error: 'Demasiadas solicitudes. Intentalo en un momento.' });
+      if (!(await limitar(obtenerIp(req), 'agendar', 8, 60))) return jsonResponse(res, 429, { error: 'Demasiadas solicitudes. Inténtelo en un momento.' });
       const fecha = String(b.fecha || ''), hora = String(b.hora || '');
       if (!RE_FECHA.test(fecha) || !HORAS.includes(hora)) return jsonResponse(res, 400, { error: 'Dia u hora no validos.' });
-      if (!String(b.nombre || '').trim()) return jsonResponse(res, 400, { error: 'Falta tu nombre.' });
+      if (!String(b.nombre || '').trim()) return jsonResponse(res, 400, { error: 'Falta su nombre.' });
       if (b.email && !RE_EMAIL.test(String(b.email))) return jsonResponse(res, 400, { error: 'Email no valido.' });
       // Comprobar que la franja sigue libre
       const { slots } = await slotsLibres(fecha);
-      if (!slots.includes(hora)) return jsonResponse(res, 409, { error: 'Esa hora ya no esta disponible, elige otra.' });
+      if (!slots.includes(hora)) return jsonResponse(res, 409, { error: 'Esa hora ya no está disponible, elija otra.' });
       const pid = parseInt(b.p, 10) || null;
       const nombre = String(b.nombre).trim();
       const email = String(b.email || '').trim();
@@ -105,7 +120,7 @@ export default async function handler(req, res) {
       } catch (e) {
         // Indice unico uq_citas_franja: dos reservas simultaneas a la misma hora.
         if (String(e.message || '').includes('uq_citas_franja') || e.code === '23505')
-          return jsonResponse(res, 409, { error: 'Esa hora se acaba de ocupar, elige otra.' });
+          return jsonResponse(res, 409, { error: 'Esa hora se acaba de ocupar, elija otra.' });
         throw e;
       }
       // Si viene de un prospecto, marcarlo como que respondio (mostro interes).
@@ -118,10 +133,27 @@ export default async function handler(req, res) {
           const urlConfirmar = `${BASE}/api/confirmar-cita?c=${nuevaId}&s=${firmaCita(nuevaId)}`;
           await enviarEmail({
             to: email,
-            subject: `Confirma tu cita con Conecta NEX — ${fecha} ${hora} h`,
+            subject: `Confirme su cita con Conecta NEX — ${fecha} ${hora} h`,
             html: emailConfirmacionHTML({ nombre, fecha, hora, nota, urlConfirmar }),
           });
         } catch (e) { console.error('Email cita no enviado:', e.message); }
+      }
+      // Aviso a la agencia (AGENCY_EMAIL o, si no existe, el correo del emisor).
+      if (nuevaId && emailHabilitado()) {
+        try {
+          let destino = process.env.AGENCY_EMAIL;
+          if (!destino) {
+            const [em] = await sql`SELECT email FROM emisor WHERE id = 1`;
+            destino = em?.email;
+          }
+          if (destino) {
+            await enviarEmail({
+              to: destino,
+              subject: `Nueva cita: ${nombre} — ${fecha} ${hora} h`,
+              html: emailAvisoAgenciaHTML({ nombre, email, telefono: String(b.telefono || '').trim(), fecha, hora, nota }),
+            });
+          }
+        } catch (e) { console.error('Aviso de cita a la agencia no enviado:', e.message); }
       }
       return jsonResponse(res, 200, { ok: true });
     }

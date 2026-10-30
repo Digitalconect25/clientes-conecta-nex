@@ -46,9 +46,9 @@ function fechaLarga(fecha) {
 }
 
 // Aviso a la agencia de cada reserva nueva (antes solo llegaba el resumen de las 8:00).
-function emailAvisoAgenciaHTML({ nombre, email, telefono, fecha, hora, nota }) {
+function emailAvisoAgenciaHTML({ nombre, email, telefono, fecha, hora, nota, delAgente }) {
   const cuerpo = `
-    <p style="margin:0 0 14px">Nueva llamada reservada desde la web.</p>
+    <p style="margin:0 0 14px">Nueva llamada reservada ${delAgente ? 'por el agente Nexi' : 'desde la web'}.</p>
     ${tarjetaDatos([
       ['Cuándo', escEmail(`${fechaLarga(fecha)} a las ${hora} h`)],
       ['Nombre', escEmail(nombre)],
@@ -84,6 +84,37 @@ async function slotsLibres(fecha) {
   return { slots: HORAS.filter((h) => !taken.has(h)) };
 }
 
+// El agente Nexi (CreatuAgente) puede mandar los datos con otros nombres o formatos:
+// fecha "05/11/2026", hora "10:30:00", o una sola fecha-hora ISO. Se pasan al
+// formato del formulario. Se identifica con ?origen=agente en la URL o en el cuerpo.
+function primero(b, claves) {
+  for (const k of claves) if (b[k] != null && String(b[k]).trim()) return String(b[k]).trim();
+  return '';
+}
+
+function normalizarAgente(b) {
+  let fecha = primero(b, ['fecha', 'date', 'dia', 'day']);
+  let hora = primero(b, ['hora', 'time', 'hour']);
+  const fh = primero(b, ['fechaHora', 'fecha_hora', 'datetime', 'start', 'inicio']);
+  if (fh && (!fecha || !hora)) {
+    const m = fh.match(/(\d{4}-\d{2}-\d{2})[T ](\d{1,2}):(\d{2})/);
+    if (m) { fecha = fecha || m[1]; hora = hora || `${m[2].padStart(2, '0')}:${m[3]}`; }
+  }
+  const dmy = fecha.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (dmy) fecha = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  const hm = hora.match(/^(\d{1,2})[:.h](\d{2})?/i);
+  if (hm) hora = `${hm[1].padStart(2, '0')}:${hm[2] || '00'}`;
+  return {
+    ...b,
+    fecha,
+    hora,
+    nombre: primero(b, ['nombre', 'name', 'nombre_completo', 'fullName', 'full_name']),
+    email: primero(b, ['email', 'correo', 'mail']),
+    telefono: primero(b, ['telefono', 'phone', 'tel', 'whatsapp', 'movil']),
+    nota: primero(b, ['nota', 'notas', 'notes', 'mensaje', 'message', 'motivo', 'servicio', 'resumen']),
+  };
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
@@ -93,7 +124,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const b = req.body || {};
+      const delAgente = req.query?.origen === 'agente' || (req.body || {}).origen === 'agente';
+      const b = delAgente ? normalizarAgente(req.body || {}) : (req.body || {});
       // Honeypot: si un bot rellena el campo oculto, fingimos exito y no guardamos.
       if (b.website2) return jsonResponse(res, 200, { ok: true });
       if (!(await limitar(obtenerIp(req), 'agendar', 8, 60))) return jsonResponse(res, 429, { error: 'Demasiadas solicitudes. Inténtelo en un momento.' });
@@ -114,7 +146,7 @@ export default async function handler(req, res) {
         const [row] = await sql`
           INSERT INTO citas (prospecto_id, nombre, email, telefono, fecha, hora, nota, estado, origen, modalidad)
           VALUES (${pid}, ${nombre}, ${email}, ${String(b.telefono || '').trim()},
-                  ${fecha}, ${hora}, ${nota}, ${'pendiente'}, ${'frio'}, ${'telefono'})
+                  ${fecha}, ${hora}, ${nota}, ${'pendiente'}, ${delAgente ? 'agente' : 'frio'}, ${'telefono'})
           RETURNING id`;
         nuevaId = row?.id;
       } catch (e) {
@@ -149,8 +181,8 @@ export default async function handler(req, res) {
           if (destino) {
             await enviarEmail({
               to: destino,
-              subject: `Nueva cita: ${nombre} — ${fecha} ${hora} h`,
-              html: emailAvisoAgenciaHTML({ nombre, email, telefono: String(b.telefono || '').trim(), fecha, hora, nota }),
+              subject: `Nueva cita${delAgente ? ' (agente Nexi)' : ''}: ${nombre} — ${fecha} ${hora} h`,
+              html: emailAvisoAgenciaHTML({ nombre, email, telefono: String(b.telefono || '').trim(), fecha, hora, nota, delAgente }),
             });
           }
         } catch (e) { console.error('Aviso de cita a la agencia no enviado:', e.message); }
